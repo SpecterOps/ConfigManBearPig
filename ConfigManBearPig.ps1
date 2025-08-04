@@ -24,11 +24,17 @@ System Requirements:
 .PARAMETER Help
 Display usage information
 
-.PARAMETER CollectionMethod
+.PARAMETER CollectionMethods
 Collection methods to use (comma-separated):
     - All (default): All SCCM collection methods
-    - SCCM: SCCM-specific collection only
-    - Local: Local SCCM client data only
+    - LDAP
+    - Local
+    - DNS
+    - RemoteRegistry
+    - AdminService
+    - WMI
+    - HTTP
+    - SMB
 
 .PARAMETER ComputerFile
 Specify the path to a file containing computer targets (limits to Remote Registry, AdminService, HTTP, SMB)
@@ -75,7 +81,7 @@ Enable verbose output
 param(
     [switch]$Help,
     
-    [string]$CollectionMethod = "All",
+    [string]$CollectionMethods = "All",
     
     [string]$ComputerFile,
     
@@ -113,6 +119,44 @@ $script:ScriptName = "ConfigManBearPig"
 if ($Version) {
     Write-Host "$script:ScriptName version $script:ScriptVersion" -ForegroundColor Green
     return
+}
+
+# Collection phases to run
+$collectionMethods = $CollectionMethods -split "," | ForEach-Object { $_.Trim().ToUpper() }
+$enableLDAP = $false
+$enableLocal = $false
+$enableDNS = $false
+$enableRemoteRegistry = $false
+$enableAdminService = $false
+$enableWMI = $false
+$enableHTTP = $false
+$enableSMB = $false
+
+# Process each specified method
+foreach ($method in $collectionMethods) {
+    switch ($method) {
+        "ALL" {
+            $enableLDAP = $true
+            $enableLocal = $true
+            $enableDNS = $true
+            $enableRemoteRegistry = $true
+            $enableAdminService = $true
+            $enableWMI = $true
+            $enableHTTP = $true
+            $enableSMB = $true
+        }
+        "LDAP" { $enableLDAP = $true }
+        "LOCAL" { $enableLocal = $true }
+        "DNS" { $enableDNS = $true }
+        "REMOTEREGISTRY" { $enableRemoteRegistry = $true }
+        "ADMINSERVICE" { $enableAdminService = $true }
+        "WMI" { $enableWMI = $true }
+        "HTTP" { $enableHTTP = $true }
+        "SMB" { $enableSMB = $true }
+        default {
+            Write-LogMessage "Unknown collection method: $method" -Level "Error"
+        }
+    }
 }
 
 # Parse SiteCodes parameter
@@ -245,107 +289,13 @@ function New-SCCMEdge {
 
 # Initialize AD module availability at script level
 $script:ADModuleAvailable = $false
-$script:UseNetFallback = $false
-
-function Initialize-DomainResolution {
-    Write-LogMessage "Initializing domain resolution capabilities..." -Level "Info"
-    
-    # Check if Active Directory module is available
-    if (Get-Module -ListAvailable -Name ActiveDirectory) {
-        try {
-            Import-Module ActiveDirectory -ErrorAction Stop
-            $script:ADModuleAvailable = $true
-            Write-LogMessage "Active Directory module loaded successfully" -Level "Success"
-        } catch {
-            Write-LogMessage "Failed to import Active Directory module: $_" -Level "Warning"
-        }
-    } else {
-        Write-LogMessage "Active Directory module not available" -Level "Warning"
-        
-        # Try to install if InstallADModule is specified
-        if ($InstallADModule) {
-            Write-LogMessage "Attempting to install Active Directory module..." -Level "Info"
-            Install-ADModule
-        }
-    }
-    
-    # Set up .NET fallback if AD module is not available
-    if (-not $script:ADModuleAvailable) {
-        Write-LogMessage "Setting up .NET DirectoryServices fallback" -Level "Warning"
-        
-        try {
-            Add-Type -AssemblyName System.DirectoryServices.AccountManagement
-            Add-Type -AssemblyName System.DirectoryServices
-            $script:UseNetFallback = $true
-            Write-LogMessage "DirectoryServices fallback initialized" -Level "Success"
-        } catch {
-            Write-LogMessage "Failed to initialize DirectoryServices fallback: $_" -Level "Error"
-            $script:UseNetFallback = $false
-        }
-    }
-}
-
-function Install-ADModule {
-    $installSuccess = $false
-    
-    if ([Environment]::OSVersion.Platform -eq "Win32NT") {
-        Write-LogMessage "Attempting to install RSAT Active Directory tools..." -Level "Info"
-        
-        # Method 1: Windows Optional Features
-        try {
-            Enable-WindowsOptionalFeature -Online -FeatureName RSATClient-Roles-AD-Powershell -All -NoRestart -ErrorAction Stop
-            $installSuccess = $true
-            Write-LogMessage "Successfully installed RSAT using Windows Optional Features" -Level "Success"
-        } catch {
-            Write-LogMessage "Windows Optional Feature method failed: $_" -Level "Warning"
-        }
-        
-        # Method 2: Alternative feature name
-        if (-not $installSuccess) {
-            try {
-                Enable-WindowsOptionalFeature -Online -FeatureName "Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0" -NoRestart -ErrorAction Stop
-                $installSuccess = $true
-                Write-LogMessage "Successfully installed RSAT using alternative feature name" -Level "Success"
-            } catch {
-                Write-LogMessage "Alternative feature name failed: $_" -Level "Warning"
-            }
-        }
-        
-        # Method 3: DISM command
-        if (-not $installSuccess) {
-            try {
-                $dismResult = & dism /online /enable-feature /featurename:RSATClient-Roles-AD-Powershell /all /norestart 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    $installSuccess = $true
-                    Write-LogMessage "Successfully installed RSAT using DISM" -Level "Success"
-                } else {
-                    Write-LogMessage "DISM failed with exit code: $LASTEXITCODE" -Level "Warning"
-                }
-            } catch {
-                Write-LogMessage "DISM method failed: $_" -Level "Warning"
-            }
-        }
-    }
-    
-    # Try to import module after installation
-    if ($installSuccess) {
-        Start-Sleep -Seconds 3
-        try {
-            Import-Module ActiveDirectory -ErrorAction Stop
-            $script:ADModuleAvailable = $true
-            Write-LogMessage "Active Directory module successfully imported after installation" -Level "Success"
-        } catch {
-            Write-LogMessage "RSAT appears to be installed but module import failed: $_" -Level "Warning"
-        }
-    }
-}
 
 function Get-ForestRoot {
     try {
         if ($script:ADModuleAvailable) {
             $rootDSE = Get-ADRootDSE -ErrorAction Stop
             return $rootDSE.rootDomainNamingContext
-        } elseif ($script:UseNetFallback) {
+        } else {
             $rootDSE = New-Object System.DirectoryServices.DirectoryEntry("LDAP://RootDSE")
             return $rootDSE.Properties["rootDomainNamingContext"][0] 
         }
@@ -417,11 +367,11 @@ function Resolve-PrincipalInDomain {
         [string]$Domain
     )
     
-    Write-Verbose "Attempting to resolve '$Name' in domain '$Domain'"
+    Write-LogMessage -Level Debug "Attempting to resolve '$Name' in domain '$Domain'"
     
     # Try Active Directory PowerShell module first
     if ($script:ADModuleAvailable) {
-        Write-Verbose "Trying AD PowerShell module in domain: $Domain"
+        Write-LogMessage -Level Debug "Trying AD PowerShell module in domain: $Domain"
         
         try {
             $adObject = $null
@@ -489,57 +439,55 @@ function Resolve-PrincipalInDomain {
                                     DistinguishedName = $adObject.DistinguishedName
                                 }
                             } catch {
-                                Write-Verbose "AD object lookup by SID failed for '$Name': $_"
+                                Write-LogMessage -Level Verbose "AD object lookup by SID failed for '$Name': $_"
                             }
                         }
                     }
                 }
             }
         } catch {
-            Write-Verbose "AD PowerShell module failed for '$Name' in domain '$Domain': $_"
+            Write-LogMessage -Level Verbose "AD PowerShell module failed for '$Name' in domain '$Domain': $_"
         }
     }
     
     # Try DirectoryServices .NET fallback
-    if ($script:UseNetFallback) {
-        Write-Verbose "Trying DirectoryServices for '$Name' in domain '$Domain'"
+    Write-LogMessage -Level Debug "Trying DirectoryServices for '$Name' in domain '$Domain'"
+    
+    try {
+        $domainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $Domain)
+        $domainObj = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($domainContext)
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher
+        $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$($domainObj.Name)")
+        $searcher.Filter = "(|(samAccountName=$Name)(cn=$Name)(dNSHostName=$Name))"
+        $searcher.PropertiesToLoad.AddRange(@("objectSid", "objectClass", "distinguishedName", "dNSHostName"))
         
-        try {
-            $domainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $Domain)
-            $domainObj = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($domainContext)
-            $searcher = New-Object System.DirectoryServices.DirectorySearcher
-            $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$($domainObj.Name)")
-            $searcher.Filter = "(|(samAccountName=$Name)(cn=$Name)(dNSHostName=$Name))"
-            $searcher.PropertiesToLoad.AddRange(@("objectSid", "objectClass", "distinguishedName", "dNSHostName"))
+        $result = $searcher.FindOne()
+        if ($result) {
+            $sidBytes = $result.Properties["objectsid"][0]
+            $sid = New-Object System.Security.Principal.SecurityIdentifier($sidBytes, 0)
             
-            $result = $searcher.FindOne()
-            if ($result) {
-                $sidBytes = $result.Properties["objectsid"][0]
-                $sid = New-Object System.Security.Principal.SecurityIdentifier($sidBytes, 0)
-                
-                $objectClass = $result.Properties["objectclass"]
-                $objectType = if ($objectClass -contains "computer") { "Computer" }
-                             elseif ($objectClass -contains "user") { "User" } 
-                             elseif ($objectClass -contains "group") { "Group" }
-                             else { "Object" }
-                
-                return [PSCustomObject]@{
-                    Name = "$Domain\$Name"
-                    SID = $sid.Value
-                    Domain = $Domain
-                    Type = $objectType
-                    DNSHostName = $result.Properties["dnshostname"][0]
-                    DistinguishedName = $result.Properties["distinguishedname"][0]
-                }
+            $objectClass = $result.Properties["objectclass"]
+            $objectType = if ($objectClass -contains "computer") { "Computer" }
+                            elseif ($objectClass -contains "user") { "User" } 
+                            elseif ($objectClass -contains "group") { "Group" }
+                            else { "Object" }
+            
+            return [PSCustomObject]@{
+                Name = "$Domain\$Name"
+                SID = $sid.Value
+                Domain = $Domain
+                Type = $objectType
+                DNSHostName = $result.Properties["dnshostname"][0]
+                DistinguishedName = $result.Properties["distinguishedname"][0]
             }
-        } catch {
-            Write-Verbose "DirectorySearcher failed for '$Name' in domain '$Domain': $_"
         }
+    } catch {
+        Write-LogMessage -Level Verbose "DirectorySearcher failed for '$Name' in domain '$Domain': $_"
     }
     
     # Try NTAccount translation as last resort
     try {
-        Write-Verbose "Attempting NTAccount translation for '$Name' in domain '$Domain'"
+        Write-LogMessage -Level Verbose "Attempting NTAccount translation for '$Name' in domain '$Domain'"
         
         if ($Name -match "^S-\d+-\d+") {
             # SID to name translation
@@ -569,7 +517,7 @@ function Resolve-PrincipalInDomain {
             }
         }
     } catch {
-        Write-Verbose "NTAccount translation failed for '$Name' in domain '$Domain': $_"
+        Write-LogMessage -Level Verbose "NTAccount translation failed for '$Name' in domain '$Domain': $_"
     }
     
     # Return failure
@@ -590,15 +538,23 @@ function Get-ADObjectByHostname {
         [string]$Hostname,
         [string]$Domain = $script:Domain
     )
-    
+   
     if ($script:ADModuleAvailable) {
         try {
+            # First try as FQDN/DNSHostName
             $adParams = @{ Filter = "DNSHostName -eq '$Hostname'" }
             if ($Domain -and $Domain -ne $env:USERDOMAIN -and $Domain -ne $env:USERDNSDOMAIN) {
                 $adParams.Server = $Domain
             }
-            
+           
             $computer = Get-ADComputer @adParams -Properties objectSid, DNSHostName -ErrorAction Stop
+            
+            # If not found and hostname doesn't contain a dot, try as NetBIOS name
+            if (-not $computer -and $Hostname -notcontains '.') {
+                $adParams.Filter = "Name -eq '$Hostname'"
+                $computer = Get-ADComputer @adParams -Properties objectSid, DNSHostName -ErrorAction Stop
+            }
+            
             if ($computer) {
                 return [PSCustomObject]@{
                     Name = "$Domain\$($computer.Name)"
@@ -610,10 +566,10 @@ function Get-ADObjectByHostname {
                 }
             }
         } catch {
-            Write-Verbose "Failed to resolve hostname '$Hostname' using AD module: $_"
+            Write-LogMessage -Level Verbose "Failed to resolve hostname '$Hostname' using AD module: $_"
         }
     }
-    
+   
     # Fallback to generic resolution
     return Resolve-PrincipalInDomain -Name $Hostname -Domain $Domain
 }
@@ -649,7 +605,7 @@ function Invoke-LDAPCollection {
         
         if ($script:ADModuleAvailable) {
             $siteObjects = Get-ADObject -LDAPFilter "(objectClass=mSSMSSite)" -SearchBase $systemManagementDN -Properties mSSMSHealthState, mSSMSSiteCode, mSSMSSourceForest, objectClass, distinguishedName -ErrorAction SilentlyContinue
-        } elseif ($script:UseNetFallback) {
+        } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$systemManagementDN")
@@ -659,10 +615,10 @@ function Invoke-LDAPCollection {
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
                     $siteObjects += [PSCustomObject]@{
-                        DistinguishedName = $result.Properties["distinguishedname"][0]
-                        mSSMSHealthState = $result.Properties["mssmsHealthState"][0]
-                        mSSMSSiteCode = $result.Properties["mssmsitecode"][0]
-                        mSSMSSourceForest = $result.Properties["mssmsourceforest"][0]
+                        DistinguishedName = $result.Properties["distinguishedName"][0]
+                        mSSMSHealthState = $result.Properties["mSSMSHealthState"][0]
+                        mSSMSSiteCode = $result.Properties["mSSMSSiteCode"][0]
+                        mSSMSSourceForest = $result.Properties["mSSMSSourceForest"][0]
                     }
                 }
             } catch {
@@ -729,7 +685,7 @@ function Invoke-LDAPCollection {
         
         if ($script:ADModuleAvailable) {
             $managementPoints = Get-ADObject -LDAPFilter "(ObjectClass=mSSMSManagementPoint)" -SearchBase $systemManagementDN -Properties mSSMSMPName, mSSMSSiteCode, mSSMSCapabilities -ErrorAction SilentlyContinue
-        } elseif ($script:UseNetFallback) {
+        } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$systemManagementDN")
@@ -739,9 +695,9 @@ function Invoke-LDAPCollection {
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
                     $managementPoints += [PSCustomObject]@{
-                        mSSMSMPName = $result.Properties["mssmsmpname"][0]
-                        mSSMSSiteCode = $result.Properties["mssmsitecode"][0]
-                        mSSMSCapabilities = $result.Properties["mssmsCapabilities"][0]
+                        mSSMSMPName = $result.Properties["mSSMSMPName"][0]
+                        mSSMSSiteCode = $result.Properties["mSSMSSiteCode"][0]
+                        mSSMSCapabilities = $result.Properties["mSSMSCapabilities"][0]
                     }
                 }
             } catch {
@@ -754,20 +710,16 @@ function Invoke-LDAPCollection {
             $mpSiteCode = $mp.mSSMSSiteCode
             
             # Add to collection targets for subsequent phases
-            if ($mpHostname -and -not $script:CollectionTargets.ContainsKey($mpHostname)) {
-                $script:CollectionTargets[$mpHostname] = @{
-                    "Source" = "LDAP-mSSMSManagementPoint"
-                    "Hostname" = $mpHostname
-                    "SiteCode" = $mpSiteCode
-                    "Collected" = $false
-                    "IsManagementPoint" = $true
+            if ($mpHostname) {
+                $mpTarget = Add-DeviceToTargets -DeviceName $mpHostname -Source "LDAP-mSSMSManagementPoint"
+                if ($mpTarget) {
+                    $mpSid = $mpTarget.ObjectIdentifier
+                    if ($mpTarget.IsNew) {
+                        Write-LogMessage "Found Management Point: $($mpTarget.Hostname) (Site: $mpSiteCode)" -Level "Info"
+                    }
                 }
-                Write-LogMessage "Found Management Point: $mpHostname (Site: $mpSiteCode)" -Level "Info"
             }
             
-            # Resolve hostname to domain object for SID using our resolution function
-            $mpObject = Get-ADObjectByHostname -Hostname $mpHostname -Domain $script:Domain
-            $mpSid = $mpObject.SID
             $sourceForest = $null
             
             # Parse capabilities to determine site relationships and extract SourceForest
@@ -826,7 +778,7 @@ function Invoke-LDAPCollection {
                                         "Source" = "LDAP-mSSMSManagementPoint"
                                     }
                                     $script:Sites += $casSiteNode
-                                    Write-LogMessage "Created inferred CAS site: $rootSiteCode" -Level "Info"
+                                    Write-LogMessage "Created CAS site: $rootSiteCode" -Level "Info"
                                 }
                             } elseif ($rootSiteCode -eq $mpSiteCode) {
                                 # This is either a standalone primary or CAS
@@ -853,30 +805,23 @@ function Invoke-LDAPCollection {
                     $fspNodes = $capabilities.ClientOperationalSettings.FSP.SelectNodes("FSPServer")
                     foreach ($fsp in $fspNodes) {
                         $fspHostname = $fsp.InnerText
-                        if ($fspHostname -and -not $script:CollectionTargets.ContainsKey($fspHostname)) {
-                            $script:CollectionTargets[$fspHostname] = @{
-                                "Source" = "LDAP-mSSMSManagementPoint"
-                                "Hostname" = $fspHostname
-                                "SiteCode" = $mpSiteCode
-                                "Collected" = $false
-                                "IsFallbackStatusPoint" = $true
+                        $fspTarget = Add-DeviceToTargets -DeviceName $fspHostname -Source "LDAP-mSSMSManagementPoint"
+
+                        if ($fspTarget) {
+                            if ($fspTarget.IsNew) {
+                                Write-LogMessage "Found Fallback Status Point: $($fspTarget.Hostname)" -Level "Info"
                             }
-                            Write-LogMessage "Found Fallback Status Point: $fspHostname" -Level "Info"
-                            
-                            # Resolve FSP hostname and create SiteSystem
-                            $fspObject = Get-ADObjectByHostname -Hostname $fspHostname -Domain $script:Domain
-                            $fspSid = $fspObject.SID
                             
                             # Add FSP to SiteSystemRoles
-                            $existingFspRole = $script:SiteSystemRoles | Where-Object { 
-                                $_.Hostname -eq $fspHostname -and $_.SiteCode -eq $mpSiteCode 
+                            $existingFspRole = $script:SiteSystemRoles | Where-Object {
+                                $_.Hostname -eq $fspTarget.Hostname -and $_.SiteCode -eq $mpSiteCode
                             }
                             if (-not $existingFspRole) {
                                 $fspSystemNode = @{
-                                    "ObjectIdentifier" = if ($fspSid) { $fspSid } else { "$fspHostname@$mpSiteCode" }
-                                    "dNSHostName" = $fspHostname.ToUpper()
-                                    "Hostname" = $fspHostname
-                                    "NetworkOSPath" = "\\$fspHostname"
+                                    "ObjectIdentifier" = if ($fspTarget.ObjectIdentifier) { $fspTarget.ObjectIdentifier } else { "$($fspTarget.Hostname)@$mpSiteCode" }
+                                    "dNSHostName" = $fspTarget.Hostname.ToUpper()
+                                    "Hostname" = $fspTarget.Hostname
+                                    "NetworkOSPath" = "\\$($fspTarget.Hostname)"
                                     "SiteCode" = $mpSiteCode
                                     "Roles" = @(@{
                                         "Name" = "SMS Fallback Status Point"
@@ -888,7 +833,7 @@ function Invoke-LDAPCollection {
                                     "Source" = "LDAP-mSSMSManagementPoint"
                                 }
                                 $script:SiteSystemRoles += $fspSystemNode
-                                Write-LogMessage "Added FSP to site system roles: $fspHostname" -Level "Info"
+                                Write-LogMessage "Added FSP to site system roles: $($fspTarget.Hostname)" -Level "Info"
                             }
                         }
                     }
@@ -941,7 +886,7 @@ function Invoke-LDAPCollection {
         
         if ($script:ADModuleAvailable) {
             $remoteControlSystems = Get-ADObject -LDAPFilter "(servicePrincipalName=CmRcService/*)" -Properties DNSHostName, DistinguishedName, ObjectClass, ServicePrincipalName, ObjectSid, CN, Name -ErrorAction SilentlyContinue
-        } elseif ($script:UseNetFallback) {
+        } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$domainDN")
@@ -1008,7 +953,7 @@ function Invoke-LDAPCollection {
         
         if ($script:ADModuleAvailable) {
             $networkBootServers = Get-ADObject -LDAPFilter "(&(objectclass=connectionPoint)(netbootserver=*))" -SearchBase $domainDN -Properties netbootserver, DistinguishedName -ErrorAction SilentlyContinue
-        } elseif ($script:UseNetFallback) {
+        } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$domainDN")
@@ -1037,7 +982,7 @@ function Invoke-LDAPCollection {
                     $parentObject = $null
                     if ($script:ADModuleAvailable) {
                         $parentObject = Get-ADObject -Identity $parentDN -Properties DNSHostName -ErrorAction SilentlyContinue
-                    } elseif ($script:UseNetFallback) {
+                    } else {
                         $parentEntry = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$parentDN")
                         if ($parentEntry.Properties["dNSHostName"].Count -gt 0) {
                             $parentObject = [PSCustomObject]@{
@@ -1048,13 +993,8 @@ function Invoke-LDAPCollection {
                     
                     if ($parentObject.DNSHostName) {
                         $hostname = $parentObject.DNSHostName
-                        if (-not $script:CollectionTargets.ContainsKey($hostname)) {
-                            $script:CollectionTargets[$hostname] = @{
-                                "Source" = "LDAP-netbootserver"
-                                "Hostname" = $hostname
-                                "Collected" = $false
-                                "IsNetworkBootServer" = $true
-                            }
+                        $netbootserver = Add-DeviceToTargets -DeviceName $hostname -Source "LDAP-netbootserver"
+                        if ($netbootserver -and $netbootserver.IsNew) {
                             Write-LogMessage "Found network boot server: $hostname" -Level "Info"
                         }
                     }
@@ -1084,7 +1024,7 @@ function Invoke-LDAPCollection {
         $patternMatches = @()
         if ($script:ADModuleAvailable) {
             $patternMatches = Get-ADObject -LDAPFilter $ldapFilter -SearchBase $domainDN -Properties samaccountname, description, name, displayname, serviceprincipalname, dnshostname, objectClass, objectSid -ErrorAction SilentlyContinue
-        } elseif ($script:UseNetFallback) {
+        } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$domainDN")
@@ -1115,13 +1055,8 @@ function Invoke-LDAPCollection {
         
         foreach ($match in $patternMatches) {
             $hostname = $match.dnshostname
-            if ($hostname -and -not $script:CollectionTargets.ContainsKey($hostname)) {
-                $script:CollectionTargets[$hostname] = @{
-                    "Source" = "LDAP-NamePattern"
-                    "Hostname" = $hostname
-                    "Collected" = $false
-                    "MatchedPattern" = $true
-                }
+            $patternMatch = Add-DeviceToTargets -DeviceName $hostname -Source "LDAP-NamePattern"
+            if ($patternMatch -and $patternMatch.IsNew) {
                 Write-LogMessage "Found system with SCCM naming pattern: $hostname" -Level "Info"
             }
         }
@@ -1144,13 +1079,8 @@ function Invoke-LDAPCollection {
                     
                     $computerObject = Resolve-DomainPrincipalSID -PrincipalName $accountName -Domain $script:Domain
                     if ($computerObject -and $computerObject.DNSHostName) {
-                        if (-not $script:CollectionTargets.ContainsKey($computerObject.DNSHostName)) {
-                            $script:CollectionTargets[$computerObject.DNSHostName] = @{
-                                "Source" = "LDAP-GenericAll"
-                                "Hostname" = $computerObject.DNSHostName
-                                "Collected" = $false
-                                "HasGenericAllOnSysMan" = $true
-                            }
+                        $genericAllComputer = Add-DeviceToTargets -DeviceName $computerObject.DNSHostName -Source "LDAP-GenericAll"
+                        if ($genericAllComputer -and $genericAllComputer.IsNew) {
                             Write-LogMessage "Added system with GenericAll permission: $($computerObject.DNSHostName)" -Level "Info"
                         }
                     }
@@ -1173,13 +1103,8 @@ function Invoke-LDAPCollection {
                             
                             $computerObject = Resolve-DomainPrincipalSID -PrincipalName $accountName -Domain $script:Domain
                             if ($computerObject -and $computerObject.DNSHostName) {
-                                if (-not $script:CollectionTargets.ContainsKey($computerObject.DNSHostName)) {
-                                    $script:CollectionTargets[$computerObject.DNSHostName] = @{
-                                        "Source" = "LDAP-GenericAll"
-                                        "Hostname" = $computerObject.DNSHostName
-                                        "Collected" = $false
-                                        "HasGenericAllOnSysMan" = $true
-                                    }
+                                $genericAllComputer = Add-DeviceToTargets -DeviceName $computerObject.DNSHostName -Source "LDAP-GenericAll"
+                                if ($genericAllComputer -and $genericAllComputer.IsNew) {
                                     Write-LogMessage "Added system with GenericAll permission: $($computerObject.DNSHostName)" -Level "Info"
                                 }
                             }
@@ -1194,12 +1119,12 @@ function Invoke-LDAPCollection {
         }
         
         # Report what was collected
-        Write-LogMessage "LDAP collection completed:" -Level "Success"
-        Write-LogMessage "  Forest root: $(if ($forestRoot) { $forestRoot } else { 'Not found' })" -Level "Info"
-        Write-LogMessage "  Sites found: $($script:Sites.Count)" -Level "Info"
-        Write-LogMessage "  Site system roles found: $($script:SiteSystemRoles.Count)" -Level "Info"
-        Write-LogMessage "  Computer objects found: $(if ($script:ComputerObjects) { $script:ComputerObjects.Count } else { 0 })" -Level "Info"
-        Write-LogMessage "  Collection targets identified: $($script:CollectionTargets.Count)" -Level "Info"
+        Write-LogMessage "LDAP collection completed" -Level "Success"
+        Write-LogMessage "Forest root: $(if ($forestRoot) { $forestRoot } else { 'Not found' })" -Level "Info"
+        Write-LogMessage "Sites found: $($script:Sites.Count)" -Level "Info"
+        Write-LogMessage "Site system roles found: $($script:SiteSystemRoles.Count)" -Level "Info"
+        Write-LogMessage "Possible client devices found: $(if ($script:ComputerObjects) { $script:ComputerObjects.Count } else { 0 })" -Level "Info"
+        Write-LogMessage "Collection targets identified: $($script:CollectionTargets.Count)" -Level "Info"
         
     } catch {
         Write-LogMessage "LDAP collection failed: $_" -Level "Error"
@@ -1305,20 +1230,12 @@ function Invoke-LocalCollection {
         foreach ($mpHostname in $allManagementPoints) {
             if ($mpHostname) {
                 # Add to collection targets for subsequent phases
-                if (-not $script:CollectionTargets.ContainsKey($mpHostname)) {
-                    $script:CollectionTargets[$mpHostname] = @{
-                        "Source" = "Local-SMS_LookupMP"
-                        "Hostname" = $mpHostname
-                        "SiteCode" = $siteCode
-                        "Collected" = $false
-                        "IsManagementPoint" = $true
-                    }
+                $mp = Add-DeviceToTargets -DeviceName $mpHostname -Source "Local-SMS_LookupMP"
+                if ($mp -and $mp.IsNew) {
                     Write-LogMessage "Added management point to collection targets: $mpHostname" -Level "Info"
                 }
                 
-                # Resolve hostname to domain object for SID using our resolution function
-                $mpObject = Get-ADObjectByHostname -Hostname $mpHostname -Domain $script:Domain
-                $mpSid = $mpObject.SID
+                $mpSid = $mp.ObjectIdentifier
                 
                 # Add to SiteSystemRoles
                 $existingSystemRole = $script:SiteSystemRoles | Where-Object { 
@@ -1474,18 +1391,18 @@ function Invoke-LocalCollection {
                     $logFiles = Get-ChildItem -Path $logPath -ErrorAction SilentlyContinue
                     foreach ($logFile in $logFiles) {
                         try {
-                            Write-LogMessage "  $logFile" -Level Verbose
+                            Write-LogMessage "$logFile" -Level Verbose
                             $content = Get-Content -Path $logFile.FullName -ErrorAction SilentlyContinue
                             
                             # Look for UNC paths and URLs that might be SCCM components
-                            $uncMatches = $content | Select-String -Pattern "(\\\\([a-z|A-Z|0-9|-|_|\s]{2,15}){1}(\.[a-z|A-Z|0-9|-|_|\s]{1,64}){0,3}){1}(\\[^\\|\/|\:|\*|\?|""|\<|\>|\|;|]{1,64}){1,}(\\){0,}" -AllMatches
+                            $uncMatches = $content | Select-String -Pattern "(\\\\([a-zA-Z0-9\-_\s]{2,15})(\.[a-zA-Z0-9\-_\s]{1,64}){0,3})(\\[^\\\/:\*\?`"<>\|;]{1,64})+(\\)?" -AllMatches
                             $urlMatches = $content | Select-String -Pattern "(?<Protocol>\w+):\/\/(?<Domain>[\w@][\w.:@]+)\/?[\w\.?=%&=\-@/$,]*" -AllMatches
         
                             # Process UNC paths
                             foreach ($match in $uncMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $uncPath = $matchGroup.Value.Trim()
-                                    Write-LogMessage "    Found UNC path: $uncPath" -Level Debug
+                                    Write-LogMessage "Found UNC path: $uncPath" -Level Debug
                                     
                                     # Extract hostname from UNC path
                                     if ($uncPath -match "^\\\\([^\\]+)") {
@@ -1508,7 +1425,7 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage "    Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
+                                                            Write-LogMessage "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
                                                         }
                                                     }
                                                 }
@@ -1519,11 +1436,12 @@ function Invoke-LocalCollection {
                                             
                                             # Only add if resolves to RFC1918 private IP
                                             if ($shouldAdd) {
-                                                Write-LogMessage "    Found host: $hostname ($($ip.IPAddressToString))" -Level Success
                                                 $uncPaths += $uncPath
                                                 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
+                                                    Write-LogMessage "Found host: $hostname ($($ip.IPAddressToString))" -Level Success
+
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
                                                         "UNCPaths" = @($uncPath)
@@ -1547,7 +1465,7 @@ function Invoke-LocalCollection {
                             foreach ($match in $urlMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $fullUrl = $matchGroup.Value.Trim()
-                                    Write-LogMessage "    Found URL: $fullUrl" -Level Debug
+                                    Write-LogMessage "Found URL: $fullUrl" -Level Debug
                                     
                                     # Extract just the domain/hostname portion using named capture group
                                     if ($fullUrl -match "^https?://([^/@:]+)") {
@@ -1570,7 +1488,7 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage "    Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
+                                                            Write-LogMessage "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
                                                         }
                                                     }
                                                 }
@@ -1581,10 +1499,11 @@ function Invoke-LocalCollection {
                                             
                                             # Only add if resolves to RFC1918 private IP
                                             if ($shouldAdd) {
-                                                Write-LogMessage "    Found host: $hostname ($($ip.IPAddressToString))" -Level Success
 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
+                                                    Write-LogMessage "Found host: $hostname ($($ip.IPAddressToString))" -Level Success
+
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
                                                         "UNCPaths" = @()
@@ -1614,41 +1533,9 @@ function Invoke-LocalCollection {
             # Add discovered components to collection targets
             foreach ($component in $additionalComponents.Values) {
                 $hostname = $component.Hostname
-                
-                if (-not $script:CollectionTargets.ContainsKey($hostname)) {
-                    $script:CollectionTargets[$hostname] = @{
-                        "Source" = $component.Source
-                        "Hostname" = $hostname
-                        "UNCPaths" = $component.UNCPaths
-                        "URLs" = $component.URLs
-                        "LogFile" = $component.LogFile
-                        "Collected" = $false
-                    }
+                $compTarget = Add-DeviceToTargets -DeviceName $hostname -Source $component.Source
+                if ($compTarget -and $compTarget.IsNew) {
                     Write-LogMessage "Discovered potential SCCM component from logs: $hostname" -Level "Info"
-                } else {
-                    # Update existing entry with additional paths/URLs if found
-                    $existingPaths = $script:CollectionTargets[$hostname].UNCPaths
-                    $existingUrls = $script:CollectionTargets[$hostname].URLs
-                    
-                    if ($existingPaths) {
-                        foreach ($newPath in $component.UNCPaths) {
-                            if ($newPath -notin $existingPaths) {
-                                $script:CollectionTargets[$hostname].UNCPaths += $newPath
-                            }
-                        }
-                    } else {
-                        $script:CollectionTargets[$hostname].UNCPaths = $component.UNCPaths
-                    }
-                    
-                    if ($existingUrls) {
-                        foreach ($newUrl in $component.URLs) {
-                            if ($newUrl -notin $existingUrls) {
-                                $script:CollectionTargets[$hostname].URLs += $newUrl
-                            }
-                        }
-                    } else {
-                        $script:CollectionTargets[$hostname].URLs = $component.URLs
-                    }
                 }
             }
             
@@ -1657,7 +1544,7 @@ function Invoke-LocalCollection {
                 foreach ($component in $additionalComponents.Values) {
                     $pathCount = $component.UNCPaths.Count
                     $urlCount = $component.URLs.Count
-                    Write-LogMessage "  - $($component.Hostname) (found $pathCount UNC paths, $urlCount URLs)" -Level "Info"
+                    Write-LogMessage "- $($component.Hostname) (found $pathCount UNC paths, $urlCount URLs)" -Level "Info"
                 }
             } else {
                 Write-LogMessage "No additional SCCM components discovered from client logs" -Level "Info"
@@ -1668,14 +1555,13 @@ function Invoke-LocalCollection {
         }
         
         # Report what was collected
-        Write-LogMessage "Local collection completed:" -Level "Success"
+        Write-LogMessage "Local collection completed" -Level "Success"
         if ($siteCode) {
-            Write-LogMessage "  Site code: $siteCode" -Level "Info"
+            Write-LogMessage "Site code: $siteCode" -Level "Info"
         }
-        Write-LogMessage "  Management points found: $($allManagementPoints.Count)" -Level "Info"
-        Write-LogMessage "  Client device created/updated: $(if ($clientId) { '1' } else { '0' })" -Level "Info"
-        Write-LogMessage "  Additional RFC-1918 systems from logs: $($uncPaths.Count)" -Level "Info"
-        Write-LogMessage "  Site system roles total: $($script:SiteSystemRoles.Count)" -Level "Info"
+        Write-LogMessage "Management points found: $($allManagementPoints.Count)" -Level "Info"
+        Write-LogMessage "Client device created/updated: $(if ($clientId) { '1' } else { '0' })" -Level "Info"
+        Write-LogMessage "Site system roles total: $($script:SiteSystemRoles.Count)" -Level "Info"
         
     } catch {
         Write-LogMessage "Local collection failed: $_" -Level "Error"
@@ -1883,15 +1769,10 @@ function Invoke-DNSCollection {
             $fqdn = $mp.FQDN
             $siteCode = $mp.SiteCode
             $adObject = $mp.ADObject
-            
-            # Add to collection targets
-            if (-not $script:CollectionTargets.ContainsKey($fqdn)) {
-                $script:CollectionTargets[$fqdn] = @{
-                    "Source" = "DNS"
-                    "Hostname" = $fqdn
-                    "Collected" = $false
-                    "ADObject" = $adObject
-                }
+
+            $collectionTarget = Add-DeviceToTargets -DeviceName $fqdn -Source "DNS"
+            if ($collectionTarget -and $collectionTarget.IsNew) {
+                Write-LogMessage -Level Success "DNS: Found management point $fqdn for site $siteCode"
             }
             
             # Create site system role entry
@@ -1913,10 +1794,10 @@ function Invoke-DNSCollection {
         }
         
         # Report what was collected
-        Write-LogMessage "DNS collection completed:" -Level "Success"
-        Write-LogMessage "  Management points found via ADIDNS: $($adidnsRecords.Count)" -Level "Info"
-        Write-LogMessage "  Management points found via targeted DNS: $($dnsDiscoveredMPs.Count)" -Level "Info"
-        Write-LogMessage "  Total unique management points: $($allDiscoveredMPs.Count)" -Level "Info"        
+        Write-LogMessage "DNS collection completed" -Level "Success"
+        Write-LogMessage "Management points found via ADIDNS: $($adidnsRecords.Count)" -Level "Info"
+        Write-LogMessage "Management points found via targeted DNS: $($dnsDiscoveredMPs.Count)" -Level "Info"
+        Write-LogMessage "Total unique management points: $($allDiscoveredMPs.Count)" -Level "Info"        
     } catch {
         Write-LogMessage "DNS collection failed: $_" -Level "Error"
     }
@@ -2073,44 +1954,17 @@ function Invoke-RemoteRegistryCollection {
             # Process component servers
             if ($componentResult) {
                 foreach ($componentServerFQDN in $componentResult) {
-                    # Resolve component server to AD object
-                    try {
-                        $componentADObject = Get-ADObjectByHostname -Hostname $componentServerFQDN -Domain $script:Domain
-                        if ($componentADObject) {
-                            $componentServers += @{
-                                "FQDN" = $componentServerFQDN
-                                "ADObject" = $componentADObject
-                                "SiteCode" = $siteCode
-                            }
-                            Write-LogMessage "Found component server: $componentServerFQDN" -Level "Success"
-                            
-                            # Add to targets for subsequent collection phases
-                            if (-not $script:CollectionTargets.ContainsKey($componentServerFQDN)) {
-                                $script:CollectionTargets[$componentServerFQDN] = @{
-                                    "Source" = "RemoteRegistry-ComponentServer"
-                                    "Hostname" = $componentServerFQDN
-                                    "Collected" = $false
-                                    "ADObject" = $componentADObject
-                                }
-                            }
-                        } else {
-                            Write-LogMessage "Failed to resolve component server $componentServerFQDN)" -Level "Warning"
-                            $componentServers += @{
-                                "FQDN" = $componentServerFQDN
-                                "ADObject" = $null
-                                "SiteCode" = $siteCode
-                            }
-                        }
-                    } catch {
-                        Write-LogMessage "Error resolving component server $componentServerFQDN`: $_" -Level "Warning"
+                    $collectionTarget = Add-DeviceToTargets -DeviceName $componentServerFQDN -Source "RemoteRegistry-ComponentServer"
+                    if ($collectionTarget -and $collectionTarget.IsNew){
+                        Write-LogMessage "Found component server: $componentServerFQDN" -Level "Success"
+
                         $componentServers += @{
                             "FQDN" = $componentServerFQDN
-                            "ADObject" = $null
+                            "ObjectIdentifier" = $collectionTarget.ObjectIdentifier
                             "SiteCode" = $siteCode
                         }
                     }
                 }
-                Write-LogMessage "Found $($componentResult.Count) component servers on $target" -Level "Info"
             }
             
             # Query 3: Get site database servers - Job 4
@@ -2142,13 +1996,13 @@ function Invoke-RemoteRegistryCollection {
             }
             
             # Process SQL servers
-            if ($multisiteResult -eq $null -or $multisiteResult.Count -eq 0) {
+            if ($multisiteResult -ne $null -and $multisiteResult.Count -eq 0) {
                 # Site database is local to the site server
                 Write-LogMessage "Site database is local to the site server: $target" -Level "Info"
                 if ($targetADObject) {
                     $sqlServers += @{
                         "FQDN" = $target
-                        "ADObject" = $targetADObject
+                        "ObjectIdentifier" = $targetADObject.SID
                         "SiteCode" = $siteCode
                         "Type" = "Local"
                     }
@@ -2156,84 +2010,30 @@ function Invoke-RemoteRegistryCollection {
             } elseif ($multisiteResult.Count -eq 1) {
                 # Single site database server
                 $sqlServerFQDN = $multisiteResult
-                Write-LogMessage "Found site database server: $sqlServerFQDN" -Level "Success"
-                
-                # Resolve SQL server to AD object
-                try {
-                    $sqlADObject = Get-ADObjectByHostname -Hostname $sqlServerFQDN -Domain $script:Domain
-                    if ($sqlADObject) {
-                        $sqlServers += @{
-                            "FQDN" = $sqlServerFQDN
-                            "ADObject" = $sqlADObject
-                            "SiteCode" = $siteCode
-                            "Type" = "Remote"
-                        }
-                        
-                        # Add to targets for subsequent collection phases
-                        if (-not $script:CollectionTargets.ContainsKey($sqlServerFQDN)) {
-                            $script:CollectionTargets[$sqlServerFQDN] = @{
-                                "Source" = "RemoteRegistry-SQLServer"
-                                "Hostname" = $sqlServerFQDN
-                                "Collected" = $false
-                                "ADObject" = $sqlADObject
-                            }
-                        }
-                    } else {
-                        Write-LogMessage "Failed to resolve SQL server $sqlServerFQDN" -Level "Warning"
-                        $sqlServers += @{
-                            "FQDN" = $sqlServerFQDN
-                            "ADObject" = $null
-                            "SiteCode" = $siteCode
-                            "Type" = "Remote"
-                        }
-                    }
-                } catch {
-                    Write-LogMessage "Error resolving SQL server $sqlServerFQDN`: $_" -Level "Warning"
+                $collectionTarget = Add-DeviceToTargets -DeviceName $sqlServerFQDN -Source "RemoteRegistry-MultisiteComponentServers"
+                if ($collectionTarget -and $collectionTarget.IsNew){
+                    Write-LogMessage "Found site database server: $sqlServerFQDN" -Level "Success"
+
                     $sqlServers += @{
-                        "FQDN" = $sqlServerFQDN
-                        "ADObject" = $null
+                        "FQDN" = $componentServerFQDN
+                        "ObjectIdentifier" = $collectionTarget.ObjectIdentifier
                         "SiteCode" = $siteCode
                         "Type" = "Remote"
                     }
                 }
-            } else {
+
+            } elseif ($multisiteResult.Count -gt 1) {
                 # Multiple SQL servers (clustered)
                 Write-LogMessage "Found clustered site database servers: $($multisiteResult -join ', ')" -Level "Success"
                 foreach ($sqlServerFQDN in $multisiteResult) {
-                    # Resolve SQL server to AD object
-                    try {
-                        $sqlADObject = Get-ADObjectByHostname -Hostname $sqlServerFQDN -Domain $script:Domain
-                        if ($sqlADObject) {
-                            $sqlServers += @{
-                                "FQDN" = $sqlServerFQDN
-                                "ADObject" = $sqlADObject
-                                "SiteCode" = $siteCode
-                                "Type" = "Clustered"
-                            }
-                            
-                            # Add to targets for subsequent collection phases
-                            if (-not $script:CollectionTargets.ContainsKey($sqlServerFQDN)) {
-                                $script:CollectionTargets[$sqlServerFQDN] = @{
-                                    "Source" = "RemoteRegistry-SQLServer"
-                                    "Hostname" = $sqlServerFQDN
-                                    "Collected" = $false
-                                    "ADObject" = $sqlADObject
-                                }
-                            }
-                        } else {
-                            Write-LogMessage "Failed to resolve clustered SQL server $sqlServerFQDN" -Level "Warning"
-                            $sqlServers += @{
-                                "FQDN" = $sqlServerFQDN
-                                "ADObject" = $null
-                                "SiteCode" = $siteCode
-                                "Type" = "Clustered"
-                            }
-                        }
-                    } catch {
-                        Write-LogMessage "Error resolving clustered SQL server $sqlServerFQDN`: $_" -Level "Warning"
+
+                    $collectionTarget = Add-DeviceToTargets -DeviceName $sqlServerFQDN -Source "RemoteRegistry-MultisiteComponentServers"
+                    if ($collectionTarget -and $collectionTarget.IsNew){
+                        Write-LogMessage "Found site database server: $sqlServerFQDN" -Level "Success"
+    
                         $sqlServers += @{
-                            "FQDN" = $sqlServerFQDN
-                            "ADObject" = $null
+                            "FQDN" = $componentServerFQDN
+                            "ObjectIdentifier" = $collectionTarget.ObjectIdentifier
                             "SiteCode" = $siteCode
                             "Type" = "Clustered"
                         }
@@ -2276,6 +2076,7 @@ function Invoke-RemoteRegistryCollection {
             }
             
             # Process current user SIDs
+            $sid = $null
             if ($currentUserResult -and $currentUserResult.Count -eq 0) {
                 Write-LogMessage "No values found in CurrentUser subkey on $target" -Level "Info"
             } elseif ($currentUserResult -and $currentUserResult.Count -eq 2) {
@@ -2314,7 +2115,7 @@ function Invoke-RemoteRegistryCollection {
             if ($regConnectionSuccessful) {
                 # Mark target as collected
                 $script:CollectionTargets[$target]["SiteCode"] = $siteCode
-                $script:CollectionTargets[$target]["ADObject"] = $targetADObject
+                $script:CollectionTargets[$target]["ObjectIdentifier"] = $targetADObject.SID
                 
                 # If any of the registry keys existed, this is a site server
                 if ($siteCode -or $componentServers.Count -gt 0 -or $sqlServers.Count -gt 0) {
@@ -2341,7 +2142,7 @@ function Invoke-RemoteRegistryCollection {
                 foreach ($componentServer in $componentServers) {
                     $siteSystemRole = @{
                         "dNSHostName" = $componentServer.FQDN
-                        "ObjectIdentifier" = if ($componentServer.ADObject) { $componentServer.ADObject.SID } else { $null }
+                        "ObjectIdentifier" = $componentServer.ObjectIdentifier
                         "Roles" = @(
                             @{
                                 "Name" = "SMS Component Server"
@@ -2352,7 +2153,6 @@ function Invoke-RemoteRegistryCollection {
                             }
                         )
                         "Source" = "RemoteRegistry"
-                        "ADObject" = $componentServer.ADObject
                     }
                     $script:SiteSystemRoles += $siteSystemRole
                 }
@@ -2378,19 +2178,19 @@ function Invoke-RemoteRegistryCollection {
                 }
                 
                 Write-LogMessage "Remote Registry collection completed for $target" -Level "Success"
-                Write-LogMessage "  Site code: $siteCode" -Level "Info"
-                Write-LogMessage "  Component servers found: $($componentServers.Count)" -Level "Info"
-                Write-LogMessage "  SQL servers found: $($sqlServers.Count)" -Level "Info"
-                Write-LogMessage "  Current user: $sid" -Level "Info"
+                Write-LogMessage "Site code: $siteCode" -Level "Info"
+                Write-LogMessage "Component servers found: $($componentServers.Count)" -Level "Info"
+                Write-LogMessage "SQL servers found: $($sqlServers.Count)" -Level "Info"
+                Write-LogMessage "Current user: $sid" -Level "Info"
             }
         } catch {
             Write-LogMessage "Remote Registry collection failed for $target`: $_" -Level "Warning"
         }
     }
     
-    Write-LogMessage "Remote Registry collection phase completed." -Level "Success"
-    Write-LogMessage "  Total session data entries: $($script:SessionData.Count)" -Level "Info"
-    Write-LogMessage "  Total site system roles from registry: $(($script:SiteSystemRoles | Where-Object { $_.Source -eq 'RemoteRegistry' }).Count)" -Level "Info"
+    Write-LogMessage "Remote Registry collection phase completed" -Level "Success"
+    Write-LogMessage "Total session data entries: $($script:SessionData.Count)" -Level "Info"
+    Write-LogMessage "Total site system roles from registry: $(($script:SiteSystemRoles | Where-Object { $_.Source -eq 'RemoteRegistry' }).Count)" -Level "Info"
 }
 
 #endregion
@@ -3265,7 +3065,7 @@ function Invoke-SmsProviderWmiCollection {
         }
     }
     
-    Write-LogMessage "SMS Provider WMI collection phase completed." -Level "Success"
+    Write-LogMessage "SMS Provider WMI collection phase completed" -Level "Success"
 }
 
 function Get-SCCMSitesViaWMI {
@@ -3925,7 +3725,7 @@ function Invoke-HTTPCollection {
         }
     }
     
-    Write-LogMessage "HTTP collection phase completed." -Level "Success"
+    Write-LogMessage "HTTP collection phase completed" -Level "Success"
 }
 
 #endregion
@@ -4199,7 +3999,7 @@ function Invoke-SMBCollection {
         }
     }
     
-    Write-LogMessage "SMB collection phase completed." -Level "Success"
+    Write-LogMessage "SMB collection phase completed" -Level "Success"
 }
 
 #endregion
@@ -4678,6 +4478,69 @@ function Process-AssignSpecificPermissionsEdges {
 
 #region Helper Functions
 
+function Add-DeviceToTargets {
+    param(
+        [string]$DeviceName,
+        [string]$Source
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($DeviceName)) { return $null }
+    
+    # Try to resolve to AD object to get canonical identifier
+    $adObject = Get-ADObjectByHostname -Hostname $DeviceName -Domain $script:Domain
+    
+    # Use ObjectSID as deduplication key if resolved, otherwise use lowercase name
+    if ($adObject -and $adObject.SID) {
+        $dedupKey = $adObject.SID
+        $canonicalName = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
+    } else {
+        $dedupKey = $DeviceName.ToLower()
+        $canonicalName = $DeviceName
+        Write-LogMessage "Could not resolve '$DeviceName' to domain object" -Level "Warning"
+    }
+    
+    # Check if we already have this device
+    $existingTarget = $script:CollectionTargets.Values | Where-Object { $_.DedupKey -eq $dedupKey }
+    
+    if ($existingTarget) {
+        # PREFER FQDN: Update hostname if current input is FQDN and existing is not
+        if ($DeviceName -contains '.' -and $existingTarget.Hostname -notcontains '.') {
+            Write-LogMessage "Upgrading target from NetBIOS '$($existingTarget.Hostname)' to FQDN '$DeviceName'" -Level "Info"
+            $existingTarget.Hostname = $DeviceName
+        }
+        
+        # Add source to existing entry
+        if ($existingTarget.Source -notlike "*$Source*") {
+            $existingTarget.Source += ", $Source"
+        }
+        Write-LogMessage "Deduplicated: '$DeviceName' -> existing target '$($existingTarget.Hostname)'" -Level "Verbose"
+        
+        # Return existing target info
+        return @{
+            Hostname = $existingTarget.Hostname
+            ObjectIdentifier = $existingTarget.ObjectIdentifier
+            IsNew = $false
+        }
+    } else {
+        # Add new target
+        $script:CollectionTargets[$canonicalName] = @{
+            "Source" = $Source
+            "Hostname" = $canonicalName
+            "Collected" = $false
+            "DedupKey" = $dedupKey
+            "ObjectIdentifier" = if ($adObject) { $adObject.SID } else { $null }
+        }
+        Write-LogMessage "Added collection target: $canonicalName from $Source" -Level "Info"
+        
+        # Return new target info
+        return @{
+            Hostname = $canonicalName
+            ObjectIdentifier = if ($adObject) { $adObject.SID } else { $null }
+            IsNew = $true
+        }
+    }
+}
+
 function Get-SameAdminsAsSites {
     param([string]$SiteIdentifier)
     
@@ -4983,6 +4846,13 @@ function Start-SCCMCollection {
             $script:ADModuleAvailable = $true
         } else {
             Write-LogMessage "Active Directory module not available, using .NET fallback" -Level "Warning"
+            try {
+                Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+                Add-Type -AssemblyName System.DirectoryServices
+                Write-LogMessage "DirectoryServices fallback initialized" -Level "Success"
+            } catch {
+                Write-LogMessage "Failed to initialize DirectoryServices fallback: $_" -Level "Error"
+            }
         }
     } catch {
         Write-LogMessage "Failed to load Active Directory module: $_" -Level "Warning"
@@ -5000,12 +4870,16 @@ function Start-SCCMCollection {
             "IsSMSProvider" = $true
         }
         
-        # AdminService and WMI collection only
-        $smsProviderTargets = @($SMSProvider)
-        foreach ($smsProviderTarget in $smsProviderTargets) {
-            Invoke-AdminServiceCollection -Target $smsProviderTarget
+        # Only AdminService and WMI are applicable for SMS Provider mode
+        if ($enableAdminService) {
+            Write-LogMessage "Executing AdminService collection on SMS Provider" -Level "Info"
+            Invoke-AdminServiceCollection -Target $SMSProvider
         }
-        Invoke-SmsProviderWmiCollection -Targets $smsProviderTargets
+        
+        if ($enableWMI) {
+            Write-LogMessage "Executing WMI collection on SMS Provider" -Level "Info"
+            Invoke-SmsProviderWmiCollection -Targets @($SMSProvider)
+        }
         
     } elseif ($ComputerFile) {
         Write-LogMessage "Using ComputerFile mode: $ComputerFile" -Level "Info"
@@ -5025,85 +4899,115 @@ function Start-SCCMCollection {
             }
         }
         
-        # Remote Registry, AdminService, HTTP, SMB collection only
-        Invoke-RemoteRegistryCollection -Targets $computerTargets
-        foreach ($computerTarget in $computerTargets) {
-            Invoke-AdminServiceCollection -Target $computerTarget
+        # Execute enabled methods for ComputerFile mode
+        if ($enableRemoteRegistry) {
+            Write-LogMessage "Executing Remote Registry collection" -Level "Info"
+            Invoke-RemoteRegistryCollection -Targets $computerTargets
         }
-        Invoke-HTTPCollection -Targets $computerTargets
-        Invoke-SMBCollection -Targets $computerTargets
         
-    } else {
-        Write-LogMessage "Using default collection mode (All methods)" -Level "Info"
+        if ($enableAdminService) {
+            Write-LogMessage "Executing AdminService collection" -Level "Info"
+            foreach ($computerTarget in $computerTargets) {
+                Invoke-AdminServiceCollection -Target $computerTarget
+            }
+        }
         
-        # Full collection methodology as specified in design documents
-        if ($CollectionMethod -eq "All" -or $CollectionMethod -contains "SCCM") {
-            
-            # Phase 1: LDAP - Identify targets in System Management container
+        if ($enableHTTP) {
+            Write-LogMessage "Executing HTTP collection" -Level "Info"
+            Invoke-HTTPCollection -Targets $computerTargets
+        }
+        
+        if ($enableSMB) {
+            Write-LogMessage "Executing SMB collection" -Level "Info"
+            Invoke-SMBCollection -Targets $computerTargets
+        }
+        
+    } else {        
+        # Phase 1: LDAP - Identify targets in System Management container
+        if ($enableLDAP) {
+            Write-LogMessage "Executing LDAP collection phase" -Level "Info"
             if ($script:Domain) {
                 Invoke-LDAPCollection
             } else {
                 Write-LogMessage "No domain specified, skipping LDAP collection" -Level "Warning"
             }
-            
-            # Phase 2: Local - Data available when running on SCCM client
+        }
+        
+        # Phase 2: Local - Data available when running on SCCM client
+        if ($enableLocal) {
+            Write-LogMessage "Executing Local collection phase" -Level "Info"
             Invoke-LocalCollection
-            
-            # Phase 3: DNS - Management points published to DNS
+        }
+        
+        # Phase 3: DNS - Management points published to DNS
+        if ($enableDNS) {
+            Write-LogMessage "Executing DNS collection phase" -Level "Info"
             if ($script:Domain) {
                 Invoke-DNSCollection
             } else {
                 Write-LogMessage "No domain specified, skipping DNS collection" -Level "Warning"
             }
-            
-            # Get list of targets identified so far
-            $identifiedTargets = $script:CollectionTargets.Keys | Where-Object { 
-                -not $script:CollectionTargets[$_]["Collected"] 
-            }
-            
-            if ($identifiedTargets.Count -eq 0) {
-                Write-LogMessage "No SCCM targets identified. Ensure you have appropriate permissions and are in an SCCM environment." -Level "Warning"
-                return
-            }
-            
+        }
+        
+        # Get list of targets identified so far for subsequent phases
+        $identifiedTargets = $script:CollectionTargets.Keys | Where-Object { 
+            -not $script:CollectionTargets[$_]["Collected"] 
+        }
+        
+        if ($identifiedTargets.Count -eq 0 -and ($enableRemoteRegistry -or $enableAdminService -or $enableWMI -or $enableHTTP -or $enableSMB)) {
+            Write-LogMessage "No SCCM targets identified from LDAP/Local/DNS phases. Ensure you have appropriate permissions and are in an SCCM environment." -Level "Warning"
+            return
+        }
+        
+        if ($identifiedTargets.Count -gt 0) {
             Write-LogMessage "Identified $($identifiedTargets.Count) potential SCCM targets" -Level "Info"
             
             # Phase 4: Remote Registry - On targets identified in previous phases
-            Invoke-RemoteRegistryCollection -Targets $identifiedTargets
+            if ($enableRemoteRegistry) {
+                Write-LogMessage "Executing Remote Registry collection phase" -Level "Info"
+                Invoke-RemoteRegistryCollection -Targets $identifiedTargets
+            }
             
             # Phase 5: AdminService - On targets identified in previous phases
-            foreach ($identifiedTarget in $identifiedTargets) {
-                Invoke-AdminServiceCollection -Target $identifiedTarget
+            if ($enableAdminService) {
+                Write-LogMessage "Executing AdminService collection phase" -Level "Info"
+                foreach ($identifiedTarget in $identifiedTargets) {
+                    Invoke-AdminServiceCollection -Target $identifiedTarget
+                }
             }
             
             # Phase 6: WMI - If AdminService collection fails
-            $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
-                -not $script:CollectionTargets[$_]["Collected"] 
-            }
-            if ($uncollectedTargets.Count -gt 0) {
-                Invoke-SmsProviderWmiCollection -Targets $uncollectedTargets
+            if ($enableWMI) {
+                Write-LogMessage "Executing WMI collection phase" -Level "Info"
+                $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
+                    -not $script:CollectionTargets[$_]["Collected"] 
+                }
+                if ($uncollectedTargets.Count -gt 0) {
+                    Invoke-SmsProviderWmiCollection -Targets $uncollectedTargets
+                }
             }
             
             # Phase 7: HTTP - If AdminService and WMI collections fail
-            $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
-                -not $script:CollectionTargets[$_]["Collected"] 
-            }
-            if ($uncollectedTargets.Count -gt 0) {
-                Invoke-HTTPCollection -Targets $uncollectedTargets
+            if ($enableHTTP) {
+                Write-LogMessage "Executing HTTP collection phase" -Level "Info"
+                $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
+                    -not $script:CollectionTargets[$_]["Collected"] 
+                }
+                if ($uncollectedTargets.Count -gt 0) {
+                    Invoke-HTTPCollection -Targets $uncollectedTargets
+                }
             }
             
             # Phase 8: SMB - If AdminService and WMI collections fail
-            $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
-                -not $script:CollectionTargets[$_]["Collected"] 
+            if ($enableSMB) {
+                Write-LogMessage "Executing SMB collection phase" -Level "Info"
+                $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
+                    -not $script:CollectionTargets[$_]["Collected"] 
+                }
+                if ($uncollectedTargets.Count -gt 0) {
+                    Invoke-SMBCollection -Targets $uncollectedTargets
+                }
             }
-            if ($uncollectedTargets.Count -gt 0) {
-                Invoke-SMBCollection -Targets $uncollectedTargets
-            }
-        }
-        
-        if ($CollectionMethod -eq "Local") {
-            # Local collection only
-            Invoke-LocalCollection
         }
     }
     
@@ -5113,26 +5017,26 @@ function Start-SCCMCollection {
     $uncollectedTargets = $totalTargets - $collectedTargets
     
     Write-LogMessage "Collection Statistics:" -Level "Info"
-    Write-LogMessage "  Total targets identified: $totalTargets" -Level "Info"
-    Write-LogMessage "  Successfully collected: $collectedTargets" -Level "Success"
-    Write-LogMessage "  Failed to collect: $uncollectedTargets" -Level "Warning"
+    Write-LogMessage "Total targets identified: $totalTargets" -Level "Info"
+    Write-LogMessage "Successfully collected: $collectedTargets" -Level "Success"
+    Write-LogMessage "Failed to collect: $uncollectedTargets" -Level "Warning"
     
     # Report collected data statistics
     Write-LogMessage "Data Collection Summary:" -Level "Info"
-    Write-LogMessage "  Sites: $($script:Sites.Count)" -Level "Info"
-    Write-LogMessage "  Client Devices: $($script:ClientDevices.Count)" -Level "Info"
-    Write-LogMessage "  Collections: $($script:Collections.Count)" -Level "Info"
-    Write-LogMessage "  Security Roles: $($script:SecurityRoles.Count)" -Level "Info"
-    Write-LogMessage "  Admin Users: $($script:AdminUsers.Count)" -Level "Info"
-    Write-LogMessage "  Site System Roles: $($script:SiteSystemRoles.Count)" -Level "Info"
+    Write-LogMessage "Sites: $($script:Sites.Count)" -Level "Info"
+    Write-LogMessage "Client Devices: $($script:ClientDevices.Count)" -Level "Info"
+    Write-LogMessage "Collections: $($script:Collections.Count)" -Level "Info"
+    Write-LogMessage "Security Roles: $($script:SecurityRoles.Count)" -Level "Info"
+    Write-LogMessage "Admin Users: $($script:AdminUsers.Count)" -Level "Info"
+    Write-LogMessage "Site System Roles: $($script:SiteSystemRoles.Count)" -Level "Info"
     
     # Post-processing and edge creation
     Invoke-PostProcessing
     
     # Report edge statistics
     Write-LogMessage "Edge Creation Summary:" -Level "Info"
-    Write-LogMessage "  Total nodes created: $($script:NodesOutput.Count)" -Level "Info"
-    Write-LogMessage "  Total edges created: $($script:EdgesOutput.Count)" -Level "Info"
+    Write-LogMessage "Total nodes created: $($script:NodesOutput.Count)" -Level "Info"
+    Write-LogMessage "Total edges created: $($script:EdgesOutput.Count)" -Level "Info"
     
     # Export data
     Export-BloodHoundData
@@ -5188,7 +5092,7 @@ function Test-Prerequisites {
     if ($issues.Count -gt 0) {
         Write-LogMessage "Prerequisites check failed:" -Level "Error"
         foreach ($issue in $issues) {
-            Write-LogMessage "  - $issue" -Level "Error"
+            Write-LogMessage "- $issue" -Level "Error"
         }
         return $false
     }
@@ -5206,7 +5110,7 @@ try {
     Write-Host ("=" * 80 ) -ForegroundColor Cyan
     Write-Host "ConfigManBearPig - SCCM Data Collector for BloodHound" -ForegroundColor Cyan
     Write-Host "Version: $script:ScriptVersion" -ForegroundColor Cyan
-    Write-Host "Collection Method: $CollectionMethod" -ForegroundColor Cyan
+    Write-Host "Collection Method: $CollectionMethods" -ForegroundColor Cyan
     Write-Host ("=" * 80) -ForegroundColor Cyan
     Write-Host ""
     
