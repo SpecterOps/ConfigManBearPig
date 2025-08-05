@@ -69,9 +69,6 @@ Specify a PSCredential object for authentication
 .PARAMETER SkipPostProcessing
 Skip post-processing edge creation (creates only direct edges from collection)
 
-.PARAMETER DoNotTreatCmRcServiceHostsAsClients
-Do not automatically treat computers with CmRcService SPNs as SCCM client devices (default behavior is to treat them as clients)
-
 .PARAMETER Verbose
 Enable verbose output
 
@@ -101,8 +98,6 @@ param(
     
     [switch]$SkipPostProcessing,
 
-    [switch]$DoNotTreatCmRcServiceHostsAsClients,
-    
     [switch]$Version
 )
 
@@ -165,7 +160,7 @@ if ($SiteCodes) {
     if (Test-Path $SiteCodes) {
         # File containing site codes
         try {
-            $script:TargetSiteCodes = Get-Content $SiteCodes | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim().ToUpper() }
+            $script:TargetSiteCodes = Get-Content $SiteCodes | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
             Write-LogMessage "Loaded $($script:TargetSiteCodes.Count) site codes from file: $SiteCodes" -Level "Info"
         } catch {
             Write-LogMessage "Failed to read site codes file: $_" -Level "Error"
@@ -173,7 +168,7 @@ if ($SiteCodes) {
         }
     } else {
         # Comma-separated string
-        $script:TargetSiteCodes = $SiteCodes -split "," | ForEach-Object { $_.Trim().ToUpper() } | Where-Object { $_ -ne "" }
+        $script:TargetSiteCodes = $SiteCodes -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
         Write-LogMessage "Targeting site codes: $($script:TargetSiteCodes -join ', ')" -Level "Info"
     }
 }
@@ -191,8 +186,8 @@ $script:OutputFiles = @()
 $script:Domain = $Domain
 
 # Initialize output structures
-$script:NodesOutput = @()
-$script:EdgesOutput = @()
+$script:Nodes = @()
+$script:Edges = @()
 
 # Disable certificate validation
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
@@ -201,8 +196,8 @@ $script:EdgesOutput = @()
 
 function Write-LogMessage {
     param(
-        [string]$Message,
-        [string]$Level = "Info"
+        [string]$Level = "Info",
+        [string]$Message
     )
     
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -244,43 +239,156 @@ function Get-DomainController {
             return $domain.FindDomainController().Name
         }
     } catch {
-        Write-LogMessage "Failed to find domain controller: $_" -Level "Warning"
+        Write-LogMessage Warning "Failed to find domain controller: $_"
         return $null
     }
 }
 
-function New-SCCMNode {
+function Add-Node {
     param(
-        [string]$ObjectIdentifier,
-        [string]$NodeType,
+        [string]$Id,
+        [string[]]$Kinds,
         [hashtable]$Properties
     )
     
-    $node = @{
-        "ObjectIdentifier" = $ObjectIdentifier
-        "Properties" = $Properties
-        "Kind" = $NodeType
+    # Check if node already exists and merge properties if it does
+    $existingNode = $script:Nodes | Where-Object { $_.id -eq $Id }
+    if ($existingNode) {
+        # Merge new properties into existing node
+        foreach ($key in $Properties.Keys) {
+            if ($null -ne $Properties[$key]) {
+                $existingNode.properties[$key] = $Properties[$key]
+            }
+        }
+        Write-LogMessage Verbose "Found existing node: $($existingNode.Properties.Name) ($Id)"
+    } else {
+        # Filter out null properties and create new node
+        $cleanProperties = @{}
+        foreach ($key in $Properties.Keys) {
+            if ($null -ne $Properties[$key]) {
+                $cleanProperties[$key] = $Properties[$key]
+            }
+        }
+
+        $node = [PSCustomObject]@{
+            id = $Id
+            kinds = $Kinds
+            properties = $cleanProperties
+        }
+        
+        $script:Nodes += $node
+        Write-LogMessage Verbose "Added $($Kinds[0]) node: $Id (node count: $($script:Nodes.Count))"
     }
     
-    return $node
+    # Auto-create Host nodes and SameHostAs edges for Computer/ClientDevice pairs
+    if ($Kinds -contains "Computer" -or $Kinds -contains "SCCM_ClientDevice") {
+        Create-HostNodeIfNeeded -NodeId $Id -NodeKinds $Kinds -NodeProperties $Properties
+    }
 }
 
-function New-SCCMEdge {
+function Create-HostNodeIfNeeded {
     param(
-        [string]$SourceNode,
-        [string]$TargetNode,
-        [string]$EdgeType,
+        [string]$NodeId,
+        [string[]]$NodeKinds,
+        [hashtable]$NodeProperties
+    )
+    
+    if ($NodeKinds -contains "Computer") {
+        # Look for SCCM_ClientDevice with ADDomainSID matching this Computer's ID
+        $matchingClient = $script:Nodes | Where-Object { 
+            $_.kinds -contains "SCCM_ClientDevice" -and 
+            $_.properties.ADDomainSID -eq $NodeId 
+        }
+        
+        if ($matchingClient) {
+            Create-HostAndEdges -ComputerSid $NodeId -ClientDeviceId $matchingClient.id -Hostname $NodeProperties.dnshostname
+        }
+        
+    } elseif ($NodeKinds -contains "SCCM_ClientDevice" -and $NodeProperties.ADDomainSID) {
+        # Look for Computer with ID matching this ClientDevice's ADDomainSID
+        $matchingComputer = $script:Nodes | Where-Object { 
+            $_.kinds -contains "Computer" -and 
+            $_.id -eq $NodeProperties.ADDomainSID 
+        }
+        
+        if ($matchingComputer) {
+            Create-HostAndEdges -ComputerSid $NodeProperties.ADDomainSID -ClientDeviceId $NodeId -Hostname $NodeProperties.DNSHostName
+        }
+    }
+}
+
+function Create-HostAndEdges {
+    param(
+        [string]$ComputerSid,
+        [string]$ClientDeviceId, 
+        [string]$Hostname
+    )
+    
+    # Check if Host node already exists for this Computer SID
+    if ($script:Nodes | Where-Object { $_.kinds -contains "Host" -and $_.properties.Computer -eq $ComputerSid }) {
+        return  # Host already exists
+    }
+    
+    # Generate Host node ID: dnshostname_GUID
+    $hostGuid = [System.Guid]::NewGuid().ToString()
+    $hostId = "${Hostname}_${hostGuid}"
+    
+    # Create Host node
+    $script:Nodes += [PSCustomObject]@{
+        id = $hostId
+        kinds = @("Host")
+        properties = @{
+            Computer = $ComputerSid
+            SCCM_ClientDevice = $ClientDeviceId
+        }
+    }
+    
+    # Create all four SameHostAs edges
+    $edgesToCreate = @(
+        @{Source = $ComputerSid; Target = $hostId},      # Computer -> Host
+        @{Source = $hostId; Target = $ComputerSid},      # Host -> Computer
+        @{Source = $ClientDeviceId; Target = $hostId},   # ClientDevice -> Host
+        @{Source = $hostId; Target = $ClientDeviceId}    # Host -> ClientDevice
+    )
+    
+    foreach ($edge in $edgesToCreate) {
+        $script:Edges += [PSCustomObject]@{
+            start = $edge.Source
+            end = $edge.Target
+            kind = "SameHostAs"
+        }
+    }
+    
+    Write-LogMessage Verbose "Created Host node $hostId and SameHostAs edges for Computer: $ComputerSid"
+}
+
+# Helper function to add edges during collection and processing
+function Add-Edge {
+    param(
+        [string]$Source,
+        [string]$Target,
+        [string]$Kind,
         [hashtable]$Properties = @{}
     )
     
-    $edge = @{
-        "SourceNode" = $SourceNode
-        "TargetNode" = $TargetNode
-        "EdgeType" = $EdgeType
-        "Properties" = $Properties
+    # Filter out null properties
+    $cleanProperties = @{}
+    foreach ($key in $Properties.Keys) {
+        if ($null -ne $Properties[$key]) {
+            $cleanProperties[$key] = $Properties[$key]
+        }
+    }
+
+    # Create new edge
+    $edge = [PSCustomObject]@{
+        source = $Source
+        target = $Target
+        kind = $Kind
+        properties = $cleanProperties
     }
     
-    return $edge
+    $script:Edges += $edge
+    Write-LogMessage Verbose "Added $Kind edge: $Source -> $Target (edge count: $($script:Edges.Count))"
 }
 
 #endregion
@@ -300,166 +408,136 @@ function Get-ForestRoot {
             return $rootDSE.Properties["rootDomainNamingContext"][0] 
         }
     } catch {
-        Write-LogMessage "Failed to retrieve forest root: $_" -Level "Warning"
+        Write-LogMessage Warning "Failed to retrieve forest root: $_"
     }
     return $null
 }
 
-function Resolve-DomainPrincipalSID {
+function Get-ActiveDirectoryObject {
     param (
-        [string]$PrincipalName,
+        [string]$Name = $null,
+        [string]$Sid = $null,
         [string]$Domain = $script:Domain,
-        [string[]]$AlternativeDomains = @()
+        [string[]]$Properties = @("objectSid", "DNSHostName", "distinguishedName", "samAccountName", "userPrincipalName", "objectClass")
     )
-    
-    if (-not $PrincipalName) {
-        return $null
+   
+    if ([string]::IsNullOrWhiteSpace($Name) -and [string]::IsNullOrWhiteSpace($Sid)) { 
+        return $null 
     }
     
-    # Cache for resolved principals
-    if (-not $script:PrincipalCache) {
-        $script:PrincipalCache = @{}
-    }
+    $searchValue = if ($Sid) { $Sid } else { $Name }
+    $isSearchBySid = -not [string]::IsNullOrWhiteSpace($Sid)
     
-    $cacheKey = "$PrincipalName@$Domain"
-    if ($script:PrincipalCache.ContainsKey($cacheKey)) {
-        return $script:PrincipalCache[$cacheKey]
-    }
-    
-    # Parse principal name
-    $name = $PrincipalName
-    $targetDomain = $Domain
-    
-    if ($PrincipalName -match "\\") {
-        $parts = $PrincipalName.Split('\')
-        $targetDomain = $parts[0]
-        $name = $parts[1]
-    } elseif ($PrincipalName -match "@") {
-        $parts = $PrincipalName.Split('@')
-        $name = $parts[0]
-        $targetDomain = $parts[1]
-    } elseif ($PrincipalName -match "\.") {
-        $name = $PrincipalName.Split('.')[0]
-    }
-    
-    # Try primary domain first
-    $result = Resolve-PrincipalInDomain -Name $name -Domain $targetDomain
-    if ($result) {
-        $script:PrincipalCache[$cacheKey] = $result
-        return $result
-    }
-    
-    # Try alternative domains
-    foreach ($altDomain in $AlternativeDomains) {
-        $result = Resolve-PrincipalInDomain -Name $name -Domain $altDomain
-        if ($result) {
-            $script:PrincipalCache[$cacheKey] = $result
-            return $result
-        }
-    }
-    
-    return $null
-}
-
-function Resolve-PrincipalInDomain {
-    param (
-        [string]$Name,
-        [string]$Domain
-    )
-    
-    Write-LogMessage -Level Debug "Attempting to resolve '$Name' in domain '$Domain'"
-    
-    # Try Active Directory PowerShell module first
     if ($script:ADModuleAvailable) {
-        Write-LogMessage -Level Debug "Trying AD PowerShell module in domain: $Domain"
-        
         try {
-            $adObject = $null
-            $adParams = @{ Identity = $Name }
-            
-            # Set server parameter if domain is different
+            $serverParam = @{}
             if ($Domain -and $Domain -ne $env:USERDOMAIN -and $Domain -ne $env:USERDNSDOMAIN) {
-                $adParams.Server = $Domain
+                $serverParam.Server = $Domain
             }
             
-            # Try Computer first
-            try {
-                $adObject = Get-ADComputer @adParams -Properties objectSid, DNSHostName -ErrorAction Stop
-                return [PSCustomObject]@{
-                    Name = "$Domain\$($adObject.Name)"
-                    SID = $adObject.objectSid.Value
-                    Domain = $Domain
-                    Type = "Computer"
-                    DNSHostName = $adObject.DNSHostName
-                    DistinguishedName = $adObject.DistinguishedName
-                }
-            } catch {
-                # Try User
+            if ($isSearchBySid) {
+                # Search by SID
                 try {
-                    $adObject = Get-ADUser @adParams -Properties objectSid -ErrorAction Stop
-                    return [PSCustomObject]@{
-                        Name = "$Domain\$($adObject.Name)"
-                        SID = $adObject.objectSid.Value
-                        Domain = $Domain
-                        Type = "User"
-                        DNSHostName = $null
-                        DistinguishedName = $adObject.DistinguishedName
-                    }
-                } catch {
-                    # Try Group
-                    try {
-                        $adObject = Get-ADGroup @adParams -Properties objectSid -ErrorAction Stop
+                    $adObject = Get-ADObject -Filter "objectSid -eq '$Sid'" @serverParam -Properties $Properties -ErrorAction Stop
+                    if ($adObject) {
+                        # Determine object type from objectClass
+                        $objectType = switch -Regex ($adObject.objectClass[-1]) {
+                            "computer" { "Computer" }
+                            "user" { "User" }
+                            "group" { "Group" }
+                            default { $adObject.objectClass[-1] }
+                        }
+                        
                         return [PSCustomObject]@{
-                            Name = "$Domain\$($adObject.Name)"
+                            Name = if ($adObject.DNSHostName) { $adObject.DNSHostName } elseif ($adObject.samAccountName) { "$Domain\$($adObject.samAccountName)" } else { "$Domain\$($adObject.Name)" }
                             SID = $adObject.objectSid.Value
                             Domain = $Domain
-                            Type = "Group"
-                            DNSHostName = $null
+                            Type = $objectType
+                            DNSHostName = $adObject.DNSHostName
                             DistinguishedName = $adObject.DistinguishedName
+                            SamAccountName = $adObject.samAccountName
+                            UserPrincipalName = $adObject.userPrincipalName
+                            ObjectClass = $adObject.objectClass
+                            Enabled = if ($adObject.PSObject.Properties.Name -contains "Enabled") { $adObject.Enabled } else { $null }
+                            IsDomainPrincipal = $true
                         }
-                    } catch {
-                        # Try by SID if input looks like a SID
-                        if ($Name -match "^S-\d+-\d+") {
-                            try {
-                                $adParams.Remove('Identity')
-                                $adParams.LDAPFilter = "(objectSid=$Name)"
-                                $adObject = Get-ADObject @adParams -Properties objectSid, objectClass -ErrorAction Stop
-                                
-                                $objectType = if ($adObject.objectClass -contains "computer") { "Computer" }
-                                             elseif ($adObject.objectClass -contains "user") { "User" }
-                                             elseif ($adObject.objectClass -contains "group") { "Group" }
-                                             else { "Object" }
-                                
-                                return [PSCustomObject]@{
-                                    Name = "$Domain\$($adObject.Name)"
-                                    SID = $adObject.objectSid.Value
-                                    Domain = $Domain
-                                    Type = $objectType
-                                    DNSHostName = $adObject.DNSHostName
-                                    DistinguishedName = $adObject.DistinguishedName
-                                }
-                            } catch {
-                                Write-LogMessage -Level Verbose "AD object lookup by SID failed for '$Name': $_"
+                    }
+                } catch {
+                    Write-LogMessage Verbose "Failed to resolve SID '$Sid' using Get-ADObject: $_"
+                }
+            } else {
+                # Search by Name - try different search filters in priority order
+                $searchFilters = @(
+                    "DNSHostName -eq '$Name'",           # FQDN match
+                    "samAccountName -eq '$Name'",        # SAM account name
+                    "userPrincipalName -eq '$Name'",     # UPN for users
+                    "Name -eq '$Name'"                   # Display name
+                )
+                
+                # If name doesn't contain dot and doesn't end with $, try computer account format
+                if ($Name -notcontains '.' -and $Name -notlike '*$') {
+                    $searchFilters += "samAccountName -eq '$Name$'"
+                }
+                
+                foreach ($filter in $searchFilters) {
+                    try {
+                        $adObject = Get-ADObject -Filter $filter @serverParam -Properties $Properties -ErrorAction Stop
+                        if ($adObject) {
+                            # Determine object type from objectClass
+                            $objectType = switch -Regex ($adObject.objectClass[-1]) {
+                                "computer" { "Computer" }
+                                "user" { "User" }
+                                "group" { "Group" }
+                                default { $adObject.objectClass[-1] }
+                            }
+                            
+                            return [PSCustomObject]@{
+                                Name = if ($adObject.DNSHostName) { $adObject.DNSHostName } elseif ($adObject.samAccountName) { "$Domain\$($adObject.samAccountName)" } else { "$Domain\$($adObject.Name)" }
+                                SID = if ($adObject.objectSid) { $adObject.objectSid.Value } else { $null }
+                                Domain = $Domain
+                                Type = $objectType
+                                DNSHostName = $adObject.DNSHostName
+                                DistinguishedName = $adObject.DistinguishedName
+                                SamAccountName = $adObject.samAccountName
+                                UserPrincipalName = $adObject.userPrincipalName
+                                ObjectClass = $adObject.objectClass
+                                Enabled = if ($adObject.PSObject.Properties.Name -contains "Enabled") { $adObject.Enabled } else { $null }
+                                IsDomainPrincipal = $true
                             }
                         }
+                    } catch { 
+                        # Continue to next filter
+                        continue 
                     }
                 }
             }
         } catch {
-            Write-LogMessage -Level Verbose "AD PowerShell module failed for '$Name' in domain '$Domain': $_"
+            Write-LogMessage Verbose "Failed to resolve '$searchValue' using Get-ADObject: $_"
         }
     }
-    
+
     # Try DirectoryServices .NET fallback
-    Write-LogMessage -Level Debug "Trying DirectoryServices for '$Name' in domain '$Domain'"
+    Write-LogMessage Debug "Trying DirectoryServices for '$searchValue' in domain '$Domain'"
     
     try {
         $domainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $Domain)
         $domainObj = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($domainContext)
         $searcher = New-Object System.DirectoryServices.DirectorySearcher
         $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$($domainObj.Name)")
-        $searcher.Filter = "(|(samAccountName=$Name)(cn=$Name)(dNSHostName=$Name))"
-        $searcher.PropertiesToLoad.AddRange(@("objectSid", "objectClass", "distinguishedName", "dNSHostName"))
+        
+        if ($isSearchBySid) {
+            # Search by SID - convert SID string to binary format for LDAP
+            $sidObj = New-Object System.Security.Principal.SecurityIdentifier($Sid)
+            $sidBytes = New-Object byte[] $sidObj.BinaryLength
+            $sidObj.GetBinaryForm($sidBytes, 0)
+            $sidHex = ($sidBytes | ForEach-Object { '\' + $_.ToString('x2') }) -join ''
+            $searcher.Filter = "(objectSid=$sidHex)"
+        } else {
+            # Search by Name
+            $searcher.Filter = "(|(samAccountName=$Name)(cn=$Name)(dNSHostName=$Name))"
+        }
+        
+        $searcher.PropertiesToLoad.AddRange(@("objectSid", "objectClass", "distinguishedName", "dNSHostName", "samAccountName", "cn"))
         
         $result = $searcher.FindOne()
         if ($result) {
@@ -472,35 +550,49 @@ function Resolve-PrincipalInDomain {
                             elseif ($objectClass -contains "group") { "Group" }
                             else { "Object" }
             
+            $resolvedName = if ($result.Properties["samaccountname"].Count -gt 0) { $result.Properties["samaccountname"][0] } else { $result.Properties["cn"][0] }
+            $dnsHostName = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
+            
             return [PSCustomObject]@{
-                Name = "$Domain\$Name"
-                SID = $sid.Value
+                Name = if ($dnsHostName) { $dnsHostName } else { "$Domain\$resolvedName" }
+                SID = $sid
                 Domain = $Domain
                 Type = $objectType
-                DNSHostName = $result.Properties["dnshostname"][0]
+                DNSHostName = $dnsHostName
                 DistinguishedName = $result.Properties["distinguishedname"][0]
+                SamAccountName = $resolvedName
+                UserPrincipalName = $null
+                ObjectClass = $objectClass
+                Enabled = $null
+                IsDomainPrincipal = $true
             }
         }
     } catch {
-        Write-LogMessage -Level Verbose "DirectorySearcher failed for '$Name' in domain '$Domain': $_"
+        Write-LogMessage Warning "DirectorySearcher failed for '$searchValue' in domain '$Domain': $_"
     }
     
     # Try NTAccount translation as last resort
     try {
-        Write-LogMessage -Level Verbose "Attempting NTAccount translation for '$Name' in domain '$Domain'"
+        Write-LogMessage Verbose "Attempting NTAccount translation for '$searchValue' in domain '$Domain'"
         
-        if ($Name -match "^S-\d+-\d+") {
+        if ($isSearchBySid -or $Name -match "^S-\d+-\d+") {
             # SID to name translation
-            $sid = New-Object System.Security.Principal.SecurityIdentifier($Name)
+            $sidValue = if ($isSearchBySid) { $Sid } else { $Name }
+            $sid = New-Object System.Security.Principal.SecurityIdentifier($sidValue)
             $resolvedName = $sid.Translate([System.Security.Principal.NTAccount]).Value
             
             return [PSCustomObject]@{
                 Name = $resolvedName
-                SID = $Name
+                SID = $sidValue
                 Domain = $Domain
                 Type = "Unknown"
                 DNSHostName = $null
                 DistinguishedName = $null
+                SamAccountName = $null
+                UserPrincipalName = $null
+                ObjectClass = $null
+                Enabled = $null
+                IsDomainPrincipal = $true
             }
         } else {
             # Name to SID translation
@@ -514,64 +606,19 @@ function Resolve-PrincipalInDomain {
                 Type = "Unknown"
                 DNSHostName = $null
                 DistinguishedName = $null
+                SamAccountName = $Name
+                UserPrincipalName = $null
+                ObjectClass = $null
+                Enabled = $null
+                IsDomainPrincipal = $true
             }
         }
     } catch {
-        Write-LogMessage -Level Verbose "NTAccount translation failed for '$Name' in domain '$Domain': $_"
+        Write-LogMessage Verbose "NTAccount translation failed for '$searchValue' in domain '$Domain': $_"
     }
     
     # Return failure
     return $null
-}
-
-function Get-ADObjectBySID {
-    param (
-        [string]$SID,
-        [string]$Domain = $script:Domain
-    )
-    
-    return Resolve-PrincipalInDomain -Name $SID -Domain $Domain
-}
-
-function Get-ADObjectByHostname {
-    param (
-        [string]$Hostname,
-        [string]$Domain = $script:Domain
-    )
-   
-    if ($script:ADModuleAvailable) {
-        try {
-            # First try as FQDN/DNSHostName
-            $adParams = @{ Filter = "DNSHostName -eq '$Hostname'" }
-            if ($Domain -and $Domain -ne $env:USERDOMAIN -and $Domain -ne $env:USERDNSDOMAIN) {
-                $adParams.Server = $Domain
-            }
-           
-            $computer = Get-ADComputer @adParams -Properties objectSid, DNSHostName -ErrorAction Stop
-            
-            # If not found and hostname doesn't contain a dot, try as NetBIOS name
-            if (-not $computer -and $Hostname -notcontains '.') {
-                $adParams.Filter = "Name -eq '$Hostname'"
-                $computer = Get-ADComputer @adParams -Properties objectSid, DNSHostName -ErrorAction Stop
-            }
-            
-            if ($computer) {
-                return [PSCustomObject]@{
-                    Name = "$Domain\$($computer.Name)"
-                    SID = $computer.objectSid.Value
-                    Domain = $Domain
-                    Type = "Computer"
-                    DNSHostName = $computer.DNSHostName
-                    DistinguishedName = $computer.DistinguishedName
-                }
-            }
-        } catch {
-            Write-LogMessage -Level Verbose "Failed to resolve hostname '$Hostname' using AD module: $_"
-        }
-    }
-   
-    # Fallback to generic resolution
-    return Resolve-PrincipalInDomain -Name $Hostname -Domain $Domain
 }
 
 #endregion
@@ -579,11 +626,11 @@ function Get-ADObjectByHostname {
 #region LDAP Collection
 
 function Invoke-LDAPCollection {
-    Write-LogMessage "Starting LDAP collection phase..." -Level "Info"
+    Write-LogMessage Info "Starting LDAP collection phase..."
     
     try {
         if (-not $script:Domain) {
-            Write-LogMessage "No domain specified for LDAP collection" -Level "Warning"
+            Write-LogMessage Warning "No domain specified for LDAP collection"
             return
         }
         
@@ -591,20 +638,20 @@ function Invoke-LDAPCollection {
         $domainDN = ($script:Domain -split '\.') -replace '^', 'DC=' -join ','
         $systemManagementDN = "CN=System Management,CN=System,$domainDN"
         
-        Write-LogMessage "Searching System Management container: $systemManagementDN" -Level "Info"
+        Write-LogMessage Info "Searching System Management container: $systemManagementDN"
         
         # Get forest root using our resolution function
         $forestRoot = Get-ForestRoot
         if ($forestRoot) {
-            Write-LogMessage "Found forest root: $forestRoot" -Level "Info"
+            Write-LogMessage Verbose "Found forest root: $forestRoot"
         }
         
         # Get all mSSMSSite objects (Primary sites)
-        Write-LogMessage "Collecting mSSMSSite objects..." -Level "Info"
-        $siteObjects = @()
+        Write-LogMessage Info "Collecting mSSMSSite objects..."
+        $mSSMSSiteObjects = @()
         
         if ($script:ADModuleAvailable) {
-            $siteObjects = Get-ADObject -LDAPFilter "(objectClass=mSSMSSite)" -SearchBase $systemManagementDN -Properties mSSMSHealthState, mSSMSSiteCode, mSSMSSourceForest, objectClass, distinguishedName -ErrorAction SilentlyContinue
+            $mSSMSSiteObjects = Get-ADObject -LDAPFilter "(objectClass=mSSMSSite)" -SearchBase $systemManagementDN -Properties mSSMSHealthState, mSSMSSiteCode, mSSMSSourceForest, objectClass, distinguishedName -ErrorAction SilentlyContinue
         } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
@@ -614,7 +661,7 @@ function Invoke-LDAPCollection {
                 
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
-                    $siteObjects += [PSCustomObject]@{
+                    $mSSMSSiteObjects += [PSCustomObject]@{
                         DistinguishedName = $result.Properties["distinguishedName"][0]
                         mSSMSHealthState = $result.Properties["mSSMSHealthState"][0]
                         mSSMSSiteCode = $result.Properties["mSSMSSiteCode"][0]
@@ -622,69 +669,56 @@ function Invoke-LDAPCollection {
                     }
                 }
             } catch {
-                Write-LogMessage "DirectorySearcher failed for mSSMSSite objects: $_" -Level "Warning"
+                Write-LogMessage Warning "DirectorySearcher failed for mSSMSSite objects: $_"
             }
         }
         
-        foreach ($siteObj in $siteObjects) {
-            $siteCode = $siteObj.mSSMSSiteCode
+        foreach ($mSSMSSiteObj in $mSSMSSiteObjects) {
+            $siteCode = $mSSMSSiteObj.mSSMSSiteCode
+
+            Write-LogMessage Success "Found site: $siteCode"
             
             # Parse health state for SiteGUID
             $siteGuid = $null
-            if ($siteObj.mSSMSHealthState) {
-                if ($siteObj.mSSMSHealthState -match "$siteCode\.(\{[^}]+\})") {
+            if ($mSSMSSiteObj.mSSMSHealthState) {
+                if ($mSSMSSiteObj.mSSMSHealthState -match "$siteCode\.(\{[^}]+\})") {
                     $siteGuid = $matches[1]
                 }
             }
             
             # Use only site code as ObjectIdentifier for LDAP collection
-            $siteIdentifier = $siteCode
+            $objectIdentifier = $siteCode
             
-            # Create site object (only add if not already exists)
-            $existingSite = $script:Sites | Where-Object { $_.SiteCode -eq $siteCode }
-            if (-not $existingSite) {
-                $siteNode = @{
-                    "ObjectIdentifier" = $siteIdentifier
-                    "DistinguishedName" = $siteObj.DistinguishedName
-                    "Name" = $null
-                    "SiteCode" = $siteCode
-                    "SiteName" = $null
-                    "SiteServerDomain" = $null
-                    "SiteServerName" = $null
-                    "SiteServerObjectIdentifier" = $null
-                    "SQLDatabaseName" = $null
-                    "SQLServerName" = $null
-                    "SQLServerObjectIdentifier" = $null
-                    "SQLServiceAccount" = $null
-                    "SQLServiceAccountObjectIdentifier" = $null
-                    "SiteType" = $null  # Will be determined by management points
-                    "SiteGUID" = $siteGuid
-                    "SiteIdentifier" = $siteIdentifier
-                    "ParentSiteCode" = $null  # Will be determined by management points
-                    "ParentSiteGUID" = $null
-                    "ParentSiteIdentifier" = $null
-                    "SourceForest" = $siteObj.mSSMSSourceForest
-                    "Properties" = @{}
-                    "Source" = "LDAP-mSSMSSite"
-                }
-                
-                $script:Sites += $siteNode
-                Write-LogMessage "Found site via LDAP: $siteCode" -Level "Info"
-            } else {
-                # Update existing site with LDAP data
-                $existingSite.DistinguishedName = $siteObj.DistinguishedName
-                if ($siteGuid) { $existingSite.SiteGUID = $siteGuid }
-                if ($siteObj.mSSMSSourceForest) { $existingSite.SourceForest = $siteObj.mSSMSSourceForest }
-                Write-LogMessage "Updated existing site with LDAP data: $siteCode" -Level "Info"
+            # Create/update SCCM_Site node
+            Add-Node -Id $objectIdentifier -Kinds @("SCCM_Site") -Properties @{
+                CollectionSource = "LDAP-mSSMSSite"
+                Name = $null
+                DistinguishedName = $mSSMSSiteObj.DistinguishedName
+                ParentSiteCode = $null # Will be determined by mSSMSManagementPoint
+                ParentSiteGUID = $null # Will be determined by mSSMSManagementPoint
+                ParentSiteIdentifier = $null # Will be determined by mSSMSManagementPoint
+                SiteCode = $siteCode
+                SiteGUID = $siteGuid
+                SiteName = $null
+                SiteServerDomain = $null
+                SiteServerName = $null
+                SiteServerObjectIdentifier = $null
+                SiteType = $null # Will be determined by mSSMSManagementPoint
+                SourceForest = $mSSMSSiteObj.mSSMSSourceForest
+                SQLDatabaseName = $null
+                SQLServerName = $null
+                SQLServerObjectIdentifier = $null
+                SQLServiceAccount = $null
+                SQLServiceAccountObjectIdentifier = $null
             }
         }
         
         # Get all mSSMSManagementPoint objects
-        Write-LogMessage "Collecting mSSMSManagementPoint objects..." -Level "Info"
-        $managementPoints = @()
+        Write-LogMessage Info "Collecting mSSMSManagementPoint objects..."
+        $mSSMSManagementPoints = @()
         
         if ($script:ADModuleAvailable) {
-            $managementPoints = Get-ADObject -LDAPFilter "(ObjectClass=mSSMSManagementPoint)" -SearchBase $systemManagementDN -Properties mSSMSMPName, mSSMSSiteCode, mSSMSCapabilities -ErrorAction SilentlyContinue
+            $mSSMSManagementPoints = Get-ADObject -LDAPFilter "(ObjectClass=mSSMSManagementPoint)" -SearchBase $systemManagementDN -Properties mSSMSMPName, mSSMSSiteCode, mSSMSCapabilities -ErrorAction SilentlyContinue
         } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
@@ -694,188 +728,145 @@ function Invoke-LDAPCollection {
                 
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
-                    $managementPoints += [PSCustomObject]@{
+                    $mSSMSManagementPoints += [PSCustomObject]@{
                         mSSMSMPName = $result.Properties["mSSMSMPName"][0]
                         mSSMSSiteCode = $result.Properties["mSSMSSiteCode"][0]
                         mSSMSCapabilities = $result.Properties["mSSMSCapabilities"][0]
                     }
                 }
             } catch {
-                Write-LogMessage "DirectorySearcher failed for mSSMSManagementPoint objects: $_" -Level "Warning"
+                Write-LogMessage Warning "DirectorySearcher failed for mSSMSManagementPoint objects: $_"
             }
         }
         
-        foreach ($mp in $managementPoints) {
-            $mpHostname = $mp.mSSMSMPName
-            $mpSiteCode = $mp.mSSMSSiteCode
+        foreach ($mSSMSManagementPoint in $mSSMSManagementPoints) {
+            $mpHostname = $mSSMSManagementPoint.mSSMSMPName
+            $mpSiteCode = $mSSMSManagementPoint.mSSMSSiteCode
             
             # Add to collection targets for subsequent phases
             if ($mpHostname) {
                 $mpTarget = Add-DeviceToTargets -DeviceName $mpHostname -Source "LDAP-mSSMSManagementPoint"
-                if ($mpTarget) {
-                    $mpSid = $mpTarget.ObjectIdentifier
-                    if ($mpTarget.IsNew) {
-                        Write-LogMessage "Found Management Point: $($mpTarget.Hostname) (Site: $mpSiteCode)" -Level "Info"
-                    }
+                if ($mpTarget -and $mpTarget.IsNew) {
+                    Write-LogMessage Success "Found management point: $($mpTarget.Hostname) (site: $mpSiteCode)"
                 }
             }
             
             $sourceForest = $null
             
             # Parse capabilities to determine site relationships and extract SourceForest
-            if ($mp.mSSMSCapabilities) {
+            if ($mSSMSManagementPoint.mSSMSCapabilities) {
                 try {
                     try {
-                        $cleanXml = $mp.mSSMSCapabilities -replace '&(?!amp;|lt;|gt;|quot;|apos;)', '&amp;'
-                        [xml]$capabilities = $cleanXml
+                        $cleanXml = $mSSMSManagementPoint.mSSMSCapabilities -replace '&(?!amp;|lt;|gt;|quot;|apos;)', '&amp;'
+                        [xml]$mSSMSCapabilities = $cleanXml
                     } catch {
-                        Write-Warning "Failed to parse capabilities for $($mp.Name): $($_.Exception.Message)"
-                        $capabilities = $null
+                        Write-Warning "Failed to parse capabilities for $($mSSMSManagementPoint.Name): $($_.Exception.Message)"
+                        $mSSMSCapabilities = $null
                     }
-                    $commandLine = $capabilities.ClientOperationalSettings.CCM.CommandLine
-                    $rootSiteCode = $capabilities.ClientOperationalSettings.RootSiteCode
-                    $forestElement = $capabilities.ClientOperationalSettings.Forest
+                    $commandLine = $mSSMSCapabilities.ClientOperationalSettings.CCM.CommandLine
+                    $rootSiteCode = $mSSMSCapabilities.ClientOperationalSettings.RootSiteCode
+                    $forestElement = $mSSMSCapabilities.ClientOperationalSettings.Forest
                     
                     if ($forestElement) {
                         $sourceForest = $forestElement.Value
                     }
                     
-                    # Find the corresponding site object and update properties
-                    $siteToUpdate = $script:Sites | Where-Object { $_.SiteCode -eq $mpSiteCode }
-                    if ($siteToUpdate) {
+                    # Update existing SCCM_Site node with MP-derived information
+                    $existingSiteNode = $script:Nodes | Where-Object { $_.id -eq $mpSiteCode }
+                    if ($existingSiteNode) {
                         # Determine site type based on RootSiteCode and CommandLine
                         if ($commandLine -match "SMSSITECODE=([A-Z0-9]{3})" -and $matches[1] -eq $mpSiteCode) {
                             if ($rootSiteCode -and $rootSiteCode -ne $mpSiteCode) {
-                                $siteToUpdate.SiteType = 2  # Primary Site
-                                $siteToUpdate.ParentSiteCode = $rootSiteCode
-                                $siteToUpdate.ParentSiteIdentifier = $rootSiteCode
+                                $existingSiteNode.properties.SiteType = 2  # Primary Site
+                                $existingSiteNode.properties.ParentSiteCode = $rootSiteCode
+                                $existingSiteNode.properties.ParentSiteIdentifier = $rootSiteCode
                                 
-                                # Create CAS site if it doesn't exist
-                                $existingCAS = $script:Sites | Where-Object { $_.SiteCode -eq $rootSiteCode }
+                                # Create CAS site node if it doesn't exist
+                                $existingCAS = $script:Nodes | Where-Object { $_.id -eq $rootSiteCode }
+
                                 if (-not $existingCAS) {
-                                    $casSiteNode = @{
-                                        "ObjectIdentifier" = $rootSiteCode
-                                        "DistinguishedName" = $null
-                                        "Name" = $null
-                                        "SiteCode" = $rootSiteCode
-                                        "SiteName" = $null
-                                        "SiteServerDomain" = $null
-                                        "SiteServerName" = $null
-                                        "SiteServerObjectIdentifier" = $null
-                                        "SQLDatabaseName" = $null
-                                        "SQLServerName" = $null
-                                        "SQLServerObjectIdentifier" = $null
-                                        "SQLServiceAccount" = $null
-                                        "SQLServiceAccountObjectIdentifier" = $null
-                                        "SiteType" = 4  # Central Administration Site
-                                        "SiteGUID" = $null
-                                        "SiteIdentifier" = $rootSiteCode
-                                        "ParentSiteCode" = "None"
-                                        "ParentSiteGUID" = $null
-                                        "ParentSiteIdentifier" = $null
-                                        "SourceForest" = $sourceForest
-                                        "Properties" = @{}
-                                        "Source" = "LDAP-mSSMSManagementPoint"
+                                    Add-Node -Id $rootSiteCode -Kinds @("SCCM_Site") -Properties @{
+                                        CollectionSource = "LDAP-mSSMSManagementPoint"
+                                        Name = $rootSiteCode
+                                        DistinguishedName = $null
+                                        ParentSiteCode = "None"
+                                        ParentSiteGUID = $null
+                                        ParentSiteIdentifier = $null
+                                        SiteCode = $rootSiteCode
+                                        SiteGUID = $null
+                                        SiteIdentifier = $rootSiteCode
+                                        SiteName = $null
+                                        SiteServerDomain = $null
+                                        SiteServerName = $null
+                                        SiteServerObjectIdentifier = $null
+                                        SiteType = 4  # Central Administration Site
+                                        SourceForest = $sourceForest
+                                        SQLDatabaseName = $null
+                                        SQLServerName = $null
+                                        SQLServerObjectIdentifier = $null
+                                        SQLServiceAccount = $null
+                                        SQLServiceAccountObjectIdentifier = $null
+
                                     }
-                                    $script:Sites += $casSiteNode
-                                    Write-LogMessage "Created CAS site: $rootSiteCode" -Level "Info"
                                 }
                             } elseif ($rootSiteCode -eq $mpSiteCode) {
                                 # This is either a standalone primary or CAS
-                                $siteToUpdate.SiteType = 4  # Assume CAS if RootSiteCode equals SiteCode
-                                $siteToUpdate.ParentSiteCode = "None"
-                                $siteToUpdate.ParentSiteIdentifier = $null
+                                $existingSiteNode.properties.SiteType = 4  # Assume CAS if RootSiteCode equals SiteCode
+                                $existingSiteNode.properties.ParentSiteCode = "None"
+                                $existingSiteNode.properties.ParentSiteIdentifier = $null
                             }
                         } else {
                             # Secondary site case - CommandLine SMSSITECODE differs from mSSMSSiteCode
-                            $siteToUpdate.SiteType = 1  # Secondary Site
+                            $existingSiteNode.properties.SiteType = 1  # Secondary Site
                             if ($commandLine -match "SMSSITECODE=([A-Z0-9]{3})") {
-                                $siteToUpdate.ParentSiteCode = $matches[1]
-                                $siteToUpdate.ParentSiteIdentifier = $matches[1]
+                                $existingSiteNode.properties.ParentSiteCode = $matches[1]
+                                $existingSiteNode.properties.ParentSiteIdentifier = $matches[1]
                             }
                         }
                         
                         # Update SourceForest if found
-                        if ($sourceForest -and -not $siteToUpdate.SourceForest) {
-                            $siteToUpdate.SourceForest = $sourceForest
+                        if ($sourceForest -and -not $existingSiteNode.properties.SourceForest) {
+                            $existingSiteNode.properties.SourceForest = $sourceForest
                         }
                     }
                     
-                    # Parse for fallback status points
-                    $fspNodes = $capabilities.ClientOperationalSettings.FSP.SelectNodes("FSPServer")
-                    foreach ($fsp in $fspNodes) {
-                        $fspHostname = $fsp.InnerText
-                        $fspTarget = Add-DeviceToTargets -DeviceName $fspHostname -Source "LDAP-mSSMSManagementPoint"
-
-                        if ($fspTarget) {
-                            if ($fspTarget.IsNew) {
-                                Write-LogMessage "Found Fallback Status Point: $($fspTarget.Hostname)" -Level "Info"
-                            }
-                            
-                            # Add FSP to SiteSystemRoles
-                            $existingFspRole = $script:SiteSystemRoles | Where-Object {
-                                $_.Hostname -eq $fspTarget.Hostname -and $_.SiteCode -eq $mpSiteCode
-                            }
-                            if (-not $existingFspRole) {
-                                $fspSystemNode = @{
-                                    "ObjectIdentifier" = if ($fspTarget.ObjectIdentifier) { $fspTarget.ObjectIdentifier } else { "$($fspTarget.Hostname)@$mpSiteCode" }
-                                    "dNSHostName" = $fspTarget.Hostname.ToUpper()
-                                    "Hostname" = $fspTarget.Hostname
-                                    "NetworkOSPath" = "\\$($fspTarget.Hostname)"
-                                    "SiteCode" = $mpSiteCode
-                                    "Roles" = @(@{
-                                        "Name" = "SMS Fallback Status Point"
-                                        "Properties" = @{}
-                                        "SiteCode" = $mpSiteCode
-                                        "SiteIdentifier" = $mpSiteCode
-                                        "SourceForest" = $sourceForest
-                                    })
-                                    "Source" = "LDAP-mSSMSManagementPoint"
+                    # Parse for fallback status points and create Computer nodes
+                    if ($fspNodes = $capabilities.ClientOperationalSettings.FSP) {
+                        $fspNodes = $capabilities.ClientOperationalSettings.FSP.SelectNodes("FSPServer")
+                        foreach ($fsp in $fspNodes) {
+                            $fspHostname = $fsp.InnerText
+                            $fspTarget = Add-DeviceToTargets -DeviceName $fspHostname -Source "LDAP-mSSMSManagementPoint"
+    
+                            if ($fspTarget -and $fspTarget.IsNew) {
+                                Write-LogMessage Success "Found fallback status point: $($fspTarget.Hostname)"
+                                
+                                # Create Computer node for FSP
+                                if ($fspTarget.ADObject) {
+                                    Add-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -Properties @{
+                                        CollectionSource = "LDAP-mSSMSManagementPoint"
+                                        Name = $fspTarget.ADObject.Name
+                                        DNSHostName = $fspTarget.ADObject.dNSHostName
+                                        Domain =  $fspTarget.ADObject.Domain
+                                        SCCM_SiteSystemRoles = @("SMS Fallback Status Point")
+                                    }
                                 }
-                                $script:SiteSystemRoles += $fspSystemNode
-                                Write-LogMessage "Added FSP to site system roles: $($fspTarget.Hostname)" -Level "Info"
+                            
                             }
                         }
                     }
                 } catch {
-                    Write-LogMessage "Failed to parse capabilities for MP $mpHostname`: $_" -Level "Warning"
+                    Write-LogMessage Warning "Failed to parse capabilities for MP $mpHostname`: $_"
                 }
             }
             
-            # Add MP to SiteSystemRoles
-            $existingSystemRole = $script:SiteSystemRoles | Where-Object { 
-                $_.Hostname -eq $mpHostname -and $_.SiteCode -eq $mpSiteCode 
-            }
-            if (-not $existingSystemRole) {
-                $systemNode = @{
-                    "ObjectIdentifier" = if ($mpSid) { $mpSid } else { "$mpHostname@$mpSiteCode" }
-                    "dNSHostName" = $mpHostname.ToUpper()
-                    "Hostname" = $mpHostname
-                    "NetworkOSPath" = "\\$mpHostname"
-                    "SiteCode" = $mpSiteCode
-                    "Roles" = @(@{
-                        "Name" = "SMS Management Point"
-                        "Properties" = @{}
-                        "SiteCode" = $mpSiteCode
-                        "SiteIdentifier" = $mpSiteCode
-                        "SourceForest" = $sourceForest
-                    })
-                    "Source" = "LDAP-mSSMSManagementPoint"
-                }
-                $script:SiteSystemRoles += $systemNode
-                Write-LogMessage "Added MP to site system roles: $mpHostname" -Level "Info"
-            } else {
-                # Add role if not already present
-                $mpRole = $existingSystemRole.Roles | Where-Object { $_.Name -eq "SMS Management Point" }
-                if (-not $mpRole) {
-                    $existingSystemRole.Roles += @{
-                        "Name" = "SMS Management Point"
-                        "Properties" = @{}
-                        "SiteCode" = $mpSiteCode
-                        "SiteIdentifier" = $mpSiteCode
-                        "SourceForest" = $sourceForest
-                    }
-                    Write-LogMessage "Added MP role to existing system: $mpHostname" -Level "Info"
+            # Create Computer node for Management Point
+            if ($mpTarget.ADObject) {
+                Add-Node -Id $mpTarget.ADObject.SID -Kinds @("Computer", "Base") -Properties @{
+                    CollectionSource = "LDAP-mSSMSManagementPoint"
+                    Name = $mpTarget.ADObject.Name
+                    DNSHostName = $mpTarget.ADObject.dNSHostName
+                    Domain = $mpTarget.ADObject.Domain
+                    SCCM_SiteSystemRoles = @("SMS Management Point")
                 }
             }
         }
@@ -883,7 +874,7 @@ function Invoke-LDAPCollection {
         # Get computers with CmRcService SPN (possible client devices)
         Write-LogMessage "Collecting computers with Remote Control SPN..." -Level "Info"
         $remoteControlSystems = @()
-        
+
         if ($script:ADModuleAvailable) {
             $remoteControlSystems = Get-ADObject -LDAPFilter "(servicePrincipalName=CmRcService/*)" -Properties DNSHostName, DistinguishedName, ObjectClass, ServicePrincipalName, ObjectSid, CN, Name -ErrorAction SilentlyContinue
         } else {
@@ -892,122 +883,141 @@ function Invoke-LDAPCollection {
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$domainDN")
                 $searcher.Filter = "(servicePrincipalName=CmRcService/*)"
                 $searcher.PropertiesToLoad.AddRange(@("dNSHostName", "distinguishedName", "objectClass", "servicePrincipalName", "objectSid", "cn", "name"))
-                
+            
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
                     $sidBytes = $result.Properties["objectsid"][0]
                     $sid = New-Object System.Security.Principal.SecurityIdentifier($sidBytes, 0)
-                    
+                
                     $remoteControlSystems += [PSCustomObject]@{
-                        DNSHostName = $result.Properties["dnshostname"][0]
-                        DistinguishedName = $result.Properties["distinguishedname"][0]
-                        ObjectClass = $result.Properties["objectclass"]
-                        ServicePrincipalName = $result.Properties["serviceprincipalname"]
-                        ObjectSid = @{ Value = $sid.Value }
-                        CN = $result.Properties["cn"][0]
                         Name = $result.Properties["name"][0]
+                        CN = $result.Properties["cn"][0]
+                        DistinguishedName = $result.Properties["distinguishedname"][0]
+                        DNSHostName = $result.Properties["dnshostname"][0]
+                        DOmain = $result.Properties["domain"]
+                        ObjectClass = $result.Properties["objectclass"]
+                        ObjectSid = @{ Value = $sid.Value }
+                        ServicePrincipalName = $result.Properties["serviceprincipalname"]
                     }
                 }
             } catch {
-                Write-LogMessage "DirectorySearcher failed for CmRcService SPN objects: $_" -Level "Warning"
+                Write-LogMessage Warning "DirectorySearcher failed for CmRcService SPN objects: $_"
             }
         }
-        
-        foreach ($system in $remoteControlSystems) {
-            # Create Computer objects for these (not ClientDevice since we don't have ResourceID)
-            if ($system.ObjectSid) {
-                $computerNode = @{
-                    "ObjectIdentifier" = $system.ObjectSid.Value
-                    "CN" = $system.CN
-                    "DistinguishedName" = $system.DistinguishedName
-                    "dNSHostName" = $system.DNSHostName
-                    "Name" = $system.Name
-                    "SCCM_HasClientRemoteControlSPN" = $true
-                    "ServicePrincipalNames" = $system.ServicePrincipalName
-                    "Source" = "LDAP-CmRcService"
-                }
-                
-                # Add to a separate array for Computer objects (not adding to collection targets)
-                $script:ComputerObjects += $computerNode
-                Write-LogMessage "Found system with Remote Control SPN: $($system.DNSHostName)" -Level "Info"
 
-                if (-not $DoNotTreatCmRcServiceHostsAsClients) {
-                    # Create ClientDevice entry
-                    $clientDevice = @{
-                        "ObjectIdentifier" = $system.ObjectSid -or (New-Guid).ToString()
-                        "Name" = $system.Name
-                        "dNSHostName" = $system.DNSHostName
-                        "DistinguishedName" = $system.DistinguishedName
-                        "Domain" = $script:Domain
-                        "Source" = "LDAP-CmRcService"
-                    }
-                    $script:ClientDevices += $clientDevice
-                    Write-LogMessage "Created ClientDevice from CmRcService SPN: $($system.Name)" -Level "Info"
+        foreach ($system in $remoteControlSystems) {
+
+            Write-LogMessage Success "Found computer with Remote Control SPN: $($system.DNSHostName)"
+
+            # Create Computer node for these systems
+            if ($system.ObjectSid) {
+                Add-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -Properties @{
+                    CollectionSource = "LDAP-CmRcService"
+                    Name = $system.Name
+                    CN = $system.CN
+                    DistinguishedName = $system.DistinguishedName
+                    DNSHostnNme = $system.DNSHostName
+                    Domain = $system.Domain
+                    SCCM_HasClientRemoteControlSPN = $true
+                    ServicePrincipalNames = $system.ServicePrincipalName
                 }
             }
         }
         
         # Get systems with WDS/PXE enabled (possible distribution points)
-        Write-LogMessage "Collecting network boot servers..." -Level "Info"
+        Write-LogMessage Info "Collecting network boot servers..."
         $networkBootServers = @()
-        
+
         if ($script:ADModuleAvailable) {
-            $networkBootServers = Get-ADObject -LDAPFilter "(&(objectclass=connectionPoint)(netbootserver=*))" -SearchBase $domainDN -Properties netbootserver, DistinguishedName -ErrorAction SilentlyContinue
+            # Search for both connectionPoint with netbootserver and intellimirrorSCP objects
+            $connectionPoints = Get-ADObject -LDAPFilter "(&(objectclass=connectionPoint)(netbootserver=*))" -SearchBase $domainDN -Properties netbootserver, DistinguishedName -ErrorAction SilentlyContinue
+            $intellimirrorObjects = Get-ADObject -LDAPFilter "(objectclass=intellimirrorSCP)" -SearchBase $domainDN -Properties DistinguishedName -ErrorAction SilentlyContinue
+            
+            # Combine both result sets
+            $networkBootServers = @($connectionPoints) + @($intellimirrorObjects)
         } else {
             try {
+                # Search for connectionPoint objects with netbootserver
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$domainDN")
                 $searcher.Filter = "(&(objectclass=connectionPoint)(netbootserver=*))"
-                $searcher.PropertiesToLoad.AddRange(@("netbootserver", "distinguishedName"))
+                $searcher.PropertiesToLoad.Add("distinguishedName")
                 
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
                     $networkBootServers += [PSCustomObject]@{
-                        netbootserver = $result.Properties["netbootserver"][0]
                         DistinguishedName = $result.Properties["distinguishedname"][0]
+                        ObjectClass = "connectionPoint"
+                    }
+                }
+                
+                # Search for intellimirrorSCP objects
+                $searcher.Filter = "(objectclass=intellimirrorSCP)"
+                $searcher.PropertiesToLoad.Clear()
+                $searcher.PropertiesToLoad.Add("distinguishedName")
+                
+                $results = $searcher.FindAll()
+                foreach ($result in $results) {
+                    $networkBootServers += [PSCustomObject]@{
+                        DistinguishedName = $result.Properties["distinguishedname"][0]
+                        ObjectClass = "intellimirrorSCP"
                     }
                 }
             } catch {
-                Write-LogMessage "DirectorySearcher failed for network boot servers: $_" -Level "Warning"
+                Write-LogMessage Warning "DirectorySearcher failed for network boot servers: $_"
             }
         }
-        
+
         foreach ($server in $networkBootServers) {
-            if ($server.netbootserver) {
-                # Resolve DistinguishedName to get computer object and hostname
-                try {
-                    # Extract everything after the first comma to get parent DN
-                    $parentDN = $server.DistinguishedName -replace '^[^,]+,', ''
-                    
-                    $parentObject = $null
-                    if ($script:ADModuleAvailable) {
-                        $parentObject = Get-ADObject -Identity $parentDN -Properties DNSHostName -ErrorAction SilentlyContinue
-                    } else {
-                        $parentEntry = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$parentDN")
-                        if ($parentEntry.Properties["dNSHostName"].Count -gt 0) {
-                            $parentObject = [PSCustomObject]@{
-                                DNSHostName = $parentEntry.Properties["dNSHostName"][0]
-                            }
+            try {
+                # Extract everything after the first comma to get parent DN (the computer object)
+                $parentDN = $server.DistinguishedName -replace '^[^,]+,', ''
+                
+                $parentObject = $null
+                if ($script:ADModuleAvailable) {
+                    $parentObject = Get-ADObject -Identity $parentDN -Properties DNSHostName, ObjectSid, Name -ErrorAction SilentlyContinue
+                } else {
+                    $parentEntry = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$parentDN")
+                    if ($parentEntry.Properties["dNSHostName"].Count -gt 0) {
+                        $parentObject = [PSCustomObject]@{
+                            DNSHostName = $parentEntry.Properties["dNSHostName"][0]
+                            ObjectSid = if ($parentEntry.Properties["objectSid"].Count -gt 0) { 
+                                (New-Object System.Security.Principal.SecurityIdentifier($parentEntry.Properties["objectSid"][0], 0)).Value 
+                            } else { $null }
+                            Name = if ($parentEntry.Properties["name"].Count -gt 0) { $parentEntry.Properties["name"][0] } else { $null }
                         }
                     }
-                    
-                    if ($parentObject.DNSHostName) {
-                        $hostname = $parentObject.DNSHostName
-                        $netbootserver = Add-DeviceToTargets -DeviceName $hostname -Source "LDAP-netbootserver"
-                        if ($netbootserver -and $netbootserver.IsNew) {
-                            Write-LogMessage "Found network boot server: $hostname" -Level "Info"
-                        }
-                    }
-                } catch {
-                    Write-LogMessage "Could not resolve network boot server: $($server.DistinguishedName)" -Level "Warning"
+                    $parentEntry.Dispose()
                 }
+                
+                if ($parentObject -and $parentObject.DNSHostName -and $parentObject.ObjectSid) {
+                    # Add to targets for subsequent collection phases
+                    $collectionTarget = Add-DeviceToTargets -DeviceName $parentObject.DNSHostName -Source "LDAP-$($server.ObjectClass)"
+                    if ($collectionTarget -and $collectionTarget.IsNew) {
+                        Write-LogMessage Success "Found network boot server: $($parentObject.DNSHostName) ($($parentObject.ObjectSid))"
+                    }
+
+                    # Create Computer node
+                    $computerProperties = @{
+                        "CollectionSource" = "LDAP-$($server.ObjectClass)"
+                        "Name" = $parentObject.DNSHostName
+                        "DNSHostName" = $parentObject.DNSHostName
+                        "Domain" = $domainName
+                        "NetworkBootServer" = $true
+                    }
+                    
+                    Add-Node -Id $parentObject.ObjectSid -Kinds @("Computer", "Base") -Properties $computerProperties
+                }
+                
+            } catch {
+                Write-LogMessage Warning "Failed to process network boot server $($server.DistinguishedName): $_"
             }
         }
         
         # Search for computers with SCCM-related naming patterns
-        Write-LogMessage "Searching for computers with SCCM naming patterns..." -Level "Info"
+        Write-LogMessage Info "Searching for computers with SCCM naming patterns..."
         $searchPatterns = @("sccm", "mecm", "mcm", "memcm", "configm", "cfgm", "sms")
-        
+
         # Build dynamic LDAP filter
         $ldapFilter = "(&(objectCategory=computer)(|"
         foreach ($pattern in $searchPatterns) {
@@ -1020,7 +1030,7 @@ function Invoke-LDAPCollection {
             $ldapFilter += "(dnshostname=*$pattern*)"
         }
         $ldapFilter += "))"
-        
+
         $patternMatches = @()
         if ($script:ADModuleAvailable) {
             $patternMatches = Get-ADObject -LDAPFilter $ldapFilter -SearchBase $domainDN -Properties samaccountname, description, name, displayname, serviceprincipalname, dnshostname, objectClass, objectSid -ErrorAction SilentlyContinue
@@ -1034,12 +1044,12 @@ function Invoke-LDAPCollection {
                 $results = $searcher.FindAll()
                 foreach ($result in $results) {
                     $patternMatches += [PSCustomObject]@{
-                        samaccountname = $result.Properties["samaccountname"][0]
-                        description = $result.Properties["description"][0]
-                        name = $result.Properties["name"][0]
-                        displayname = $result.Properties["displayname"][0]
+                        samaccountname = if ($result.Properties["samaccountname"].Count -gt 0) { $result.Properties["samaccountname"][0] } else { $null }
+                        description = if ($result.Properties["description"].Count -gt 0) { $result.Properties["description"][0] } else { $null }
+                        name = if ($result.Properties["name"].Count -gt 0) { $result.Properties["name"][0] } else { $null }
+                        displayname = if ($result.Properties["displayname"].Count -gt 0) { $result.Properties["displayname"][0] } else { $null }
                         serviceprincipalname = $result.Properties["serviceprincipalname"]
-                        dnshostname = $result.Properties["dnshostname"][0]
+                        dnshostname = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
                         objectClass = $result.Properties["objectclass"]
                         objectSid = if ($result.Properties["objectsid"].Count -gt 0) {
                             $sidBytes = $result.Properties["objectsid"][0]
@@ -1048,41 +1058,159 @@ function Invoke-LDAPCollection {
                         } else { $null }
                     }
                 }
+                $searcher.Dispose()
             } catch {
-                Write-LogMessage "DirectorySearcher failed for SCCM naming patterns: $_" -Level "Warning"
+                Write-LogMessage Warning "DirectorySearcher failed for SCCM naming patterns: $_"
             }
         }
-        
+
         foreach ($match in $patternMatches) {
-            $hostname = $match.dnshostname
-            $patternMatch = Add-DeviceToTargets -DeviceName $hostname -Source "LDAP-NamePattern"
-            if ($patternMatch -and $patternMatch.IsNew) {
-                Write-LogMessage "Found system with SCCM naming pattern: $hostname" -Level "Info"
+            if ($match.objectSid -and $match.objectSid.Value -and $match.dnshostname) {
+                $hostname = $match.dnshostname
+                $objectSid = $match.objectSid.Value
+
+                # Add to collection targets for subsequent collection phases
+                $collectionTarget = Add-DeviceToTargets -DeviceName $hostname -Source "LDAP-NamePattern"
+                if ($collectionTarget -and $collectionTarget.IsNew) {
+                    Write-LogMessage Success "Found system with SCCM naming pattern: $hostname ($objectSid)"
+                }
+                
+                # Create Computer node
+                $computerProperties = @{
+                    "CollectionSource" = "LDAP-NamePattern"
+                    "Name" = $hostname
+                    "DNSHostName" = $hostname
+                    "Domain" = $domainName
+                    "SAMAccountName" = $match.samaccountname
+                }
+                
+                # Add description if available
+                if ($match.description) {
+                    $computerProperties["Description"] = $match.description
+                }
+                
+                # Add display name if available and different from hostname
+                if ($match.displayname) {
+                    $computerProperties["DisplayName"] = $match.displayname
+                }
+                
+                # Process Service Principal Names if available
+                if ($match.serviceprincipalname -and $match.serviceprincipalname.Count -gt 0) {
+                    $spnList = @()
+                    foreach ($spn in $match.serviceprincipalname) {
+                        $spnList += $spn
+                    }
+                    $computerProperties["ServicePrincipalNames"] = $spnList
+                }
+                
+                Add-Node -Id $objectSid -Kinds @("Computer", "Base") -Properties $computerProperties
+                
+            } else {
+                Write-LogMessage Warning "Skipping pattern match - missing required properties (SID or hostname): $($match.name)"
             }
         }
-        
+                
         # Get accounts with GenericAll on System Management container
-        Write-LogMessage "Checking permissions on System Management container..." -Level "Info"
+        Write-LogMessage Info "Checking permissions on System Management container..."
         try {
             if ($script:ADModuleAvailable) {
                 $acl = Get-Acl -Path "AD:\$systemManagementDN"
                 $genericAllAccounts = $acl.Access | Where-Object {
                     $_.AccessControlType -eq "Allow" -and
-                    $_.ActiveDirectoryRights -eq "GenericAll" -and
-                    $_.IdentityReference -match '\$'
+                    $_.ActiveDirectoryRights -eq "GenericAll"
+                    $_.IdentityReference -notlike "NT AUTHORITY\*"
                 }
                 
                 foreach ($account in $genericAllAccounts) {
-                    Write-LogMessage "Found account with GenericAll on System Management: $($account.IdentityReference)" -Level "Info"
-                    # Resolve down-level logon name to domain object using our resolution function
-                    $accountName = $account.IdentityReference -replace '.*\\', '' -replace '\$', ''
+                    Write-LogMessage Success "Found principal with GenericAll on System Management container: $($account.IdentityReference)"
                     
-                    $computerObject = Resolve-DomainPrincipalSID -PrincipalName $accountName -Domain $script:Domain
-                    if ($computerObject -and $computerObject.DNSHostName) {
-                        $genericAllComputer = Add-DeviceToTargets -DeviceName $computerObject.DNSHostName -Source "LDAP-GenericAll"
-                        if ($genericAllComputer -and $genericAllComputer.IsNew) {
-                            Write-LogMessage "Added system with GenericAll permission: $($computerObject.DNSHostName)" -Level "Info"
+                    # Extract account name (remove domain prefix and potentially $ suffix)
+                    $identityRef = $account.IdentityReference.ToString()
+                    $accountName = $identityRef -replace '.*\\', ''
+                    
+                    # Handle computer accounts (ending with $) vs user/group accounts
+                    $isComputerAccount = $accountName -match '\$$'
+                    if ($isComputerAccount) {
+                        $accountName = $accountName -replace '\$$', ''
+                    }
+                    
+                    # Resolve to AD Object
+                    $adObject = Get-ActiveDirectoryObject -Name $accountName -Domain $script:Domain
+                    
+                    if ($adObject -and $adObject.SID) {
+                        Write-LogMessage Verbose "Resolved principal to $($adObject.Type): $($adObject.Name) ($($adObject.SID))"
+                        
+                        # Create appropriate node based on object type
+                        switch ($adObject.Type) {
+                            "Computer" {
+                                $computerProperties = @{
+                                    "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                    "Name" = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
+                                    "DNSHostName" = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $null }
+                                    "Domain" = $domainName
+                                    "SAMAccountName" = $adObject.SamAccountName
+                                    "DistinguishedName" = $adObject.DistinguishedName
+                                }
+                                
+                                if ($adObject.Enabled -ne $null) {
+                                    $computerProperties["Enabled"] = $adObject.Enabled
+                                }
+                                
+                                Add-Node -Id $adObject.SID -Kinds @("Computer", "Base") -Properties $computerProperties
+                                
+                                # Add to collection targets for subsequent collection phases
+                                if ($adObject.DNSHostName) {
+                                    $null = Add-DeviceToTargets -DeviceName $adObject.DNSHostName -Source "LDAP-GenericAll"
+                                } else {
+                                    Write-LogMessage Warning "Cannot add computer $($adObject.Name) to targets - no FQDN available"
+                                }
+                            }
+                            
+                            "User" {
+                                $userProperties = @{
+                                    "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                    "Name" = $adObject.Name
+                                    "Domain" = $domainName
+                                    "SAMAccountName" = $adObject.SamAccountName
+                                    "DistinguishedName" = $adObject.DistinguishedName
+                                    "UserPrincipalName" = $adObject.UserPrincipalName
+                                }
+                                
+                                if ($adObject.Enabled -ne $null) {
+                                    $userProperties["Enabled"] = $adObject.Enabled
+                                }
+                                
+                                Add-Node -Id $adObject.SID -Kinds @("User", "Base") -Properties $userProperties
+                            }
+                            
+                            "Group" {
+                                $groupProperties = @{
+                                    "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                    "Name" = $adObject.Name
+                                    "Domain" = $domainName
+                                    "SAMAccountName" = $adObject.SamAccountName
+                                    "DistinguishedName" = $adObject.DistinguishedName
+                                }
+                                
+                                Add-Node -Id $adObject.SID -Kinds @("Group", "Base") -Properties $groupProperties
+                            }
+                            
+                            default {
+                                # Handle unknown object types
+                                $genericProperties = @{
+                                    "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                    "Name" = $adObject.Name
+                                    "Domain" = $domainName
+                                    "SAMAccountName" = $adObject.SamAccountName
+                                    "DistinguishedName" = $adObject.DistinguishedName
+                                }
+                                
+                                Add-Node -Id $adObject.SID -Kinds @($adObject.Type, "Base") -Properties $genericProperties
+                                Write-LogMessage Verbose "Created node for unknown object type '$($adObject.Type)': $($adObject.Name)"
+                            }
                         }
+                    } else {
+                        Write-LogMessage Warning "Could not resolve GenericAll account '$accountName' to domain object"
                     }
                 }
             } else {
@@ -1095,37 +1223,100 @@ function Invoke-LDAPCollection {
                     foreach ($rule in $accessRules) {
                         if ($rule.AccessControlType -eq "Allow" -and
                             $rule.ActiveDirectoryRights -match "GenericAll" -and
-                            $rule.IdentityReference -match '\$$') {
+                            $rule.IdentityReference -notlike "NT AUTHORITY\*")  {
                             
-                            Write-LogMessage "Found account with GenericAll on System Management: $($rule.IdentityReference)" -Level "Info"
-                            # Resolve down-level logon name to domain object using our resolution function
-                            $accountName = $rule.IdentityReference -replace '.*\\', '' -replace '\$$', ''
+                            Write-LogMessage Success "Found principal with GenericAll on System Management container: $($rule.IdentityReference)"
                             
-                            $computerObject = Resolve-DomainPrincipalSID -PrincipalName $accountName -Domain $script:Domain
-                            if ($computerObject -and $computerObject.DNSHostName) {
-                                $genericAllComputer = Add-DeviceToTargets -DeviceName $computerObject.DNSHostName -Source "LDAP-GenericAll"
-                                if ($genericAllComputer -and $genericAllComputer.IsNew) {
-                                    Write-LogMessage "Added system with GenericAll permission: $($computerObject.DNSHostName)" -Level "Info"
+                            # Extract account name (remove domain prefix and potentially $ suffix)
+                            $identityRef = $rule.IdentityReference.ToString()
+                            $accountName = $identityRef -replace '.*\\', ''
+                            
+                            # Handle computer accounts (ending with $) vs user/group accounts
+                            $isComputerAccount = $accountName -match '\$$'
+                            if ($isComputerAccount) {
+                                $accountName = $accountName -replace '\$$', ''
+                            }
+                            
+                            # Resolve using our new generic function
+                            $adObject = Get-ActiveDirectoryObject -Name $accountName -Domain $script:Domain
+                            
+                            if ($adObject -and $adObject.SID) {
+                                Write-LogMessage Verbose "Resolved principal to $($adObject.Type): $($adObject.Name) ($($adObject.SID))"
+                                
+                                # Create appropriate node based on object type (same switch logic as above)
+                                switch ($adObject.Type) {
+                                    "Computer" {
+                                        # Same Computer logic as above...
+                                        $computerProperties = @{
+                                            "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                            "Name" = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
+                                            "DNSHostName" = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $null }
+                                            "Domain" = $domainName
+                                            "SAMAccountName" = $adObject.SamAccountName
+                                            "DistinguishedName" = $adObject.DistinguishedName
+                                        }
+                                        
+                                        if ($adObject.Enabled -ne $null) {
+                                            $computerProperties["Enabled"] = $adObject.Enabled
+                                        }
+                                        
+                                        Add-Node -Id $adObject.SID -Kinds @("Computer", "Base") -Properties $computerProperties
+                                        
+                                        if ($adObject.DNSHostName) {
+                                            $null = Add-DeviceToTargets -DeviceName $adObject.DNSHostName -Source "LDAP-GenericAll"
+                                        }
+                                    }
+                                    
+                                    "User" {
+                                        # Same User logic as above...
+                                        $userProperties = @{
+                                            "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                            "Name" = $adObject.Name
+                                            "Domain" = $domainName
+                                            "SAMAccountName" = $adObject.SamAccountName
+                                            "DistinguishedName" = $adObject.DistinguishedName
+                                            "UserPrincipalName" = $adObject.UserPrincipalName
+                                        }
+                                        
+                                        if ($adObject.Enabled -ne $null) {
+                                            $userProperties["Enabled"] = $adObject.Enabled
+                                        }
+                                        
+                                        Add-Node -Id $adObject.SID -Kinds @("User", "Base") -Properties $userProperties
+                                    }
+                                    
+                                    "Group" {
+                                        # Same Group logic as above...
+                                        $groupProperties = @{
+                                            "CollectionSource" = "LDAP-GenericAllSystemManagement"
+                                            "Name" = $adObject.Name
+                                            "Domain" = $domainName
+                                            "SAMAccountName" = $adObject.SamAccountName
+                                            "DistinguishedName" = $adObject.DistinguishedName
+                                        }
+                                        
+                                        Add-Node -Id $adObject.SID -Kinds @("Group", "Base") -Properties $groupProperties
+                                    }
                                 }
+                            } else {
+                                Write-LogMessage Warning "Could not resolve principal '$accountName' to domain object"
                             }
                         }
                     }
+                    $directoryEntry.Dispose()
                 } catch {
-                    Write-LogMessage "DirectoryServices ACL check also failed: $_" -Level "Warning"
+                    Write-LogMessage Warning "DirectoryServices ACL check failed: $_"
                 }
             }
         } catch {
-            Write-LogMessage "Failed to check System Management container permissions: $_" -Level "Warning"
+            Write-LogMessage Warning "Failed to check System Management container permissions: $_"
         }
         
         # Report what was collected
-        Write-LogMessage "LDAP collection completed" -Level "Success"
-        Write-LogMessage "Forest root: $(if ($forestRoot) { $forestRoot } else { 'Not found' })" -Level "Info"
-        Write-LogMessage "Sites found: $($script:Sites.Count)" -Level "Info"
-        Write-LogMessage "Site system roles found: $($script:SiteSystemRoles.Count)" -Level "Info"
-        Write-LogMessage "Possible client devices found: $(if ($script:ComputerObjects) { $script:ComputerObjects.Count } else { 0 })" -Level "Info"
-        Write-LogMessage "Collection targets identified: $($script:CollectionTargets.Count)" -Level "Info"
-        
+        Write-LogMessage Success "LDAP collection completed"
+        Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
+        Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCM_SiteSystemRoles } | ForEach-Object { "$($_.Properties.Name) ($($_.Properties.SCCM_SiteSystemRoles -join ', '))" }) -join "`n    ")"
+        Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"        
     } catch {
         Write-LogMessage "LDAP collection failed: $_" -Level "Error"
     }
@@ -1244,7 +1435,7 @@ function Invoke-LocalCollection {
                 if (-not $existingSystemRole) {
                     $systemNode = @{
                         "ObjectIdentifier" = if ($mpSid) { $mpSid } else { "$mpHostname@$siteCode" }
-                        "dNSHostName" = $mpHostname.ToUpper()
+                        "dNSHostName" = $mpHostname
                         "Hostname" = $mpHostname
                         "NetworkOSPath" = "\\$mpHostname"
                         "SiteCode" = $siteCode
@@ -1309,7 +1500,7 @@ function Invoke-LocalCollection {
             # Resolve current management point SID
             $currentMPSid = $null
             if ($currentMP) {
-                $mpObject = Get-ADObjectByHostname -Hostname $currentMP -Domain $script:Domain
+                $mpObject = Get-ActiveDirectoryObject -Name $currentMP -Domain $script:Domain
                 $currentMPSid = $mpObject.SID
             }
             
@@ -1336,7 +1527,7 @@ function Invoke-LocalCollection {
                     "DeviceOS" = $null
                     "DeviceOSBuild" = $null
                     "DistinguishedName" = $computerDN
-                    "dNSHostName" = $fqdn.ToUpper()
+                    "dNSHostName" = $fqdn
                     "IsVirtualMachine" = $null
                     "LastActiveTime" = $null
                     "LastOfflineTime" = $null
@@ -1366,7 +1557,7 @@ function Invoke-LocalCollection {
                 $existingClient.CurrentManagementPoint = $currentMP
                 $existingClient.CurrentManagementPointSID = $currentMPSid
                 $existingClient.LastReportedMPServerSID = $currentMPSid
-                $existingClient.dNSHostName = $fqdn.ToUpper()
+                $existingClient.dNSHostName = $fqdn
                 $existingClient.DistinguishedName = $computerDN
                 $existingClient.Name = $computerName
                 $existingClient.Domain = $domainName
@@ -1648,7 +1839,7 @@ function Invoke-DNSCollection {
                         
                         # Enhanced resolution using AD helper functions
                         try {
-                            $adObject = Get-ADObjectByHostname -Hostname $managementPointFQDN -Domain $script:Domain
+                            $adObject = Get-ActiveDirectoryObject -Name $managementPointFQDN -Domain $script:Domain
                             if ($adObject) {
                                 $adidnsRecords += @{
                                     "FQDN" = $managementPointFQDN
@@ -1689,7 +1880,7 @@ function Invoke-DNSCollection {
                         
                         # Enhanced resolution using AD helper functions
                         try {
-                            $adObject = Get-ADObjectByHostname -Hostname $managementPointFQDN -Domain $script:Domain
+                            $adObject = Get-ActiveDirectoryObject -Name $managementPointFQDN -Domain $script:Domain
                             if ($adObject) {
                                 # Check for RFC-1918 IP space
                                 $ipAddresses = @()
@@ -1772,7 +1963,7 @@ function Invoke-DNSCollection {
 
             $collectionTarget = Add-DeviceToTargets -DeviceName $fqdn -Source "DNS"
             if ($collectionTarget -and $collectionTarget.IsNew) {
-                Write-LogMessage -Level Success "DNS: Found management point $fqdn for site $siteCode"
+                Write-LogMessage Success "DNS: Found management point $fqdn for site $siteCode"
             }
             
             # Create site system role entry
@@ -1844,7 +2035,7 @@ function Invoke-RemoteRegistryCollection {
             
             # Resolve target to AD object
             try {
-                $targetADObject = Get-ADObjectByHostname -Hostname $target -Domain $script:Domain
+                $targetADObject = Get-ActiveDirectoryObject -Name $target -Domain $script:Domain
                 if ($targetADObject) {
                     Write-LogMessage "Resolved target $target to AD object: $($targetADObject.Name)" -Level "Success"
                 } else {
@@ -2084,7 +2275,7 @@ function Invoke-RemoteRegistryCollection {
                 Write-LogMessage "Found CurrentUser $sid on $target" -Level "Success"
                 # Resolve SID to AD object
                 try {
-                    $userADObject = Get-ADObjectBySID -SID $sid -Domain $script:Domain
+                    $userADObject = Get-ActiveDirectoryObject -Sid $sid -Domain $script:Domain
                     if ($userADObject) {
                         $currentUserSids += @{
                             "SID" = $sid
@@ -3416,7 +3607,7 @@ function Get-SCCMSiteSystemRolesViaWMI {
             # Resolve hostname to AD object
             $systemADObject = $null
             try {
-                $systemADObject = Get-ADObjectByHostname -Hostname $hostname -Domain $script:Domain
+                $systemADObject = Get-ActiveDirectoryObject -Name $hostname -Domain $script:Domain
             } catch {
                 Write-LogMessage "Failed to resolve site system $hostname to AD object: $_" -Level "Warning"
             }
@@ -3523,11 +3714,11 @@ function Invoke-HTTPCollection {
                                                     
                                                     # Resolve MP FQDN to AD object
                                                     try {
-                                                        $mpADObject = Get-ADObjectByHostname -Hostname $mpFQDN -Domain $script:Domain
+                                                        $mpADObject = Get-ActiveDirectoryObject -Name $mpFQDN -Domain $script:Domain
                                                         
                                                         # Create site system role for discovered MP
                                                         $siteSystemRole = @{
-                                                            "dNSHostName" = $mpFQDN.ToUpper()
+                                                            "dNSHostName" = $mpFQDN
                                                             "ObjectIdentifier" = if ($mpADObject) { $mpADObject.SID } else { $null }
                                                             "Roles" = @(
                                                                 @{
@@ -3579,11 +3770,11 @@ function Invoke-HTTPCollection {
                                                 
                                                 # Resolve MP FQDN to AD object
                                                 try {
-                                                    $mpADObject = Get-ADObjectByHostname -Hostname $mpFQDN -Domain $script:Domain
+                                                    $mpADObject = Get-ActiveDirectoryObject -Name $mpFQDN -Domain $script:Domain
                                                     
                                                     # Create site system role for discovered MP
                                                     $siteSystemRole = @{
-                                                        "dNSHostName" = $mpFQDN.ToUpper()
+                                                        "dNSHostName" = $mpFQDN
                                                         "ObjectIdentifier" = if ($mpADObject) { $mpADObject.SID } else { $null }
                                                         "Roles" = @(
                                                             @{
@@ -3642,11 +3833,11 @@ function Invoke-HTTPCollection {
                             
                             # Resolve target to AD object
                             try {
-                                $targetADObject = Get-ADObjectByHostname -Hostname $target -Domain $script:Domain
+                                $targetADObject = Get-ActiveDirectoryObject -Name $target -Domain $script:Domain
                                 
                                 # Create site system role for discovered DP
                                 $siteSystemRole = @{
-                                    "dNSHostName" = $target.ToUpper()
+                                    "dNSHostName" = $target
                                     "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
                                     "Roles" = @(
                                         @{
@@ -3675,11 +3866,11 @@ function Invoke-HTTPCollection {
                                 
                                 # Resolve target to AD object
                                 try {
-                                    $targetADObject = Get-ADObjectByHostname -Hostname $target -Domain $script:Domain
+                                    $targetADObject = Get-ActiveDirectoryObject -Name $target -Domain $script:Domain
                                     
                                     # Create site system role for discovered DP
                                     $siteSystemRole = @{
-                                        "dNSHostName" = $target.ToUpper()
+                                        "dNSHostName" = $target
                                         "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
                                         "Roles" = @(
                                             @{
@@ -3759,7 +3950,7 @@ function Invoke-SMBCollection {
             # Resolve target to AD object first
             $targetADObject = $null
             try {
-                $targetADObject = Get-ADObjectByHostname -Hostname $target -Domain $script:Domain
+                $targetADObject = Get-ActiveDirectoryObject -Name $target -Domain $script:Domain
             } catch {
                 Write-LogMessage "Failed to resolve target $target to AD object: $_" -Level "Warning"
             }
@@ -3912,7 +4103,7 @@ function Invoke-SMBCollection {
                     # Create site system role entry if any roles were discovered
                     if ($discoveredRoles.Count -gt 0) {
                         $siteSystemRole = @{
-                            "dNSHostName" = $target.ToUpper()
+                            "dNSHostName" = $target
                             "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
                             "Roles" = $discoveredRoles
                             "Source" = "SMB"
@@ -3958,14 +4149,14 @@ function Invoke-SMBCollection {
                             
                             # Create site system role if we don't already have one for this target
                             $existingSiteSystem = $script:SiteSystemRoles | Where-Object { 
-                                $_.dNSHostName -eq $target.ToUpper() -and $_.Source -eq "SMB" 
+                                $_.dNSHostName -eq $target -and $_.Source -eq "SMB" 
                             }
                             
                             if ($existingSiteSystem) {
                                 $existingSiteSystem.Roles += $newRole
                             } else {
                                 $siteSystemRole = @{
-                                    "dNSHostName" = $target.ToUpper()
+                                    "dNSHostName" = $target
                                     "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
                                     "Roles" = @($newRole)
                                     "Source" = "SMB-DirectAccess"
@@ -4014,7 +4205,7 @@ function Process-SitesIngest {
     foreach ($site in $script:Sites) {
         # 1. Create or find SCCM_Site node
         $siteNode = New-SCCMNode -ObjectIdentifier $site.SiteIdentifier -NodeType "SCCM_Site" -Properties $site
-        $script:NodesOutput += $siteNode
+        $script:Nodes += $siteNode
         
         # 2. Create or find parent SCCM_Site if ParentSiteCode exists
         if ($site.ParentSiteCode -and $site.ParentSiteGUID) {
@@ -4031,17 +4222,17 @@ function Process-SitesIngest {
             }
             
             $parentSiteNode = New-SCCMNode -ObjectIdentifier $parentSiteIdentifier -NodeType "SCCM_Site" -Properties $parentSiteProps
-            $script:NodesOutput += $parentSiteNode
+            $script:Nodes += $parentSiteNode
             
             # Create SCCM_SameAdminsAs edges
             # Parent to child (always)
             $edge1 = New-SCCMEdge -SourceNode $parentSiteIdentifier -TargetNode $site.SiteIdentifier -EdgeType "SCCM_SameAdminsAs"
-            $script:EdgesOutput += $edge1
+            $script:Edges += $edge1
             
             # Child to parent (unless secondary site)
             if ($site.SiteType -ne "Secondary Site") {
                 $edge2 = New-SCCMEdge -SourceNode $site.SiteIdentifier -TargetNode $parentSiteIdentifier -EdgeType "SCCM_SameAdminsAs"
-                $script:EdgesOutput += $edge2
+                $script:Edges += $edge2
             }
         }
         
@@ -4053,7 +4244,7 @@ function Process-SitesIngest {
                 "SCCM_SiteSystemRoles" = @("SMS Site Server.$($site.SiteIdentifier)")
             }
             $computerNode = New-SCCMNode -ObjectIdentifier $site.Properties.SiteServerObjectIdentifier -NodeType "Computer" -Properties $computerProps
-            $script:NodesOutput += $computerNode
+            $script:Nodes += $computerNode
         }
         
         # 4. Create/update Computer node for SQL server (if different from site server)
@@ -4063,12 +4254,12 @@ function Process-SitesIngest {
                 "SCCM_SiteSystemRoles" = @("SMS SQL Server.$($site.SiteIdentifier)")
             }
             $sqlComputerNode = New-SCCMNode -ObjectIdentifier $site.Properties.SQLServerObjectIdentifier -NodeType "Computer" -Properties $sqlComputerProps
-            $script:NodesOutput += $sqlComputerNode
+            $script:Nodes += $sqlComputerNode
             
             # Create AdminTo edge from site server to SQL server
             if ($site.Properties.SiteServerObjectIdentifier) {
                 $adminToEdge = New-SCCMEdge -SourceNode $site.Properties.SiteServerObjectIdentifier -TargetNode $site.Properties.SQLServerObjectIdentifier -EdgeType "AdminTo"
-                $script:EdgesOutput += $adminToEdge
+                $script:Edges += $adminToEdge
             }
         }
     }
@@ -4082,15 +4273,15 @@ function Process-ClientDevicesIngest {
     foreach ($device in $script:ClientDevices) {
         # 1. Create or find SCCM_ClientDevice node
         $deviceNode = New-SCCMNode -ObjectIdentifier $device.SMSID -NodeType "SCCM_ClientDevice" -Properties $device
-        $script:NodesOutput += $deviceNode
+        $script:Nodes += $deviceNode
         
         # 2. Create or find SCCM_Site node and create SCCM_HasClient edge
         if ($device.SiteIdentifier) {
             $siteNode = New-SCCMNode -ObjectIdentifier $device.SiteIdentifier -NodeType "SCCM_Site" -Properties @{}
-            $script:NodesOutput += $siteNode
+            $script:Nodes += $siteNode
             
             $hasClientEdge = New-SCCMEdge -SourceNode $device.SiteIdentifier -TargetNode $device.SMSID -EdgeType "SCCM_HasClient"
-            $script:EdgesOutput += $hasClientEdge
+            $script:Edges += $hasClientEdge
         }
         
         # 3. Create SameHostAs edges with Computer node
@@ -4098,7 +4289,7 @@ function Process-ClientDevicesIngest {
             # Create Host node
             $hostId = "HOST-$($device.SMSID)"
             $hostNode = New-SCCMNode -ObjectIdentifier $hostId -NodeType "Host" -Properties @{}
-            $script:NodesOutput += $hostNode
+            $script:Nodes += $hostNode
             
             # Create Computer node
             $computerProps = @{
@@ -4106,7 +4297,7 @@ function Process-ClientDevicesIngest {
                 "Name" = $device.dNSHostName
             }
             $computerNode = New-SCCMNode -ObjectIdentifier $device.ADDomainSID -NodeType "Computer" -Properties $computerProps
-            $script:NodesOutput += $computerNode
+            $script:Nodes += $computerNode
             
             # Create SameHostAs edges (bidirectional)
             $sameHost1 = New-SCCMEdge -SourceNode $device.SMSID -TargetNode $hostId -EdgeType "SameHostAs"
@@ -4114,7 +4305,7 @@ function Process-ClientDevicesIngest {
             $sameHost3 = New-SCCMEdge -SourceNode $device.ADDomainSID -TargetNode $hostId -EdgeType "SameHostAs"
             $sameHost4 = New-SCCMEdge -SourceNode $hostId -TargetNode $device.ADDomainSID -EdgeType "SameHostAs"
             
-            $script:EdgesOutput += $sameHost1, $sameHost2, $sameHost3, $sameHost4
+            $script:Edges += $sameHost1, $sameHost2, $sameHost3, $sameHost4
         }
         
         # 4. Create SameHostAs edges with AZDevice node
@@ -4122,14 +4313,14 @@ function Process-ClientDevicesIngest {
             # Create Host node if not already created
             $hostId = "HOST-$($device.SMSID)"
             $hostNode = New-SCCMNode -ObjectIdentifier $hostId -NodeType "Host" -Properties @{}
-            $script:NodesOutput += $hostNode
+            $script:Nodes += $hostNode
             
             # Create AZDevice node
             $azDeviceProps = @{
                 "tenantId" = $device.AADTenantID
             }
             $azDeviceNode = New-SCCMNode -ObjectIdentifier $device.AADDeviceID -NodeType "AZDevice" -Properties $azDeviceProps
-            $script:NodesOutput += $azDeviceNode
+            $script:Nodes += $azDeviceNode
             
             # Create SameHostAs edges (bidirectional)
             $azSameHost1 = New-SCCMEdge -SourceNode $device.SMSID -TargetNode $hostId -EdgeType "SameHostAs"
@@ -4137,25 +4328,25 @@ function Process-ClientDevicesIngest {
             $azSameHost3 = New-SCCMEdge -SourceNode $device.AADDeviceID -TargetNode $hostId -EdgeType "SameHostAs"
             $azSameHost4 = New-SCCMEdge -SourceNode $hostId -TargetNode $device.AADDeviceID -EdgeType "SameHostAs"
             
-            $script:EdgesOutput += $azSameHost1, $azSameHost2, $azSameHost3, $azSameHost4
+            $script:Edges += $azSameHost1, $azSameHost2, $azSameHost3, $azSameHost4
         }
         
         # 5. Create SCCM_HasADLastLogonUser edge
         if ($device.ADLastLogonUserSID) {
             $lastLogonEdge = New-SCCMEdge -SourceNode $device.SMSID -TargetNode $device.ADLastLogonUserSID -EdgeType "SCCM_HasADLastLogonUser"
-            $script:EdgesOutput += $lastLogonEdge
+            $script:Edges += $lastLogonEdge
         }
         
         # 6. Create SCCM_HasCurrentUser edge
         if ($device.CurrentLogonUserSID) {
             $currentUserEdge = New-SCCMEdge -SourceNode $device.SMSID -TargetNode $device.CurrentLogonUserSID -EdgeType "SCCM_HasCurrentUser"
-            $script:EdgesOutput += $currentUserEdge
+            $script:Edges += $currentUserEdge
         }
         
         # 7. Create SCCM_HasPrimaryUser edge
         if ($device.PrimaryUserSID) {
             $primaryUserEdge = New-SCCMEdge -SourceNode $device.SMSID -TargetNode $device.PrimaryUserSID -EdgeType "SCCM_HasPrimaryUser"
-            $script:EdgesOutput += $primaryUserEdge
+            $script:Edges += $primaryUserEdge
         }
     }
     
@@ -4168,7 +4359,7 @@ function Process-SecurityRolesIngest {
     foreach ($role in $script:SecurityRoles) {
         # Create or find SCCM_SecurityRole node
         $roleNode = New-SCCMNode -ObjectIdentifier $role.ObjectIdentifier -NodeType "SCCM_SecurityRole" -Properties $role
-        $script:NodesOutput += $roleNode
+        $script:Nodes += $roleNode
     }
     
     Write-LogMessage "SecurityRoles ingest completed" -Level "Success"
@@ -4180,7 +4371,7 @@ function Process-CollectionsIngest {
     foreach ($collection in $script:Collections) {
         # Create or find SCCM_Collection node
         $collectionNode = New-SCCMNode -ObjectIdentifier $collection.ObjectIdentifier -NodeType "SCCM_Collection" -Properties $collection
-        $script:NodesOutput += $collectionNode
+        $script:Nodes += $collectionNode
     }
     
     Write-LogMessage "Collections ingest completed" -Level "Success"
@@ -4192,15 +4383,15 @@ function Process-AdminUsersIngest {
     foreach ($admin in $script:AdminUsers) {
         # 1. Create or find SCCM_AdminUser node
         $adminNode = New-SCCMNode -ObjectIdentifier $admin.ObjectIdentifier -NodeType "SCCM_AdminUser" -Properties $admin
-        $script:NodesOutput += $adminNode
+        $script:Nodes += $adminNode
         
         # 2. Create or find domain object and create SCCM_IsMappedTo edge
         if ($admin.AdminSID) {
             $domainObjectNode = New-SCCMNode -ObjectIdentifier $admin.AdminSID -NodeType "Base" -Properties @{}
-            $script:NodesOutput += $domainObjectNode
+            $script:Nodes += $domainObjectNode
             
             $mappedToEdge = New-SCCMEdge -SourceNode $admin.AdminSID -TargetNode $admin.ObjectIdentifier -EdgeType "SCCM_IsMappedTo"
-            $script:EdgesOutput += $mappedToEdge
+            $script:Edges += $mappedToEdge
         }
         
         # 3. Create SCCM_IsAssigned edges to collections
@@ -4210,7 +4401,7 @@ function Process-AdminUsersIngest {
                 $collection = $script:Collections | Where-Object { $_.Name -eq $collectionName.Trim() -and $_.SourceSiteIdentifier -eq $admin.SourceSiteIdentifier }
                 if ($collection) {
                     $assignedToCollectionEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $collection.ObjectIdentifier -EdgeType "SCCM_IsAssigned"
-                    $script:EdgesOutput += $assignedToCollectionEdge
+                    $script:Edges += $assignedToCollectionEdge
                 }
             }
         }
@@ -4222,7 +4413,7 @@ function Process-AdminUsersIngest {
                 $role = $script:SecurityRoles | Where-Object { $_.RoleID -eq $roleId.Trim() -and $_.SourceSiteIdentifier -eq $admin.SourceSiteIdentifier }
                 if ($role) {
                     $assignedToRoleEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $role.ObjectIdentifier -EdgeType "SCCM_IsAssigned"
-                    $script:EdgesOutput += $assignedToRoleEdge
+                    $script:Edges += $assignedToRoleEdge
                 }
             }
         }
@@ -4241,7 +4432,7 @@ function Process-SiteSystemRolesIngest {
             "SCCM_SiteSystemRoles" = $siteSystem.Roles
         }
         $computerNode = New-SCCMNode -ObjectIdentifier $siteSystem.ObjectIdentifier -NodeType "Computer" -Properties $computerProps
-        $script:NodesOutput += $computerNode
+        $script:Nodes += $computerNode
         
         # 2. Create AdminTo edges from site server
         foreach ($role in $siteSystem.Roles) {
@@ -4252,7 +4443,7 @@ function Process-SiteSystemRolesIngest {
                 $site = $script:Sites | Where-Object { $_.SiteIdentifier -eq $siteIdentifier }
                 if ($site -and $site.Properties.SiteServerObjectIdentifier -ne $siteSystem.ObjectIdentifier) {
                     $adminToEdge = New-SCCMEdge -SourceNode $site.Properties.SiteServerObjectIdentifier -TargetNode $siteSystem.ObjectIdentifier -EdgeType "AdminTo"
-                    $script:EdgesOutput += $adminToEdge
+                    $script:Edges += $adminToEdge
                 }
             }
         }
@@ -4260,7 +4451,7 @@ function Process-SiteSystemRolesIngest {
         # 3. Create HasSession edge for current users
         if ($siteSystem.CurrentUser) {
             $sessionEdge = New-SCCMEdge -SourceNode $siteSystem.ObjectIdentifier -TargetNode $siteSystem.CurrentUser -EdgeType "HasSession"
-            $script:EdgesOutput += $sessionEdge
+            $script:Edges += $sessionEdge
         }
     }
     
@@ -4301,7 +4492,7 @@ function Process-HasMemberEdges {
                 if ($matchingDevice) {
                     # Step 6: Create SCCM_HasMember edge
                     $hasMemberEdge = New-SCCMEdge -SourceNode $collection.ObjectIdentifier -TargetNode $matchingDevice.SMSID -EdgeType "SCCM_HasMember"
-                    $script:EdgesOutput += $hasMemberEdge
+                    $script:Edges += $hasMemberEdge
                     Write-LogMessage "Created SCCM_HasMember: $($collection.Name) -> $($matchingDevice.dNSHostName)" -Level "Debug"
                 }
             }
@@ -4349,7 +4540,7 @@ function Process-FullAdministratorEdges {
                     foreach ($device in $devices) {
                         # Step 7: Create SCCM_FullAdministrator edge
                         $fullAdminEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $device.SMSID -EdgeType "SCCM_FullAdministrator"
-                        $script:EdgesOutput += $fullAdminEdge
+                        $script:Edges += $fullAdminEdge
                         Write-LogMessage "Created SCCM_FullAdministrator: $($admin.LogonName) -> $($device.dNSHostName)" -Level "Debug"
                     }
                 }
@@ -4398,7 +4589,7 @@ function Process-RoleSpecificEdges {
                         
                         foreach ($device in $devices) {
                             $roleEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $device.SMSID -EdgeType $edgeType
-                            $script:EdgesOutput += $roleEdge
+                            $script:Edges += $roleEdge
                             Write-LogMessage "Created $edgeType : $($admin.LogonName) -> $($device.dNSHostName)" -Level "Debug"
                         }
                     }
@@ -4448,7 +4639,7 @@ function Process-AssignSpecificPermissionsEdges {
                         $connectedSite = $script:Sites | Where-Object { $_.SiteIdentifier -eq $connectedSiteId }
                         if ($connectedSite) {
                             $assignAllEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $connectedSite.SiteIdentifier -EdgeType "SCCM_AssignAllPermissions"
-                            $script:EdgesOutput += $assignAllEdge
+                            $script:Edges += $assignAllEdge
                             Write-LogMessage "Created SCCM_AssignAllPermissions: $($admin.LogonName) -> $($connectedSite.SiteCode)" -Level "Debug"
                         }
                     }
@@ -4461,7 +4652,7 @@ function Process-AssignSpecificPermissionsEdges {
                             
                             foreach ($device in $devices) {
                                 $assignSpecificEdge = New-SCCMEdge -SourceNode $admin.ObjectIdentifier -TargetNode $device.SMSID -EdgeType "SCCM_AssignSpecificPermissions"
-                                $script:EdgesOutput += $assignSpecificEdge
+                                $script:Edges += $assignSpecificEdge
                                 Write-LogMessage "Created SCCM_AssignSpecificPermissions: $($admin.LogonName) -> $($device.dNSHostName)" -Level "Debug"
                             }
                         }
@@ -4487,7 +4678,7 @@ function Add-DeviceToTargets {
     if ([string]::IsNullOrWhiteSpace($DeviceName)) { return $null }
     
     # Try to resolve to AD object to get canonical identifier
-    $adObject = Get-ADObjectByHostname -Hostname $DeviceName -Domain $script:Domain
+    $adObject = Get-ActiveDirectoryObject -Name $DeviceName -Domain $script:Domain
     
     # Use ObjectSID as deduplication key if resolved, otherwise use lowercase name
     if ($adObject -and $adObject.SID) {
@@ -4496,7 +4687,8 @@ function Add-DeviceToTargets {
     } else {
         $dedupKey = $DeviceName.ToLower()
         $canonicalName = $DeviceName
-        Write-LogMessage "Could not resolve '$DeviceName' to domain object" -Level "Warning"
+        Write-LogMessage Warning "Could not resolve '$DeviceName' to domain object"
+        return $null
     }
     
     # Check if we already have this device
@@ -4505,7 +4697,7 @@ function Add-DeviceToTargets {
     if ($existingTarget) {
         # PREFER FQDN: Update hostname if current input is FQDN and existing is not
         if ($DeviceName -contains '.' -and $existingTarget.Hostname -notcontains '.') {
-            Write-LogMessage "Upgrading target from NetBIOS '$($existingTarget.Hostname)' to FQDN '$DeviceName'" -Level "Info"
+            Write-LogMessage Verbose "Replacing NetBIOS name '$($existingTarget.Hostname)' with FQDN '$DeviceName'"
             $existingTarget.Hostname = $DeviceName
         }
         
@@ -4513,31 +4705,24 @@ function Add-DeviceToTargets {
         if ($existingTarget.Source -notlike "*$Source*") {
             $existingTarget.Source += ", $Source"
         }
-        Write-LogMessage "Deduplicated: '$DeviceName' -> existing target '$($existingTarget.Hostname)'" -Level "Verbose"
         
-        # Return existing target info
-        return @{
-            Hostname = $existingTarget.Hostname
-            ObjectIdentifier = $existingTarget.ObjectIdentifier
-            IsNew = $false
-        }
+        # Return existing target
+        $existingTarget.IsNew = $false
+        return $existingTarget
     } else {
         # Add new target
         $script:CollectionTargets[$canonicalName] = @{
-            "Source" = $Source
-            "Hostname" = $canonicalName
+            "ADObject" = if ($adObject) { $adObject } else { $null }
             "Collected" = $false
             "DedupKey" = $dedupKey
-            "ObjectIdentifier" = if ($adObject) { $adObject.SID } else { $null }
+            "Hostname" = $canonicalName
+            "IsNew" = $true
+            "Source" = $Source
         }
-        Write-LogMessage "Added collection target: $canonicalName from $Source" -Level "Info"
+        Write-LogMessage Verbose "Added collection target: $canonicalName from $Source"
         
-        # Return new target info
-        return @{
-            Hostname = $canonicalName
-            ObjectIdentifier = if ($adObject) { $adObject.SID } else { $null }
-            IsNew = $true
-        }
+        # Return new target
+        return $script:CollectionTargets[$canonicalName]
     }
 }
 
@@ -4582,13 +4767,13 @@ function Get-ConnectedSitesRecursive {
     $connectedSites = @($SiteIdentifier)
     
     # Find all SCCM_SameAdminsAs edges FROM this site
-    $outgoingEdges = $script:EdgesOutput | Where-Object {
+    $outgoingEdges = $script:Edges | Where-Object {
         $_.EdgeType -eq "SCCM_SameAdminsAs" -and 
         $_.SourceNode -eq $SiteIdentifier
     }
     
     # Find all SCCM_SameAdminsAs edges TO this site  
-    $incomingEdges = $script:EdgesOutput | Where-Object {
+    $incomingEdges = $script:Edges | Where-Object {
         $_.EdgeType -eq "SCCM_SameAdminsAs" -and 
         $_.TargetNode -eq $SiteIdentifier
     }
@@ -4612,7 +4797,7 @@ function Find-AdminUsersConnectedToSecurityRole {
     $connectedAdminUsers = @()
     
     # Find SCCM_IsAssigned edges connecting AdminUsers to this SecurityRole
-    $assignmentEdges = $script:EdgesOutput | Where-Object {
+    $assignmentEdges = $script:Edges | Where-Object {
         $_.EdgeType -eq "SCCM_IsAssigned" -and 
         $_.TargetNode -eq $SecurityRoleObjectIdentifier
     }
@@ -4634,7 +4819,7 @@ function Find-CollectionsConnectedToAdminUser {
     $connectedCollections = @()
     
     # Find SCCM_IsAssigned edges connecting this AdminUser to Collections
-    $assignmentEdges = $script:EdgesOutput | Where-Object {
+    $assignmentEdges = $script:Edges | Where-Object {
         $_.EdgeType -eq "SCCM_IsAssigned" -and 
         $_.SourceNode -eq $AdminUserObjectIdentifier
     }
@@ -4656,7 +4841,7 @@ function Find-ClientDevicesConnectedToCollection {
     $connectedDevices = @()
     
     # Find SCCM_HasMember edges connecting this Collection to ClientDevices
-    $memberEdges = $script:EdgesOutput | Where-Object {
+    $memberEdges = $script:Edges | Where-Object {
         $_.EdgeType -eq "SCCM_HasMember" -and 
         $_.SourceNode -eq $CollectionObjectIdentifier
     }
@@ -4697,7 +4882,7 @@ function Start-IngestAndPostProcessing {
         Write-LogMessage "Post-processing skipped due to -SkipPostProcessing flag" -Level "Warning"
     }
     Write-LogMessage "Processing completed successfully" -Level "Success"
-    Write-LogMessage "Created $($script:NodesOutput.Count) nodes and $($script:EdgesOutput.Count) edges" -Level "Info"
+    Write-LogMessage "Created $($script:Nodes.Count) nodes and $($script:Edges.Count) edges" -Level "Info"
 }
 
 #endregion
@@ -4712,9 +4897,7 @@ function Export-BloodHoundData {
     } else {
         Export-SingleJSON
     }
-}
 
-function Export-BloodHoundZip {
     # Set output directory
     if (-not $TempDir) {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -4725,7 +4908,7 @@ function Export-BloodHoundZip {
         New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
     }
     
-    # Create SCCM data file
+    # Create SCCM data file (keep this for compatibility)
     $sccmData = @{
         "Sites" = $script:Sites
         "ClientDevices" = $script:ClientDevices
@@ -4739,19 +4922,27 @@ function Export-BloodHoundZip {
     $sccmData | ConvertTo-Json -Depth 10 | Out-File -FilePath $sccmFile -Encoding UTF8
     $script:OutputFiles += $sccmFile
     
-    # Create BloodHound data file with SCCM metadata
+    # Create BloodHound data file using the Nodes and Edges
     $bloodhoundData = @{
         "graph" = @{
             "metadata" = @{
                 "source_kind" = "SCCM_Base"
             }
-            "nodes" = $script:NodesOutput
-            "edges" = $script:EdgesOutput
-        }
-        "meta" = @{
-            "type" = "sccm"
-            "version" = $script:ScriptVersion
-            "collected" = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+            "nodes" = @($script:Nodes | ForEach-Object {
+                @{
+                    id = $_.id
+                    kinds = $_.kinds
+                    properties = $_.properties
+                }
+            })
+            "edges" = @($script:Edges | ForEach-Object {
+                @{
+                    start = $_.source
+                    end = $_.target
+                    kind = $_.kind
+                    properties = $_.properties
+                }
+            })
         }
     }
     
@@ -4793,6 +4984,7 @@ function Export-BloodHoundZip {
         Write-LogMessage "Failed to cleanup temporary directory: $_" -Level "Warning"
     }
 }
+
 function Export-SingleJSON {
     $outputData = @{
         "sccm_data" = @{
@@ -4804,8 +4996,8 @@ function Export-SingleJSON {
             "SiteSystemRoles" = $script:SiteSystemRoles
         }
         "bloodhound_data" = @{
-            "nodes" = $script:NodesOutput
-            "edges" = $script:EdgesOutput
+            "nodes" = $script:Nodes
+            "edges" = $script:Edges
         }
         "meta" = @{
             "type" = "sccm"
@@ -4925,7 +5117,6 @@ function Start-SCCMCollection {
     } else {        
         # Phase 1: LDAP - Identify targets in System Management container
         if ($enableLDAP) {
-            Write-LogMessage "Executing LDAP collection phase" -Level "Info"
             if ($script:Domain) {
                 Invoke-LDAPCollection
             } else {
@@ -5035,8 +5226,8 @@ function Start-SCCMCollection {
     
     # Report edge statistics
     Write-LogMessage "Edge Creation Summary:" -Level "Info"
-    Write-LogMessage "Total nodes created: $($script:NodesOutput.Count)" -Level "Info"
-    Write-LogMessage "Total edges created: $($script:EdgesOutput.Count)" -Level "Info"
+    Write-LogMessage "Total nodes created: $($script:Nodes.Count)" -Level "Info"
+    Write-LogMessage "Total edges created: $($script:Edges.Count)" -Level "Info"
     
     # Export data
     Export-BloodHoundData
