@@ -826,105 +826,129 @@ function Invoke-LDAPCollection {
             }
             
             $sourceForest = $null
-            
+            $commandLineSiteCode = $null
+            $rootSiteCode = $null
+
             # Parse capabilities to determine site relationships and extract SourceForest
             if ($mSSMSManagementPoint.mSSMSCapabilities) {
                 try {
-                    try {
-                        $cleanXml = $mSSMSManagementPoint.mSSMSCapabilities -replace '&(?!amp;|lt;|gt;|quot;|apos;)', '&amp;'
-                        [xml]$mSSMSCapabilities = $cleanXml
-                    } catch {
-                        Write-Warning "Failed to parse capabilities for $($mSSMSManagementPoint.Name): $($_.Exception.Message)"
-                        $mSSMSCapabilities = $null
-                    }
+                    # Clean XML entities
+                    $cleanXml = $mSSMSManagementPoint.mSSMSCapabilities -replace '&(?!amp;|lt;|gt;|quot;|apos;)', '&amp;'
+                    [xml]$mSSMSCapabilities = $cleanXml
+
+                    # Extract CommandLine site code
                     $commandLine = $mSSMSCapabilities.ClientOperationalSettings.CCM.CommandLine
+                    if ($commandLine -match "SMSSITECODE=([A-Z0-9]{3})") {
+                        $commandLineSiteCode = $matches[1]
+                    }
+
+                    # Extract root site code
                     $rootSiteCode = $mSSMSCapabilities.ClientOperationalSettings.RootSiteCode
+
+                    # Extract source forest
                     $forestElement = $mSSMSCapabilities.ClientOperationalSettings.Forest
-                    
                     if ($forestElement) {
                         $sourceForest = $forestElement.Value
                     }
-                    
-                    # Update existing SCCM_Site node with MP-derived information
-                    $existingSiteNode = $script:Nodes | Where-Object { $_.id -eq $mpSiteCode }
-                    if ($existingSiteNode) {
-                        # Determine site type based on RootSiteCode and CommandLine
-                        if ($commandLine -match "SMSSITECODE=([A-Z0-9]{3})" -and $matches[1] -eq $mpSiteCode) {
-                            if ($rootSiteCode -and $rootSiteCode -ne $mpSiteCode) {
-                                $existingSiteNode.properties.SiteType = 2  # Primary Site
-                                $existingSiteNode.properties.ParentSiteCode = $rootSiteCode
-                                $existingSiteNode.properties.ParentSiteIdentifier = $rootSiteCode
-                                
-                                # Create CAS site node if it doesn't exist
-                                $existingCAS = $script:Nodes | Where-Object { $_.id -eq $rootSiteCode }
-
-                                if (-not $existingCAS) {
-                                    Add-Node -Id $rootSiteCode -Kinds @("SCCM_Site") -Properties @{
-                                        CollectionSource = @("LDAP-mSSMSManagementPoint")
-                                        Name = $rootSiteCode
-                                        DistinguishedName = $null
-                                        ParentSiteCode = "None"
-                                        ParentSiteGUID = $null
-                                        ParentSiteIdentifier = $null
-                                        SiteCode = $rootSiteCode
-                                        SiteGUID = $null
-                                        SiteIdentifier = $rootSiteCode
-                                        SiteName = $null
-                                        SiteServerDomain = $null
-                                        SiteServerName = $null
-                                        SiteServerObjectIdentifier = $null
-                                        SiteType = 4  # Central Administration Site
-                                        SourceForest = $sourceForest
-                                        SQLDatabaseName = $null
-                                        SQLServerName = $null
-                                        SQLServerObjectIdentifier = $null
-                                        SQLServiceAccount = $null
-                                        SQLServiceAccountObjectIdentifier = $null
-
-                                    }
-                                }
-                            } elseif ($rootSiteCode -eq $mpSiteCode) {
-                                # This is a primary site
-                                $existingSiteNode.properties.SiteType = 2
-                                $existingSiteNode.properties.ParentSiteCode = "None"
-                                $existingSiteNode.properties.ParentSiteIdentifier = $null
-                            }
-                        } else {
-                            # Secondary site case - CommandLine SMSSITECODE differs from mSSMSSiteCode
-                            $existingSiteNode.properties.SiteType = 1  # Secondary Site
-                            if ($commandLine -match "SMSSITECODE=([A-Z0-9]{3})") {
-                                $existingSiteNode.properties.ParentSiteCode = $matches[1]
-                                $existingSiteNode.properties.ParentSiteIdentifier = $matches[1]
-                            }
-                        }
-                        
-                        # Update SourceForest if found
-                        if ($sourceForest -and -not $existingSiteNode.properties.SourceForest) {
-                            $existingSiteNode.properties.SourceForest = $sourceForest
-                        }
-                    }
-                    
-                    # Parse for fallback status points and create Computer nodes
-                    if ($fspNodes = $capabilities.ClientOperationalSettings.FSP) {
-                        $fspNodes = $capabilities.ClientOperationalSettings.FSP.SelectNodes("FSPServer")
-                        foreach ($fsp in $fspNodes) {
-                            $fspHostname = $fsp.InnerText
-                            $fspTarget = Add-DeviceToTargets -DeviceName $fspHostname -Source "LDAP-mSSMSManagementPoint"
-    
-                            if ($fspTarget -and $fspTarget.IsNew) {
-                                Write-LogMessage Success "Found fallback status point: $($fspTarget.Hostname)"                          
-                            }
-                            # Create or update Computer node
-                            if ($fspTarget.ADObject) {
-                                Add-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $fspTarget.ADObject -Properties @{
-                                    CollectionSource = @("LDAP-mSSMSManagementPoint")
-                                    SCCM_SiteSystemRoles = @("$siteCode.SMS Fallback Status Point")
-                                }
-                            }
-                        }
-                    }
                 } catch {
                     Write-LogMessage Error "Failed to parse capabilities for MP $mpHostname`: $_"
+                    $mSSMSCapabilities = $null
+                }
+                    
+                # Determine site type based on design specification
+                $siteType = "Secondary Site"  # Default assumption
+                $parentSiteCode = $null
+                $parentSiteIdentifier = $null
+
+                # Check if this MP's CommandLine site code matches the site code we're analyzing
+                if ($commandLineSiteCode -eq $mpSiteCode) {
+                    # Primary Site: mSSMSManagementPoint exists where CommandLine.SMSSITECODE = this site code
+                    $siteType = "Primary Site"
+                    
+                    # Check if there's a different root site code (indicates hierarchy)
+                    if ($rootSiteCode -and $rootSiteCode -ne $mpSiteCode) {
+                        $parentSiteCode = $rootSiteCode
+                        $parentSiteIdentifier = $rootSiteCode
+                    } else {
+                        $parentSiteCode = "None"
+                        $parentSiteIdentifier = "None"
+                    }
+                }
+                elseif ($rootSiteCode -eq $mpSiteCode -and $commandLineSiteCode -ne $mpSiteCode) {
+                    # Central Administration Site: mSSMSManagementPoint exists where RootSiteCode = this site code
+                    # but CommandLine.SMSSITECODE is different
+                    $siteType = "Central Administration Site"
+                    $parentSiteCode = "None"
+                    $parentSiteIdentifier = "None"
+                }
+                # If neither condition above is met, it remains "Secondary Site"
+                
+                # Update existing SCCM_Site node with MP-derived information
+                $existingSiteNode = $script:Nodes | Where-Object { $_.id -eq $mpSiteCode }
+                if ($existingSiteNode) {
+                    $existingSiteNode.properties.SiteType = $siteType
+                    $existingSiteNode.properties.ParentSiteCode = $parentSiteCode
+                    $existingSiteNode.properties.ParentSiteIdentifier = $parentSiteIdentifier
+                    if ($sourceForest) {
+                        $existingSiteNode.properties.SourceForest = $sourceForest
+                    }
+                    
+                    # Add MP as collection source
+                    if ($existingSiteNode.properties.CollectionSource -notcontains "LDAP-mSSMSManagementPoint") {
+                        $existingSiteNode.properties.CollectionSource += "LDAP-mSSMSManagementPoint"
+                    }
+                    
+                    Write-LogMessage Verbose "Updated site type for $($mpSiteCode): $siteType"
+                }
+                
+                # Create parent CAS site node if it doesn't exist and we found one
+                if ($parentSiteCode -and $parentSiteCode -ne "None") {
+                    $existingParentSite = $script:Nodes | Where-Object { $_.id -eq $parentSiteCode }
+                    if (-not $existingParentSite) {
+                        Add-Node -Id $parentSiteCode -Kinds @("SCCM_Site") -Properties @{
+                            CollectionSource = @("LDAP-mSSMSManagementPoint")
+                            Name = $parentSiteCode
+                            DistinguishedName = $null
+                            ParentSiteCode = "None"
+                            ParentSiteGUID = $null
+                            ParentSiteIdentifier = "None"
+                            SiteCode = $parentSiteCode
+                            SiteGUID = $null
+                            SiteName = $null
+                            SiteServerDomain = $null
+                            SiteServerName = $null
+                            SiteServerObjectIdentifier = $null
+                            SiteType = "Central Administration Site"
+                            SourceForest = $sourceForest
+                            SQLDatabaseName = $null
+                            SQLServerName = $null
+                            SQLServerObjectIdentifier = $null
+                            SQLServiceAccount = $null
+                            SQLServiceAccountObjectIdentifier = $null
+                        }
+                        
+                        Write-LogMessage Success "Found central administration site: $parentSiteCode"
+                    }
+                }
+                
+                # Parse for fallback status points and create Computer nodes
+                if ($fspNodes = $capabilities.ClientOperationalSettings.FSP) {
+                    $fspNodes = $capabilities.ClientOperationalSettings.FSP.SelectNodes("FSPServer")
+                    foreach ($fsp in $fspNodes) {
+                        $fspHostname = $fsp.InnerText
+                        $fspTarget = Add-DeviceToTargets -DeviceName $fspHostname -Source "LDAP-mSSMSManagementPoint"
+        
+                        if ($fspTarget -and $fspTarget.IsNew) {
+                            Write-LogMessage Success "Found fallback status point: $($fspTarget.Hostname)"                          
+                        }
+                        # Create or update Computer node
+                        if ($fspTarget.ADObject) {
+                            Add-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $fspTarget.ADObject -Properties @{
+                                CollectionSource = @("LDAP-mSSMSManagementPoint")
+                                SCCM_SiteSystemRoles = @("$siteCode.SMS Fallback Status Point")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1371,106 +1395,62 @@ function Invoke-LocalCollection {
         }
         
         # Get client settings from CCM_Client
-        Write-LogMessage "Querying CCM_Client for client information..." -Level "Info"
+        Write-LogMessage Info "Querying CCM_Client for client information..."
         $ccmClient = Get-WmiObject -Namespace "root\CCM" -Class "CCM_Client" -ErrorAction SilentlyContinue
-        
+
         $clientId = $null
         $clientIdChangeDate = $null
         $previousClientId = $null
-        
+
         if ($ccmClient) {
             $clientId = $ccmClient.ClientId
             $clientIdChangeDate = $ccmClient.ClientIdChangeDate
             $previousClientId = $ccmClient.PreviousClientId
             
-            Write-LogMessage "Found client ID (SMSID): $clientId" -Level "Info"
-            Write-LogMessage "Client ID change date: $clientIdChangeDate" -Level "Info"
+            Write-LogMessage Verbose "Found client ID (SMSID): $clientId"
+            Write-LogMessage Verbose "Client ID change date: $clientIdChangeDate"
         }
-        
+
         # Create ClientDevice object for the local machine
         if ($siteCode -and $clientId) {
             # Get local computer information
-            $computerSystem = Get-WmiObject -Class "Win32_ComputerSystem" -ErrorAction SilentlyContinue
             $computerName = $env:COMPUTERNAME
             $domainName = $env:USERDNSDOMAIN
             $fqdn = if ($domainName) { "$computerName.$domainName" } else { $computerName }
             
-            # Try to get AD computer object for SID and DN using our resolution function
-            $computerObject = Resolve-DomainPrincipalSID -PrincipalName $computerName -Domain $script:Domain
-            $computerSid = $computerObject.SID
-            $computerDN = $computerObject.DistinguishedName
+            # Add to collection targets using established pattern
+            $localTarget = Add-DeviceToTargets -DeviceName $fqdn -Source "Local-CCM_Client"
+            if ($localTarget -and $localTarget.IsNew) {
+                Write-LogMessage Success "Found local client device: $fqdn (SMSID: $clientId)"
+            }
             
             # Resolve current management point SID
             $currentMPSid = $null
-            if ($currentMP) {
+            if ($currentMP -and $localTarget.ADObject) {
                 $mpObject = Get-ActiveDirectoryObject -Name $currentMP -Domain $script:Domain
                 $currentMPSid = $mpObject.SID
             }
             
-            # Check if client device already exists (using SMSID as identifier)
-            $existingClient = $script:ClientDevices | Where-Object { 
-                $_.SMSID -eq $clientId 
+            # Create SCCM_ClientDevice node
+            Add-Node -Id $clientId -Kinds @("SCCM_ClientDevice") -Properties @{
+                CollectionSource = @("Local-CCM_Client")
+                ADDomainSID = if ($localTarget.ADObject) { $localTarget.ADObject.SID } else { $null }
+                CurrentManagementPoint = $currentMP
+                CurrentManagementPointSID = $currentMPSid
+                DistinguishedName = if ($localTarget.ADObject) { $localTarget.ADObject.DistinguishedName } else { $null }
+                DNSHostName = if ($localTarget.ADObject) { $localTarget.ADObject.DNSHostName } else { $null }
+                SiteCode = $siteCode
+                SMSID = $clientId
             }
             
-            if (-not $existingClient) {
-                $clientDevice = @{
-                    "ObjectIdentifier" = $clientId  # Use SMSID as ObjectIdentifier (Primary Key)
-                    "AADDeviceID" = $null
-                    "AADTenantID" = $null
-                    "ADDomainSID" = $computerSid
-                    "ADLastLogonTime" = $null
-                    "ADLastLogonUser" = $null
-                    "ADLastLogonUserDomain" = $null
-                    "ADLastLogonUserSID" = $null
-                    "CoManaged" = $null
-                    "CurrentLogonUser" = $null
-                    "CurrentLogonUserSID" = $null
-                    "CurrentManagementPoint" = $currentMP
-                    "CurrentManagementPointSID" = $currentMPSid
-                    "DeviceOS" = $null
-                    "DeviceOSBuild" = $null
-                    "DistinguishedName" = $computerDN
-                    "dNSHostName" = $fqdn
-                    "IsVirtualMachine" = $null
-                    "LastActiveTime" = $null
-                    "LastOfflineTime" = $null
-                    "LastOnlineTime" = $null
-                    "LastReportedMPServerName" = $null
-                    "LastReportedMPServerSID" = $currentMPSid
-                    "PrimaryUser" = $null
-                    "PrimaryUserSID" = $null
-                    "ResourceID" = $null  # Not available from local collection
-                    "SiteCode" = $siteCode
-                    "SiteGUID" = $null
-                    "SiteIdentifier" = $siteCode
-                    "SMSID" = $clientId
-                    "Name" = $computerName
-                    "Domain" = $domainName
-                    "SystemRoles" = $null
-                    "ADSiteName" = $null
-                    "PrimaryUserName" = $null
-                    "PrimaryUserDomain" = $null
-                    "Source" = "Local-CCM_Client"
-                }
-                
-                $script:ClientDevices += $clientDevice
-                Write-LogMessage "Created local client device with SMSID: $clientId" -Level "Success"
-            } else {
-                # Update existing client with local data
-                $existingClient.CurrentManagementPoint = $currentMP
-                $existingClient.CurrentManagementPointSID = $currentMPSid
-                $existingClient.LastReportedMPServerSID = $currentMPSid
-                $existingClient.dNSHostName = $fqdn
-                $existingClient.DistinguishedName = $computerDN
-                $existingClient.Name = $computerName
-                $existingClient.Domain = $domainName
-                if ($computerSid) { $existingClient.ADDomainSID = $computerSid }
-                Write-LogMessage "Updated existing client device with SMSID: $clientId" -Level "Info"
+            # Also create/update the Computer node for the system running the collector
+            Add-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
+                CollectionSource = @("Local-CCM_Client")
             }
         }
         
         # Search SCCM client log data for UNC paths and URLs that are likely to be SCCM components
-        Write-LogMessage "Searching SCCM client logs for additional SCCM components..." -Level "Info"
+        Write-LogMessage Info "Searching SCCM client logs for additional SCCM components..."
         try {
             $logPaths = @(
                 "$env:WINDIR\CCM\Logs\*.log",
@@ -1519,13 +1499,13 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
+                                                            Write-LogMessage Debug "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
                                                         }
                                                     }
                                                 }
                                             } catch {
                                                 # DNS resolution failed
-                                                Write-LogMessage "Failed to resolve hostname $hostname from UNC path: $_" -Level "Debug"
+                                                Write-LogMessage Debug "Failed to resolve hostname $hostname from UNC path: $_"
                                             }
                                             
                                             # Only add if resolves to RFC1918 private IP
@@ -1534,7 +1514,7 @@ function Invoke-LocalCollection {
                                                 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
-                                                    Write-LogMessage "Found host: $hostname ($($ip.IPAddressToString))" -Level Success
+                                                    Write-LogMessage Verbose "Found host: $hostname ($($ip.IPAddressToString))"
 
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
@@ -1559,7 +1539,7 @@ function Invoke-LocalCollection {
                             foreach ($match in $urlMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $fullUrl = $matchGroup.Value.Trim()
-                                    Write-LogMessage "Found URL: $fullUrl" -Level Debug
+                                    Write-LogMessage Debug "Found URL: $fullUrl"
                                     
                                     # Extract just the domain/hostname portion using named capture group
                                     if ($fullUrl -match "^https?://([^/@:]+)") {
@@ -1582,13 +1562,13 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"  -Level Debug
+                                                            Write-LogMessage Debug "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
                                                         }
                                                     }
                                                 }
                                             } catch {
                                                 # DNS resolution failed
-                                                Write-LogMessage "Failed to resolve hostname $hostname from URL: $_" -Level "Debug"
+                                                Write-LogMessage Debug "Failed to resolve hostname $hostname from URL: $_"
                                             }
                                             
                                             # Only add if resolves to RFC1918 private IP
@@ -1596,7 +1576,7 @@ function Invoke-LocalCollection {
 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
-                                                    Write-LogMessage "Found host: $hostname ($($ip.IPAddressToString))" -Level Success
+                                                    Write-LogMessage Verbose "Found host: $hostname ($($ip.IPAddressToString))"
 
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
@@ -1618,7 +1598,7 @@ function Invoke-LocalCollection {
                             }
                             
                         } catch {
-                            Write-LogMessage "Failed to search log file $($logFile.FullName): $_" -Level "Warning"
+                            Write-LogMessage Error "Failed to search log file $($logFile.FullName): $_"
                         }
                     }
                 }
@@ -1629,36 +1609,25 @@ function Invoke-LocalCollection {
                 $hostname = $component.Hostname
                 $compTarget = Add-DeviceToTargets -DeviceName $hostname -Source $component.Source
                 if ($compTarget -and $compTarget.IsNew) {
-                    Write-LogMessage "Discovered potential SCCM component from logs: $hostname" -Level "Info"
+                    Write-LogMessage Success "Discovered potential SCCM component from logs: $hostname"
                 }
             }
             
-            if ($additionalComponents.Count -gt 0) {
-                Write-LogMessage "Discovered $($additionalComponents.Count) potential SCCM components from client logs" -Level "Success"
-                foreach ($component in $additionalComponents.Values) {
-                    $pathCount = $component.UNCPaths.Count
-                    $urlCount = $component.URLs.Count
-                    Write-LogMessage "- $($component.Hostname) (found $pathCount UNC paths, $urlCount URLs)" -Level "Info"
-                }
-            } else {
-                Write-LogMessage "No additional SCCM components discovered from client logs" -Level "Info"
+            if ($additionalComponents.Count -eq 0) {
+                Write-LogMessage Info "No additional SCCM components discovered in client logs"
             }
             
         } catch {
-            Write-LogMessage "Failed to search client logs: $_" -Level "Error"
+            Write-LogMessage Error "Failed to search client logs: $_"
         }
         
         # Report what was collected
-        Write-LogMessage "Local collection completed" -Level "Success"
-        if ($siteCode) {
-            Write-LogMessage "Site code: $siteCode" -Level "Info"
-        }
-        Write-LogMessage "Management points found: $($allManagementPoints.Count)" -Level "Info"
-        Write-LogMessage "Client device created/updated: $(if ($clientId) { '1' } else { '0' })" -Level "Info"
-        Write-LogMessage "Site system roles total: $($script:SiteSystemRoles.Count)" -Level "Info"
-        
+        Write-LogMessage Success "Local collection completed" -Level "Success"
+        Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
+        Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCM_SiteSystemRoles } | ForEach-Object { "$($_.Properties.Name) ($($_.Properties.SCCM_SiteSystemRoles -join ', '))" }) -join "`n    ")"
+        Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
     } catch {
-        Write-LogMessage "Local collection failed: $_" -Level "Error"
+        Write-LogMessage Error "Local collection failed: $_"
     }
 }
 
