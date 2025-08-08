@@ -222,6 +222,51 @@ function Write-LogMessage {
     }
 }
 
+function Invoke-HttpRequest {
+    param(
+        [string]$Uri,
+        [int]$TimeoutSec = 3,
+        [switch]$UseDefaultCredentials = $false
+    )
+    
+    $request = [System.Net.HttpWebRequest]::Create($Uri)
+    $request.Method = "GET"
+    $request.Timeout = $TimeoutSec * 1000
+
+    if ($UseDefaultCredentials) {
+        $request.UseDefaultCredentials = $true
+    }
+    
+    try {
+        $response = $request.GetResponse()
+        $stream = $response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $content = $reader.ReadToEnd()
+        
+        $result = [PSCustomObject]@{
+            StatusCode = [int]$response.StatusCode
+            Content = $content
+        }
+        
+        $reader.Close()
+        $stream.Close()
+        $response.Close()
+        
+        return $result
+        
+    } catch [System.Net.WebException] {
+        $webResponse = $_.Exception.Response
+        if ($webResponse) {
+            $statusCode = [int]$webResponse.StatusCode
+            return [PSCustomObject]@{
+                StatusCode = $statusCode
+                Content = $null
+            }
+        }
+        throw
+    }
+}
+
 function Test-AdminPrivileges {
     $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     return $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -3461,8 +3506,10 @@ function Invoke-HTTPCollection {
                 continue
             }
             
-            $httpSuccessful = $false
-            
+            $siteCode = $null
+            $isDP = $false
+            $isMP = $false
+                        
             # Test Management Point HTTP endpoints (try HTTP first, then HTTPS)
             $protocols = @("http", "https")
             
@@ -3472,128 +3519,143 @@ function Invoke-HTTPCollection {
                 try {
                     # Management Point .sms_aut endpoints
                     $mpEndpoints = @(
-                        "$protocol`://$target/SMS_MP/.sms_aut?MPLIST",
-                        "$protocol`://$target/SMS_MP/.sms_aut?MPKEYINFORMATION"
+                        "$protocol`://$target/SMS_MP/.sms_aut?MPKEYINFORMATION", # Parse MPKEYINFORMATION response first to get site code
+                        "$protocol`://$target/SMS_MP/.sms_aut?MPLIST"
                     )
                     
                     foreach ($endpoint in $mpEndpoints) {
-                        try {
-                            Write-LogMessage Info "Testing management point endpoint: $endpoint"
-                            
-                            $response = Invoke-WebRequest -Uri $endpoint -UseDefaultCredentials -TimeoutSec 5 -ErrorAction Stop
-                            
-                            if ($response.StatusCode -eq 200 -and $response.Content) {
-                                Write-LogMessage Verbose "Management Point endpoint accessible: $endpoint"
-                                $httpSuccessful = $true
+                        # Skip if we've already discovered the MP role on this target
+                        if ($isMP -ne $true) {
+                            try {
+                                Write-LogMessage Verbose "Testing management point endpoint: $endpoint"
                                 
-                                # Parse MPLIST response for management points
-                                if ($endpoint -like "*MPLIST*") {
-                                    try {
-                                        $xmlContent = [xml]$response.Content
-                                        $mpList = $xmlContent.MPList
-                                        
-                                        if ($mpList -and $mpList.MP) {
-                                            foreach ($mp in $mpList.MP) {
-                                                $mpFQDN = $mp.FQDN
-                                                $mpName = $mp.Name
+                                $response = Invoke-HttpRequest $endpoint
+                                
+                                if ($response.StatusCode -eq 200 -and $response.Content) {
+                                    Write-LogMessage Success "Found management point role on $target"
+                                    $isMP = $true
+                                    
+                                    if ($endpoint -like "*MPKEYINFORMATION*") {
+                                        try {
+                                            $xmlContent = [xml]$response.Content
+                                            $mpKeyInfo = $xmlContent.MPKEYINFORMATION
+                                            
+                                            if ($mpKeyInfo) {
+                                                $mpFQDN = $mpKeyInfo.FQDN
+                                                $siteCode = $mpKeyInfo.SITECODE
                                                 
                                                 if ($mpFQDN) {
-                                                    # There may be new systems in here and we need to start collection over for these
-                                                    $collectionTarget = Add-DeviceToTargets -DeviceName $mpFQDN -Source "HTTP-MPLIST"
-                                                    if ($collectionTarget) {
-                                                        if ($collectionTarget.IsNew) {
-                                                            Write-LogMessage Success "Found management point role on $mpFQDN"
+                                                    # This device is already in targets but this returns its ADObject to update the Computer node properties    
+                                                    $collectionTarget = Add-DeviceToTargets -DeviceName $mpFQDN -Source "HTTP-MPKEYINFORMATION"
+                                                    Write-LogMessage Success "Found site code for $mpFQDN`: $siteCode"
+    
+                                                    # Create or update SCCM_Site node
+                                                    Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+                                                        CollectionSource = @("HTTP-MPKEYINFORMATION")
+                                                        SiteCode = $siteCode
+                                                    }
+                                                        
+
+                                                }
+                                            }
+                                        } catch {
+                                            Write-LogMessage Error "Failed to parse MPKEYINFORMATION XML response: $_"
+                                        }
+                                    }
+
+                                    # Add site system role to Computer node properties
+                                    if ($collectionTarget.ADObject) {
+                                        Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
+                                            CollectionSource = @("HTTP-MPKEYINFORMATION")
+                                            SCCM_SiteSystemRoles = @("SMS Management Point$(if ($siteCode) { "@$siteCode" })")
+                                        }
+                                    }
+    
+                                    # Parse MPLIST response for more management points
+                                    if ($endpoint -like "*MPLIST*") {
+                                        try {
+                                            $xmlContent = [xml]$response.Content
+                                            $mpList = $xmlContent.MPList
+                                            
+                                            if ($mpList -and $mpList.MP) {
+                                                foreach ($mp in $mpList.MP) {
+                                                    $mpFQDN = $mp.FQDN
+                                                    
+                                                    if ($mpFQDN) {
+                                                        # There may be new systems in here and we need to start collection over for these
+                                                        $collectionTarget = Add-DeviceToTargets -DeviceName $mpFQDN -Source "HTTP-MPLIST"
+                                                        if ($collectionTarget -and $collectionTarget.IsNew) {
+                                                            Write-LogMessage Success "Found management point: $mpFQDN"
+                                                        }
+    
+                                                        # Add site system role to Computer node properties
+                                                        if ($collectionTarget.ADObject) {
+                                                            Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
+                                                                CollectionSource = @("HTTP-MPKEYINFORMATION")
+                                                                SCCM_SiteSystemRoles = @("SMS Management Point@$siteCode")
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
+                                        } catch {
+                                            Write-LogMessage Error "Failed to parse MPLIST XML response: $_"
                                         }
-                                    } catch {
-                                        Write-LogMessage Error "Failed to parse MPLIST XML response: $_"
-                                    }
+                                    }                              
+                                } else {
+                                    Write-LogMessage Verbose "    Received $($response.StatusCode)"
                                 }
-                                
-                                # Parse MPKEYINFORMATION response
-                                if ($endpoint -like "*MPKEYINFORMATION*") {
-                                    try {
-                                        $xmlContent = [xml]$response.Content
-                                        $mpKeyInfo = $xmlContent.MPKEYINFORMATION
-                                        
-                                        if ($mpKeyInfo) {
-                                            $mpFQDN = $mpKeyInfo.FQDN
-                                            $siteCode = $mpKeyInfo.SITECODE
-                                            
-                                            if ($mpFQDN) {
-                                                # This device is already in targets but this returns its ADObject to update the Computer node properties
-                                                $collectionTarget = Add-DeviceToTargets -DeviceName $mpFQDN -Source "HTTP-MPKEYINFORMATION"
-                                                Write-LogMessage Success "Found site code for $mpFQDN`: $siteCode"
-
-                                                # Create or update SCCM_Site node
-                                                Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
-                                                    CollectionSource = @("HTTP-MPKEYINFORMATION")
-                                                    SiteCode = $siteCode
-                                                }
-                                                    
-                                                # Add site system role to Computer node properties
-                                                if ($collectionTarget.ADObject) {
-                                                    Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
-                                                        CollectionSource = @("HTTP-MPLIST")
-                                                        SCCM_SiteSystemRoles = @("SMS Management Point@$siteCode")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        Write-LogMessage Error "Failed to parse MPKEYINFORMATION XML response: $_"
-                                    }
-                                }
+                            } catch {
+                                # Endpoint not accessible, move to next protocol
+                                Write-LogMessage Verbose "Management point endpoint not accessible on $endpoint`:`n$_"
+                                break
                             }
-                        } catch {
-                            # Endpoint not accessible, continue
-                            Write-LogMessage Info "Management point endpoint not accessible: $endpoint"
                         }
                     }
                     
                     # Test Distribution Point HTTP endpoints
                     $dpEndpoints = @(
-                        "$protocol`://$target/sms_dp_smspkg$"
+                        "$protocol`://$target/SMS_DP_SMSPKG$"
                     )
                     
                     foreach ($endpoint in $dpEndpoints) {
-                        $foundRole = $false
-                        $response = $null
+                        # No need to try HTTPS if we have what we need from HTTP
+                        if ($isDP -ne $true) {
+                            $response = $null
 
-                        try {
-                            Write-LogMessage Info "Testing distribution point endpoint: $endpoint"
-                            $response = Invoke-WebRequest -Uri $endpoint -UseDefaultCredentials -TimeoutSec 5 -ErrorAction Stop
-                        } catch [System.Net.WebException] {
-                            # Check if it's a 401 (auth required) which still indicates DP presence
-                            if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 401) {
-                                $foundRole = $true
-                            } else {
-                                Write-LogMessage Warning "Distribution point endpoint not accessible: $endpoint"
+                            try {
+                                Write-LogMessage Verbose "Testing distribution point endpoint: $endpoint"
+                                $response = Invoke-HttpRequest $endpoint
+                            } catch [System.Net.WebException] {
+                                # Check if it's a 401 (auth required) which still indicates DP presence
+                                if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq "Unauthorized") {
+                                    $isDP = $true
+                                } else {
+                                    Write-LogMessage Verbose "Distribution point endpoint not accessible on $endpoint`:`n$_"
+                                }
                             }
-                        } catch {
-                            Write-LogMessage Warning "Distribution point endpoint not accessible: $endpoint"
-                        }
-                        # Specific response codes indicate presence of distribution point role
-                        if ($response) {
-                            if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
-                                $foundRole = $true
-                            } else {
-                                Write-LogMessage Verbose "Received $($response.StatusCode) response code"
+    
+                            # Specific response codes indicate presence of distribution point role
+                            if ($response) {
+                                if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
+                                    $isDP = $true
+                                } else {
+                                    Write-LogMessage Verbose "    Received $($response.StatusCode)"
+                                }
                             }
-                        }
-                        if ($foundRole) {
-                            # This device is already in targets but this returns its ADObject to update the Computer node properties
-                            $collectionTarget = Add-DeviceToTargets -DeviceName $target -Source "HTTP-sms_dp_smspkg$"
-                            Write-LogMessage Success "Found distribution point role on $target"
-
-                            # Add site system role to Computer node properties
-                            if ($collectionTarget.ADObject) {
-                                Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
-                                    CollectionSource = @("HTTP-sms_dp_smspkg$")
-                                    SCCM_SiteSystemRoles = @("SMS Distribution Point") # We can't get the site code via HTTP but might be able to later via SMB
+    
+                            if ($isDP) {
+                                Write-LogMessage Success "Found distribution point role on $target"
+    
+                                # This device is already in targets but this returns its ADObject to update the Computer node properties
+                                $collectionTarget = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_DP_SMSPKG$"
+    
+                                # Add site system role to Computer node properties
+                                if ($collectionTarget.ADObject) {
+                                    Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
+                                        CollectionSource = @("HTTP-SMS_DP_SMSPKG$")
+                                        SCCM_SiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a DP but might be able to later via SMB
+                                    }
                                 }
                             }
                         }
@@ -4683,12 +4745,10 @@ function Start-SCCMCollection {
         
         # Only AdminService and WMI are applicable for SMS Provider mode
         if ($enableAdminService) {
-            Write-LogMessage Info "Executing AdminService collection on SMS Provider"
             Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
         }
         
         if ($enableWMI) {
-            Write-LogMessage Info "Executing WMI collection on SMS Provider"
             Invoke-SmsProviderWmiCollection -CollectionTargets $script:CollectionTargets
         }
         
@@ -4709,24 +4769,20 @@ function Start-SCCMCollection {
         
         # Execute enabled methods for ComputerFile mode
         if ($enableRemoteRegistry) {
-            Write-LogMessage Info "Executing Remote Registry collection"
             Invoke-RemoteRegistryCollection -Targets $script:CollectionTargets
         }
         
         if ($enableAdminService) {
-            Write-LogMessage Info "Executing AdminService collection"
             foreach ($collectionTarget in $script:CollectionTargets) {
                 Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
             }
         }
         
         if ($enableHTTP) {
-            Write-LogMessage Info "Executing HTTP collection"
             Invoke-HTTPCollection -Targets $script:CollectionTargets
         }
         
         if ($enableSMB) {
-            Write-LogMessage Info "Executing SMB collection"
             Invoke-SMBCollection -Targets $script:CollectionTargets
         }
         
@@ -4734,7 +4790,6 @@ function Start-SCCMCollection {
         # Phase 1: LDAP - Identify targets in System Management container
         if ($enableLDAP) {
             if ($script:Domain) {
-                Write-LogMessage Info "Executing LDAP collection"
                 Invoke-LDAPCollection
             } else {
                 Write-LogMessage Warning "No domain specified, skipping LDAP collection"
@@ -4743,14 +4798,12 @@ function Start-SCCMCollection {
         
         # Phase 2: Local - Data available when running on SCCM client
         if ($enableLocal) {
-            Write-LogMessage Info "Executing local collection"
             Invoke-LocalCollection
         }
         
         # Phase 3: DNS - Management points published to DNS
         if ($enableDNS) {
             if ($script:Domain) {
-                Write-LogMessage Info "Executing DNS collection"
                 Invoke-DNSCollection
             } else {
                 Write-LogMessage Warning "No domain specified, skipping DNS collection"
@@ -4767,13 +4820,11 @@ function Start-SCCMCollection {
             
             # Phase 4: Remote Registry - On targets identified in previous phases
             if ($enableRemoteRegistry) {
-                Write-LogMessage Info "Executing Remote Registry collection"
                 Invoke-RemoteRegistryCollection -Targets $script:CollectionTargets
             }
             
             # Phase 5: AdminService - On targets identified in previous phases
             if ($enableAdminService) {
-                Write-LogMessage Info "Executing AdminService collection"
                 foreach ($collectionTarget in $script:CollectionTargets) {
                     Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
                 }
@@ -4781,7 +4832,6 @@ function Start-SCCMCollection {
             
             # Phase 6: WMI - If AdminService collection fails
             if ($enableWMI) {
-                Write-LogMessage Info "Executing WMI collection"
                 $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
                     -not $_.Value["Collected"] 
                 }
@@ -4792,7 +4842,6 @@ function Start-SCCMCollection {
             
             # Phase 7: HTTP - If AdminService and WMI collections fail
             if ($enableHTTP) {
-                Write-LogMessage Info "Executing HTTP collection"
                 $uncollectedTargets = $script:CollectionTargets.GetEnumerator() | Where-Object { 
                     -not $_.Value["Collected"] 
                 }
@@ -4803,7 +4852,6 @@ function Start-SCCMCollection {
             
             # Phase 8: SMB - If AdminService and WMI collections fail
             if ($enableSMB) {
-                Write-LogMessage Info "Executing SMB collection"
                 $uncollectedTargets = $script:CollectionTargets.GetEnumerator() | Where-Object { 
                     -not $_.Value["Collected"] 
                 }
@@ -4834,7 +4882,7 @@ function Start-SCCMCollection {
     Write-LogMessage "Site System Roles: $($script:SiteSystemRoles.Count)" -Level "Info"
     
     # Post-processing and edge creation
-    Invoke-PostProcessing
+    #Invoke-PostProcessing
     
     # Report edge statistics
     Write-LogMessage "Edge Creation Summary:" -Level "Info"
