@@ -3530,7 +3530,7 @@ function Invoke-HTTPCollection {
 
                                                 # Create or update SCCM_Site node
                                                 Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
-                                                    CollectionSource = "HTTP-MPKEYINFORMATION"
+                                                    CollectionSource = @("HTTP-MPKEYINFORMATION")
                                                     SiteCode = $siteCode
                                                 }
                                                     
@@ -3615,11 +3615,7 @@ function Invoke-HTTPCollection {
 #region SMB Collection
 
 function Invoke-SMBCollection {
-    param($CollectionTargets)
-
-    foreach ($collectionTarget in $CollectionTargets) {
-        $Targets += $collectionTarget.Hostname
-    }
+    param($Targets)
     
     Write-LogMessage Info "Starting SMB collection..."
     
@@ -3627,264 +3623,242 @@ function Invoke-SMBCollection {
         Write-LogMessage Warning "No targets provided for SMB collection"
         return
     }
-    
-    foreach ($target in $Targets) {
-        try {
-            Write-LogMessage Info "Attempting SMB collection on: $target"
-            
-            # Skip if already collected successfully
-            if ($script:CollectionTargets[$target]["Collected"]) {
-                Write-LogMessage Info "Target $target already collected, skipping SMB"
-                continue
-            }
-            
-            $smbSuccessful = $false
-            $discoveredRoles = @()
-            $siteCode = $null
-            
-            # Resolve target to AD object first
-            $targetADObject = $null
-            try {
-                $targetADObject = Get-ActiveDirectoryObject -Name $target -Domain $script:Domain
-            } catch {
-                Write-LogMessage "Failed to resolve target $target to AD object: $_" -Level "Warning"
-            }
-            
-            # Check for SCCM-specific SMB shares using net view
-            try {
-                Write-LogMessage "Enumerating SMB shares on: $target" -Level "Info"
-                
-                # Use net view to enumerate shares
-                $netViewOutput = & net view "\\$target" /all 2>$null
-                
-                if ($LASTEXITCODE -eq 0 -and $netViewOutput) {
-                    Write-LogMessage "Successfully enumerated SMB shares on $target" -Level "Success"
-                    $smbSuccessful = $true
-                    
-                    # Parse net view output for SCCM-specific shares
-                    foreach ($line in $netViewOutput) {
-                        $line = $line.Trim()
-                        
-                        # Distribution Point shares
-                        if ($line -match "^SMS_DP\$\s+Disk\s+(.*)") {
-                            $comment = $matches[1]
-                            Write-LogMessage "Found SMS_DP$ share: $comment" -Level "Success"
-                            
-                            # Extract site code from comment (format: "SMS Site <SITECODE> DP")
-                            if ($comment -match "SMS Site (\w{3}) DP") {
-                                $siteCode = $matches[1]
-                                Write-LogMessage "Extracted site code from SMS_DP$ share: $siteCode" -Level "Success"
-                            }
-                            
-                            $discoveredRoles += @{
-                                "Name" = "SMS Distribution Point"
-                                "Properties" = @{
-                                    "IsPXESupportEnabled" = $false  # Will be updated if REMINST found
-                                }
-                                "SiteCode" = $siteCode
-                                "SiteIdentifier" = $siteCode
-                                "SourceForest" = $null
-                            }
-                        }
-                        
-                        # REMINST share indicates PXE support
-                        if ($line -match "^REMINST\s+Disk") {
-                            Write-LogMessage "Found REMINST share - PXE support enabled" -Level "Success"
-                            
-                            # Update existing DP role or create new one
-                            $dpRole = $discoveredRoles | Where-Object { $_.Name -eq "SMS Distribution Point" }
-                            if ($dpRole) {
-                                $dpRole.Properties.IsPXESupportEnabled = $true
-                            } else {
-                                $discoveredRoles += @{
-                                    "Name" = "SMS Distribution Point"
-                                    "Properties" = @{
-                                        "IsPXESupportEnabled" = $true
-                                    }
-                                    "SiteCode" = $siteCode
-                                    "SiteIdentifier" = $siteCode
-                                    "SourceForest" = $null
-                                }
-                            }
-                        }
-                        
-                        # Additional DP-related shares
-                        if ($line -match "^(SMSPKGC\$|SMSSIG\$|SCCMContentLib\$)\s+Disk\s+(.*)") {
-                            $shareName = $matches[1]
-                            $comment = $matches[2]
-                            Write-LogMessage "Found DP-related share: $shareName - $comment" -Level "Success"
-                            
-                            # Extract site code if not already found
-                            if (-not $siteCode -and $comment -match "site (\w{3})") {
-                                $siteCode = $matches[1]
-                                Write-LogMessage "Extracted site code from $shareName share: $siteCode" -Level "Success"
-                            }
-                        }
-                        
-                        # Site Server shares
-                        if ($line -match "^SMS_SITE\s+Disk\s+(.*)") {
-                            $comment = $matches[1]
-                            Write-LogMessage "Found SMS_SITE share: $comment" -Level "Success"
-                            
-                            # Extract site code from comment (format: "SMS Site <SITECODE>")
-                            if ($comment -match "SMS Site (\w{3})") {
-                                $siteCode = $matches[1]
-                                Write-LogMessage "Extracted site code from SMS_SITE share: $siteCode" -Level "Success"
-                            }
-                            
-                            $discoveredRoles += @{
-                                "Name" = "SMS Site Server"
-                                "Properties" = @{}
-                                "SiteCode" = $siteCode
-                                "SiteIdentifier" = $siteCode
-                                "SourceForest" = $null
-                            }
-                        }
-                        
-                        # Site-specific shares (SMS_<SITECODE>)
-                        if ($line -match "^SMS_(\w{3})\s+Disk\s+(.*)") {
-                            $shareCode = $matches[1]
-                            $comment = $matches[2]
-                            Write-LogMessage "Found site-specific share SMS_$shareCode`: $comment" -Level "Success"
-                            
-                            if (-not $siteCode) {
-                                $siteCode = $shareCode
-                                Write-LogMessage "Extracted site code from SMS_$shareCode share: $siteCode" -Level "Success"
-                            }
-                            
-                            # Ensure Site Server role is added
-                            $siteServerRole = $discoveredRoles | Where-Object { $_.Name -eq "SMS Site Server" }
-                            if (-not $siteServerRole) {
-                                $discoveredRoles += @{
-                                    "Name" = "SMS Site Server"
-                                    "Properties" = @{}
-                                    "SiteCode" = $siteCode
-                                    "SiteIdentifier" = $siteCode
-                                    "SourceForest" = $null
-                                }
-                            }
-                        }
-                        
-                        # Additional component-related shares
-                        if ($line -match "^SMS_CPSC\$\s+Disk") {
-                            Write-LogMessage "Found SMS_CPSC$ share - SMS Compressed Package Storage" -Level "Success"
-                        }
-                    }
-                    
-                    # Create site if discovered and doesn't exist
-                    if ($siteCode) {
-                        $existingSite = $script:Sites | Where-Object { $_.SiteCode -eq $siteCode }
-                        if (-not $existingSite) {
-                            $siteNode = @{
-                                "DistinguishedName" = $null
-                                "Name" = $null
-                                "ParentSiteCode" = $null
-                                "ParentSiteIdentifier" = $null
-                                "SiteCode" = $siteCode
-                                "SiteGUID" = $null
-                                "SiteIdentifier" = $siteCode
-                                "SiteServerDomain" = $null
-                                "SiteServerName" = $null
-                                "SiteType" = "Unknown"
-                                "SQLDatabaseName" = $null
-                                "SQLServerName" = $null
-                                "Source" = "SMB-ShareComment"
-                            }
-                            $script:Sites += $siteNode
-                            Write-LogMessage "Created site from SMB share comment: $siteCode" -Level "Success"
-                        }
-                    }
-                    
-                    # Create site system role entry if any roles were discovered
-                    if ($discoveredRoles.Count -gt 0) {
-                        $siteSystemRole = @{
-                            "dNSHostName" = $target
-                            "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
-                            "Roles" = $discoveredRoles
-                            "Source" = "SMB"
-                            "ADObject" = $targetADObject
-                        }
-                        
-                        $script:SiteSystemRoles += $siteSystemRole
-                        Write-LogMessage "Added site system roles via SMB: $target ($($discoveredRoles.Count) roles)" -Level "Success"
-                    }
-                } else {
-                    Write-LogMessage "Failed to enumerate SMB shares on $target (access denied or not accessible)" -Level "Warning"
-                }
-            } catch {
-                Write-LogMessage "SMB enumeration failed for $target`: $_" -Level "Warning"
-            }
-            
-            # Additional SMB checks - try to access specific shares directly
-            $directShareChecks = @(
-                @{ "Share" = "SMS_SITE"; "Role" = "SMS Site Server" },
-                @{ "Share" = "SMS_DP$"; "Role" = "SMS Distribution Point" },
-                @{ "Share" = "SMSPKGC$"; "Role" = "SMS Distribution Point" }
-            )
-            
-            foreach ($shareCheck in $directShareChecks) {
-                try {
-                    $sharePath = "\\$target\$($shareCheck.Share)"
-                    $shareTest = Test-Path $sharePath -ErrorAction Stop
-                    
-                    if ($shareTest) {
-                        Write-LogMessage "Direct share access successful: $sharePath" -Level "Success"
-                        $smbSuccessful = $true
-                        
-                        # If we haven't already discovered this role through net view, add it
-                        $existingRole = $discoveredRoles | Where-Object { $_.Name -eq $shareCheck.Role }
-                        if (-not $existingRole) {
-                            $newRole = @{
-                                "Name" = $shareCheck.Role
-                                "Properties" = @{}
-                                "SiteCode" = $siteCode
-                                "SiteIdentifier" = $siteCode
-                                "SourceForest" = $null
-                            }
-                            
-                            # Create site system role if we don't already have one for this target
-                            $existingSiteSystem = $script:SiteSystemRoles | Where-Object { 
-                                $_.dNSHostName -eq $target -and $_.Source -eq "SMB" 
-                            }
-                            
-                            if ($existingSiteSystem) {
-                                $existingSiteSystem.Roles += $newRole
-                            } else {
-                                $siteSystemRole = @{
-                                    "dNSHostName" = $target
-                                    "ObjectIdentifier" = if ($targetADObject) { $targetADObject.SID } else { $null }
-                                    "Roles" = @($newRole)
-                                    "Source" = "SMB-DirectAccess"
-                                    "ADObject" = $targetADObject
-                                }
-                                
-                                $script:SiteSystemRoles += $siteSystemRole
-                            }
-                            
-                            Write-LogMessage "Added role via direct SMB share access: $($shareCheck.Role)" -Level "Success"
-                        }
-                    }
-                } catch {
-                    # Share not accessible, continue
-                }
-            }
-            
-            # Mark as collected if any SMB operation was successful
-            if ($smbSuccessful) {
-                $script:CollectionTargets[$target]["Method"] = "SMB"
-                if ($siteCode) {
-                    $script:CollectionTargets[$target]["SiteCode"] = $siteCode
-                }
-                Write-LogMessage "SMB collection successful on $target" -Level "Success"
-            } else {
-                Write-LogMessage "SMB collection failed on $target (no accessible shares)" -Level "Warning"
-            }
-            
-        } catch {
-            Write-LogMessage "SMB collection failed for $target`: $_" -Level "Warning"
+
+    try {
+        # Define the NetAPI32 structures and functions if not already defined
+        if (-not ([System.Management.Automation.PSTypeName]'NetAPI32').Type) {
+            Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+public struct SHARE_INFO_1 {
+[MarshalAs(UnmanagedType.LPWStr)]
+public string shi1_netname;
+public uint shi1_type;
+[MarshalAs(UnmanagedType.LPWStr)]
+public string shi1_remark;
+}
+
+public class NetAPI32 {
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int NetShareEnum(
+    [MarshalAs(UnmanagedType.LPWStr)] string servername,
+    int level,
+    out IntPtr bufptr,
+    int prefmaxlen,
+    out int entriesread,
+    out int totalentries,
+    ref int resume_handle
+);
+
+[DllImport("netapi32.dll", SetLastError = true)]
+public static extern int NetApiBufferFree(IntPtr buffer);
+
+// Error codes
+public const int NERR_Success = 0;
+public const int ERROR_ACCESS_DENIED = 5;
+public const int ERROR_BAD_NETPATH = 53;
+public const int ERROR_NETWORK_UNREACHABLE = 1231;
+public const int NERR_ServerNotStarted = 2114;
+}
+"@
         }
+        Write-LogMessage Verbose "Successfully loaded NetAPI32"
+    } catch {
+        Write-LogMessage Error "Failed to load NetAPI32`: $_"
+        return
     }
     
+    foreach ($targetDict in $Targets) {
+        $target = $targetDict.Name
+
+        # Skip if already collected successfully
+        if ($script:CollectionTargets[$target]["Collected"]) {
+            Write-LogMessage Info "Target $target already collected, skipping SMB"
+            continue
+        }
+        
+        # Check for SCCM-specific SMB shares using NetAPI32
+        try {
+            Write-LogMessage Info "Enumerating SMB shares on $target"
+            
+            # Use NetAPI32 to enumerate shares
+            $bufPtr = [IntPtr]::Zero
+            $entriesRead = 0
+            $totalEntries = 0
+            $resumeHandle = 0
+            
+            $result = [NetAPI32]::NetShareEnum(
+                $target,
+                1,
+                [ref]$bufPtr,
+                -1,
+                [ref]$entriesRead,
+                [ref]$totalEntries,
+                [ref]$resumeHandle
+            )
+            
+            if ($result -eq [NetAPI32]::NERR_Success -and $bufPtr -ne [IntPtr]::Zero -and $entriesRead -gt 0) {
+                Write-LogMessage Verbose "Successfully enumerated SMB shares on $target"
+
+                # Calculate the size of SHARE_INFO_1 structure
+                $structSize = [System.Runtime.InteropServices.Marshal]::SizeOf([Type][SHARE_INFO_1])
+
+                # Initialize the target's share collection if it doesn't exist
+                $shares = @()
+                
+                # Parse each share entry for SCCM-specific shares
+                for ($i = 0; $i -lt $entriesRead; $i++) {
+                    $sharePtr = [IntPtr]($bufPtr.ToInt64() + ($i * $structSize))
+                    $shareInfo = [System.Runtime.InteropServices.Marshal]::PtrToStructure($sharePtr, [Type][SHARE_INFO_1])
+                    
+                    $shareName = $shareInfo.shi1_netname
+                    $shareComment = if ($shareInfo.shi1_remark) { $shareInfo.shi1_remark } else { "" }
+                    Write-LogMessage Verbose "    $shareName ($shareComment)"
+
+                    $shares += @{
+                        Name = $shareName
+                        Description = $shareComment
+                    }
+                }
+
+                # Check share names
+                $collectionSource = @()
+                $siteCode = $null
+                $smsSite = $shares | Where-Object { $_.Name -eq "SMS_SITE" }
+                $smsSiteCode = $shares | Where-Object { $_.Name -match "^SMS_(\w+)$" }                  
+                $smsDP = $shares | Where-Object { $_.Name -eq "SMS_DP$" }
+                $reminst = $shares | Where-Object { $_.Name -eq "REMINST" }
+                $contentLib = $shares | Where-Object { $_.Name -eq "SCCMContentLib$" }
+                $smsPkgShares = $shares | Where-Object { $_.Name -match "SMSPKG" }
+                $siteShares = $shares | Where-Object { $_.Description -match "SMS Site (\w+)" }
+
+                # Check for SMS_SITE
+                $isSiteServer = $false
+                if ($smsSite) {
+                    $collectionSource += "SMB-SMS_SITE"
+                    $isSiteServer = $true
+
+                    if ($smsSite.Description -match "SMS Site (\w+)") {
+                        $siteCode = $Matches[1]
+                    } else {
+                        Write-LogMessage Warning "Could not determine site code from SMS_SITE share description"
+                    }
+                    Write-LogMessage Success "Found site server for site: $siteCode"
+                }
+
+                # Check for SMS_<sitecode>
+                if (-not $isSiteServer -and $smsSiteCode) {
+                    $collectionSource += "SMB-SMS_<sitecode>"
+                    $isSiteServer = $true
+
+                    if ($smsSite.Description -match "SMS Site (\w+)") {
+                        $siteCode = $Matches[1]
+                    } else {
+                        Write-LogMessage Warning "Could not determine site code from SMS_<sitecode> share description"
+                    }
+                    Write-LogMessage Success "Found site server for site: $siteCode"
+                }
+
+                # Check for REMINST share (indicates PXE support)
+                $isPXEEnabled = $false
+                if ($reminst) {
+                    $collectionSource += "SMB-REMINST"
+                    Write-LogMessage Verbose "Distribution point has PXE support enabled"
+                    $isPXEEnabled = $true
+                }
+
+                # Check for content library shares
+                $hostsContentLib = $false
+                if ($contentLib) {
+                    $collectionSource += "SMB-SCCMContentLib$"
+                    Write-LogMessage Verbose "Target hosts the content library (SCCMContentLib$)"
+                    $hostsContentLib = $true
+                }
+                if ($smsPkgShares) {
+                    $collectionSource += "SMB-SMSPKG$"
+                    Write-LogMessage Verbose "Target hosts the legacy content library (SMSPKG$)"
+                    $hostsContentLib = $true
+                }
+
+                # If for some reason we don't have the site code yet, try to find it in any share description
+                if (-not $siteCode) {
+                    if ($siteShares) {
+                        $collectionSource += "SMB-ShareDescription"
+
+                        foreach ($siteShare in $siteShares) {
+                            if ($smsSite.Description -match "SMS Site (\w+)") {
+                                $siteCode = $Matches[1]
+                                Write-LogMessage Success "Found site code in share description: $siteCode"
+                                break
+                            }
+                        } 
+                    }
+                }                        
+
+                # Check for SMS_DP$ share
+                $isDP = $false
+                if ($smsDP) {
+                    $collectionSource += @("SMB-SMS_DP$")
+                    $isDP = $true
+
+                    if ($smsDP.Description -match "SMS Site (\w+) DP") {
+                        $siteCode = $Matches[1]
+                    } else {
+                        if (-not $smsDP.Description -contains "ConfigMgr Site Server") {
+                            Write-LogMessage Warning "Could not determine site code from SMS_DP$ share description"
+                        }
+                    }
+                    # Site code should be determined from SMS_SITE, SMS_*, or SMS_DP$ by now
+                    Write-LogMessage Success "Found distribution point role for site: $siteCode"
+                } 
+
+                # Create SCCM_Site if it doesn't exist already
+                if ($isDP -or $isSiteServer) {
+                    if ($siteCode) {
+                        Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+                            CollectionSource = $collectionSource
+                            SiteCode = $siteCode
+                        }
+                    } else {
+                        Write-LogMessage Warning "Could not determine site code for roles"
+                    }
+
+                    # Create or update the Computer node with site system roles and properties
+                    $roles = @()
+                    if ($isSiteServer) {
+                        $roles += "SMS Site Server$(if ($siteCode) { "@$siteCode"})"
+                    }
+                    if ($isDP) {
+                        $roles += "SMS Distribution Point$(if ($siteCode) { "@$siteCode"})"
+                    }
+
+                    Add-Node -Id $targetDict.Value.ADObject.SID -Kinds @("Computer", "Base") -PSObject $targetDict.Value.ADObject -Properties @{
+                        CollectionSource = $collectionSource
+                        SCCM_HostsContentLibrary = $hostsContentLib
+                        SCCM_IsPXESupportEnabled = $isPXEEnabled
+                        SCCM_SiteSystemRoles = $roles
+                    }
+                } 
+            } else {
+                Write-LogMessage Warning "Failed to enumerate SMB shares on $target (access denied or not accessible)"
+            }
+        } catch {
+            Write-LogMessage Error "SMB enumeration failed for $target`: $_"
+        } finally {
+            # Always free the buffer if it was allocated
+            if ($bufPtr -and $bufPtr -ne [IntPtr]::Zero) {
+                try {
+                    [NetAPI32]::NetApiBufferFree($bufPtr) | Out-Null
+                }
+                catch {
+                    Write-LogMessage Warning "Failed to free NetAPI buffer: $_"
+                }
+            }
+        }
+    }
+
     Write-LogMessage "SMB collection completed" -Level "Success"
 }
 
@@ -4831,7 +4805,7 @@ function Start-SCCMCollection {
             if ($enableSMB) {
                 Write-LogMessage Info "Executing SMB collection"
                 $uncollectedTargets = $script:CollectionTargets.GetEnumerator() | Where-Object { 
-                    -not $script:CollectionTargets[$_]["Collected"] 
+                    -not $_.Value["Collected"] 
                 }
                 if ($uncollectedTargets.Count -gt 0) {
                     Invoke-SMBCollection -Targets $uncollectedTargets
