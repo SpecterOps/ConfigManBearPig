@@ -55,6 +55,16 @@ Supported values:
     - JSON: OpenGraph implementation, outputs uncompressed .json file
     - StdOut: OpenGraph implementation, outputs JSON to console (can be piped to BHOperator)
 
+.PARAMETER FileSizeLimit
+Stop enumeration after all collected files exceed this size on disk
+
+Supported values:
+    - *MB
+    - *GB
+
+.PARAMETER FileSizeUpdateInterval
+Receive periodic size updates as files are being written for each server (in seconds)
+
 .PARAMETER TempDir
 Specify the path to a temporary directory where .json files will be stored before being zipped
 
@@ -63,6 +73,9 @@ Specify the path to a directory where the final .zip file will be stored (defaul
 
 .PARAMETER Domain
 Specify a domain to use for LDAP queries and name resolution
+
+.PARAMETER DomainController
+Specify a domain controller to use for DNS and AD object resolution
 
 .PARAMETER Credential
 Specify a PSCredential object for authentication
@@ -88,113 +101,25 @@ param(
     [string]$SiteCodes,
     
     [string]$OutputFormat = "Zip",
+
+    [string]$FileSizeLimit = "1GB",
+    
+    [string]$FileSizeUpdateInterval = "5",
     
     [string]$TempDir,
     
     [string]$ZipDir,
     
     [string]$Domain = $env:USERDNSDOMAIN,
-    
-    [PSCredential]$Credential,
+
+    [string]$DomainController,
     
     [switch]$SkipPostProcessing,
 
     [switch]$Version
 )
 
-# Display help text
-if ($Help) {
-    Get-Help $MyInvocation.MyCommand.Path -Detailed
-    return
-}
-
-# Script version information
-$script:ScriptVersion = "1.0"
-$script:ScriptName = "ConfigManBearPig"
-
-if ($Version) {
-    Write-Host "$script:ScriptName version $script:ScriptVersion" -ForegroundColor Green
-    return
-}
-
-# Collection phases to run
-$collectionMethods = $CollectionMethods -split "," | ForEach-Object { $_.Trim().ToUpper() }
-$enableLDAP = $false
-$enableLocal = $false
-$enableDNS = $false
-$enableRemoteRegistry = $false
-$enableAdminService = $false
-$enableWMI = $false
-$enableHTTP = $false
-$enableSMB = $false
-
-# Process each specified method
-foreach ($method in $collectionMethods) {
-    switch ($method) {
-        "ALL" {
-            $enableLDAP = $true
-            $enableLocal = $true
-            $enableDNS = $true
-            $enableRemoteRegistry = $true
-            $enableAdminService = $true
-            $enableWMI = $true
-            $enableHTTP = $true
-            $enableSMB = $true
-        }
-        "LDAP" { $enableLDAP = $true }
-        "LOCAL" { $enableLocal = $true }
-        "DNS" { $enableDNS = $true }
-        "REMOTEREGISTRY" { $enableRemoteRegistry = $true }
-        "ADMINSERVICE" { $enableAdminService = $true }
-        "WMI" { $enableWMI = $true }
-        "HTTP" { $enableHTTP = $true }
-        "SMB" { $enableSMB = $true }
-        default {
-            Write-LogMessage Error "Unknown collection method: $method"
-        }
-    }
-}
-
-# Parse SiteCodes parameter
-$script:TargetSiteCodes = @()
-if ($SiteCodes) {
-    if (Test-Path $SiteCodes) {
-        # File containing site codes
-        try {
-            $script:TargetSiteCodes = Get-Content $SiteCodes | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
-            Write-LogMessage Info "Loaded $($script:TargetSiteCodes.Count) site codes from file: $SiteCodes"
-        } catch {
-            Write-LogMessage Error "Failed to read site codes file: $_"
-            return
-        }
-    } else {
-        # Comma-separated string
-        $script:TargetSiteCodes = $SiteCodes -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
-        Write-LogMessage Info "Targeting site codes: $($script:TargetSiteCodes -join ', ')"
-    }
-}
-
-# Global variables
-$script:CollectionTargets = @{}
-$script:Sites = @()
-$script:ClientDevices = @()
-$script:Computers = @()
-$script:Collections = @()
-$script:SecurityRoles = @()
-$script:AdminUsers = @()
-$script:SiteSystemRoles = @()
-$script:OutputFiles = @()
-$script:Domain = $Domain
-
-# Initialize output structures
-$script:Nodes = @()
-$script:Edges = @()
-
-# Disable certificate validation
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
-
-#region Helper Functions
-
+#region Logging
 function Write-LogMessage {
     param(
         [string]$Level = "Info",
@@ -222,307 +147,493 @@ function Write-LogMessage {
     }
 }
 
-function Invoke-HttpRequest {
-    param(
-        [string]$Uri,
-        [int]$TimeoutSec = 3,
-        [switch]$UseDefaultCredentials = $false
-    )
-    
-    $request = [System.Net.HttpWebRequest]::Create($Uri)
-    $request.Method = "GET"
-    $request.Timeout = $TimeoutSec * 1000
+#endregion
 
-    if ($UseDefaultCredentials) {
-        $request.UseDefaultCredentials = $true
+#region Error Handling and Validation
+function Test-Prerequisites {
+    $issues = @()
+    
+    # Check PowerShell version
+    if ($PSVersionTable.PSVersion.Major -lt 4) {
+        $issues += "PowerShell 4.0 or higher is required"
     }
     
-    try {
-        $response = $request.GetResponse()
-        $stream = $response.GetResponseStream()
-        $reader = New-Object System.IO.StreamReader($stream)
-        $content = $reader.ReadToEnd()
-        
-        $result = [PSCustomObject]@{
-            StatusCode = [int]$response.StatusCode
-            Content = $content
-        }
-        
-        $reader.Close()
-        $stream.Close()
-        $response.Close()
-        
-        return $result
-        
-    } catch [System.Net.WebException] {
-        $webResponse = $_.Exception.Response
-        if ($webResponse) {
-            $statusCode = [int]$webResponse.StatusCode
-            return [PSCustomObject]@{
-                StatusCode = $statusCode
-                Content = $null
-            }
-        }
-        throw
-    }
-}
-
-function Test-AdminPrivileges {
-    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-    return $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-function Get-DomainController {
-    try {
-        if (Get-Module -ListAvailable -Name ActiveDirectory) {
-            Import-Module ActiveDirectory -ErrorAction SilentlyContinue
-            $dc = Get-ADDomainController -Discover -Domain $script:Domain -ErrorAction SilentlyContinue
-            return $dc.HostName[0]
-        } else {
-            # Fallback using .NET
-            $context = [System.DirectoryServices.ActiveDirectory.DirectoryContext]::new("Domain", $script:Domain)
-            $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($context)
-            return $domain.FindDomainController().Name
-        }
-    } catch {
-        Write-LogMessage Warning "Failed to find domain controller: $_"
-        return $null
-    }
-}
-
-function Add-Node {
-    param(
-        [string]$Id,
-        [string[]]$Kinds,
-        [hashtable]$Properties = @{},  # Default to empty hashtable, not null
-        [PSObject]$PSObject = $null
-    )
-   
-    # Start with provided properties
-    $finalProperties = if ($Properties) { $Properties.Clone() } else { @{} }
-    
-    # If PSObject is provided, add its properties automatically
-    if ($PSObject) {        
-        # Add all non-null object properties except SID, which is already the Id
-        $PSObject.PSObject.Properties | ForEach-Object {
-            if ($null -ne $_.Value `
-                -and $_.Name -ne "SID" `
-                -and $_.Name -ne "ObjectSid" `
-                -and -not $finalProperties.ContainsKey($_.Name)) {
-
-                    $finalProperties[$_.Name] = $_.Value
-            }
-        }
-    }
-   
-    # Check if node already exists and merge properties if it does
-    $existingNode = $script:Nodes | Where-Object { $_.id -eq $Id }
-    if ($existingNode) {
-        # Track which properties are being added/updated
-        $addedProperties = @()
-        $updatedProperties = @()
-        
-        # Merge new properties into existing node
-        foreach ($key in $finalProperties.Keys) {
-            if ($null -ne $finalProperties[$key]) {
-                if ($existingNode.properties.ContainsKey($key)) {
-                    $oldValue = $existingNode.properties[$key]
-                    $newValue = $finalProperties[$key]
-                    
-                    # Special handling for arrays - merge them
-                    if ($oldValue -is [Array] -and $newValue -is [Array]) {
-                        # Combine and deduplicate arrays
-                        $mergedArray = @($oldValue + $newValue | Select-Object -Unique)
-                        $existingNode.properties[$key] = $mergedArray
-                        
-                        # Update logging to show merge
-                        $addedItems = $newValue | Where-Object { $_ -notin $oldValue }
-                        if ($addedItems.Count -gt 0) {
-                            $updatedProperties += "$key`: Added [$($addedItems -join ', ')] to existing [$($oldValue -join ', ')]"
-                        }
-                    } else {
-                        # Non-array properties - check if different and replace
-                        if ($oldValue -ne $newValue) {
-                            $updatedProperties += "$key`: '$oldValue' -> '$newValue'"
-                        }
-                        $existingNode.properties[$key] = $newValue
-                    }
-                } else {
-                    # New property being added
-                    $valueStr = if ($finalProperties[$key] -is [Array]) { 
-                        "[$($finalProperties[$key] -join ', ')]" 
-                    } else { 
-                        "'$($finalProperties[$key])'" 
-                    }
-                    $addedProperties += "$key`: $valueStr"
-                    $existingNode.properties[$key] = $finalProperties[$key]
-                }
-            }
-        }
-        
-        # Create verbose message showing what was added/updated
-        $changes = @()
-        if ($addedProperties.Count -gt 0) {
-            $changes += "`n    Added:`n        $($addedProperties -join "`n        ")"
-        }
-        if ($updatedProperties.Count -gt 0) {
-            $changes += "`n    Updated:`n        $($updatedProperties -join "`n        ")"
-        }
-        
-        if ($changes.Count -gt 0) {
-            Write-LogMessage Verbose "Found existing node: $($existingNode.properties.Name) ($Id)$changes"
-        } else {
-            Write-LogMessage Verbose "Found existing node: $($existingNode.properties.Name) ($Id)`nNo new properties"
-        }
-    } else {
-        # Filter out null properties and create new node
-        $cleanProperties = @{}
-        foreach ($key in $finalProperties.Keys) {  # Use $finalProperties, not $Properties
-            if ($null -ne $finalProperties[$key]) {
-                $cleanProperties[$key] = $finalProperties[$key]
-            }
-        }
-       
-        $node = [PSCustomObject]@{
-            id = $Id
-            kinds = $Kinds
-            properties = $cleanProperties
-        }
-       
-        $script:Nodes += $node
-        Write-LogMessage Verbose "Added $($Kinds[0]) node: $Id (node count: $($script:Nodes.Count))"
-    }
-   
-    # Auto-create Host nodes and SameHostAs edges for Computer/ClientDevice pairs
-    if ($Kinds -contains "Computer" -or $Kinds -contains "SCCM_ClientDevice") {
-        Create-HostNodeIfNeeded -NodeId $Id -NodeKinds $Kinds -NodeProperties $finalProperties  # Use $finalProperties
-    }
-}
-
-# Helper function to add edges during collection and processing
-function Add-Edge {
-    param(
-        [string]$Start,
-        [string]$Kind,
-        [string]$End,
-        [hashtable]$Properties = @{}
-    )
-    
-    # Filter out null properties
-    $cleanProperties = @{}
-    foreach ($key in $Properties.Keys) {
-        if ($null -ne $Properties[$key]) {
-            $cleanProperties[$key] = $Properties[$key]
-        }
-    }
-
-    # Create new edge
-    $edge = [PSCustomObject]@{
-        start = $Start
-        kind = $Kind
-        end = $End
-        properties = $cleanProperties
+    # Check if running in domain context
+    if (-not $script:Domain) {
+        $issues += "No domain context detected. Specify -Domain parameter or ensure machine is domain-joined"
     }
     
-    $script:Edges += $edge
-    Write-LogMessage Verbose "Added edge: $Start --[$Kind]-> $End (edge count: $($script:Edges.Count))"
-}
-
-function Create-HostNodeIfNeeded {
-    param(
-        [string]$NodeId,
-        [string[]]$NodeKinds,
-        [hashtable]$NodeProperties
-    )
-    
-    if ($NodeKinds -contains "Computer") {
-        # Look for SCCM_ClientDevice with ADDomainSID matching this Computer's ID
-        $matchingClient = $script:Nodes | Where-Object { 
-            $_.kinds -contains "SCCM_ClientDevice" -and 
-            $_.properties.ADDomainSID -eq $NodeId 
-        }
-        
-        if ($matchingClient) {
-            Create-HostAndEdges -ComputerSid $NodeId -ClientDeviceId $matchingClient.id -Hostname $NodeProperties.dnshostname
-        }
-        
-    } elseif ($NodeKinds -contains "SCCM_ClientDevice" -and $NodeProperties.ADDomainSID) {
-        # Look for Computer with ID matching this ClientDevice's ADDomainSID
-        $matchingComputer = $script:Nodes | Where-Object { 
-            $_.kinds -contains "Computer" -and 
-            $_.id -eq $NodeProperties.ADDomainSID 
-        }
-        
-        if ($matchingComputer) {
-            Create-HostAndEdges -ComputerSid $NodeProperties.ADDomainSID -ClientDeviceId $NodeId -Hostname $NodeProperties.DNSHostName
-        }
-    }
-}
-
-function Create-HostAndEdges {
-    param(
-        [string]$ComputerSid,
-        [string]$ClientDeviceId, 
-        [string]$Hostname
-    )
-    
-    # Check if Host node already exists for this Computer SID
-    if ($script:Nodes | Where-Object { $_.kinds -contains "Host" -and $_.properties.Computer -eq $ComputerSid }) {
-        return  # Host already exists
+    # Check permissions
+    $isAdmin = Test-AdminPrivileges
+    if (-not $isAdmin) {
+        Write-LogMessage Warning "Not running as administrator. Some collection methods may fail."
     }
     
-    # Generate Host node ID: dnshostname_GUID
-    $hostGuid = [System.Guid]::NewGuid().ToString()
-    $hostId = "${Hostname}_${hostGuid}"
+    # Validate ComputerFile if specified
+    if ($ComputerFile -and -not (Test-Path $ComputerFile)) {
+        $issues += "ComputerFile not found: $ComputerFile"
+    }
     
-    # Create Host node
-    $script:Nodes += [PSCustomObject]@{
-        id = $hostId
-        kinds = @("Host")
-        properties = @{
-            Computer = $ComputerSid
-            SCCM_ClientDevice = $ClientDeviceId
+    # Validate output directories
+    if ($TempDir -and -not (Test-Path $TempDir)) {
+        try {
+            New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+        } catch {
+            $issues += "Cannot create TempDir: $TempDir"
         }
     }
     
-    # Create all four SameHostAs edges
-    $edgesToCreate = @(
-        @{Start = $ComputerSid; End = $hostId},      # Computer -> Host
-        @{Start = $hostId; End = $ComputerSid},      # Host -> Computer
-        @{Start = $ClientDeviceId; End = $hostId},   # ClientDevice -> Host
-        @{Start = $hostId; End = $ClientDeviceId}    # Host -> ClientDevice
-    )
-    
-    foreach ($edge in $edgesToCreate) {
-        $script:Edges += [PSCustomObject]@{
-            start = $edge.Start
-            end = $edge.End
-            kind = "SameHostAs"
+    if ($ZipDir -and -not (Test-Path $ZipDir)) {
+        try {
+            New-Item -ItemType Directory -Path $ZipDir -Force | Out-Null
+        } catch {
+            $issues += "Cannot create ZipDir: $ZipDir"
         }
     }
     
-    Write-LogMessage Verbose "Created Host node $hostId and SameHostAs edges for Computer: $ComputerSid"
+    if ($issues.Count -gt 0) {
+        Write-LogMessage Error "Prerequisites check failed:"
+        foreach ($issue in $issues) {
+            Write-LogMessage Error "    $issue"
+        }
+        return $false
+    }
+    
+    Write-LogMessage Success "Prerequisites check passed"
+    return $true
 }
 
 #endregion
 
-#region Domain Resolution Functions
-
-# Initialize AD module availability at script level
-$script:ADModuleAvailable = $false
-
-function Get-ForestRoot {
+#region DNS Resolution
+function Test-DnsResolution {
+    param([string]$Domain)
+    
+    if (-not $Domain) {
+        return $false
+    }
+        
+    Write-LogMessage Verbose "Testing DNS resolution for $Domain"
+    
     try {
-        if ($script:ADModuleAvailable) {
-            $rootDSE = Get-ADRootDSE -ErrorAction Stop
-            return $rootDSE.rootDomainNamingContext
-        } else {
-            $rootDSE = New-Object System.DirectoryServices.DirectoryEntry("LDAP://RootDSE")
-            return $rootDSE.Properties["rootDomainNamingContext"][0] 
+        # Try to resolve the domain
+        if ($script:DomainController) {
+            Write-LogMessage Verbose "Using specified domain controller $script:DomainController for DNS resolution"
+            try {
+                if (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue) {
+                    $dnsResult = (Resolve-DnsName -Name $Domain -Server $script:DomainController -ErrorAction Stop).IPAddress
+                }                
+            } catch {
+                Write-LogMessage Verbose "Failed to resolve $Domain using DC $script:DomainController: $_"
+            }
+        }
+
+        # Fallback to standard resolution
+        if (-not $dnsResult) {
+            $dnsResult = [System.Net.Dns]::GetHostAddresses($Domain)
+        }
+        
+        if ($dnsResult -and $dnsResult.Count -gt 0) {
+            return $true
         }
     } catch {
-        Write-LogMessage Warning "Failed to retrieve forest root: $_"
+        Write-LogMessage Error "Failed to resolve domain '$Domain': $_"      
+        return $false
     }
+}
+
+function Resolve-PrincipalInDomain {
+    param (
+        [string]$Name,
+        [string]$Domain
+    )
+    
+    # Initialize and check cache to avoid repeated lookups
+    if (-not $script:ResolvedPrincipalCache) { $script:ResolvedPrincipalCache = @{} }
+    $cacheKey = ("{0}|{1}" -f $Domain, $Name).ToLower()
+    if ($script:ResolvedPrincipalCache.ContainsKey($cacheKey)) {
+        if ($script:ResolvedPrincipalCache[$cacheKey] -eq $null) {
+            Write-LogMessage Verbose "Already tried to resolve $Name in domain $Domain and failed, skipping"
+            return $null
+        }
+        Write-LogMessage Verbose "Resolved $Name in domain $Domain from cache"
+        return $script:ResolvedPrincipalCache[$cacheKey]
+    }
+
+    Write-LogMessage Verbose "Attempting to resolve $Name in domain $Domain"
+    
+    $adPowershellSucceeded = $false
+    
+    # Try Active Directory PowerShell module first
+    if (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) {
+        Write-LogMessage Verbose "Trying AD PowerShell module in domain $Domain"
+        
+        try {
+            $adObject = $null
+            
+            # Set server parameter if domain is specified and different from current
+            $adParams = @{ Identity = $Name }
+            if ($script:DomainController) {
+                $adParams.Server = $script.DomainController
+            } elseif ($Domain -and $Domain -ne $env:USERDOMAIN -and $Domain -ne $env:USERDNSDOMAIN) {
+                $adParams.Server = $Domain
+            }
+            
+            # Try Computer first
+            try {
+                $adObject = Get-ADComputer @adParams -ErrorAction Stop
+            } catch {
+                # Try Computer by SID
+                try {
+                    $adParams.Remove('Identity')
+                    $adParams.LDAPFilter = "(objectSid=$Name)"
+                    $adObject = Get-ADComputer @adParams -ErrorAction Stop
+                    if (-not $adObject) { throw }
+                } catch {
+                    # Try User
+                    try {
+                        $adParams.Remove('LDAPFilter')
+                        $adParams.Identity = $Name
+                        $adObject = Get-ADUser @adParams -ErrorAction Stop
+                    } catch {
+                        # Try User by SID
+                        try {
+                            $adParams.Remove('Identity')
+                            $adParams.LDAPFilter = "(objectSid=$Name)"
+                            $adObject = Get-ADUser @adParams -ErrorAction Stop
+                            if (-not $adObject) { throw }
+                        } catch {
+                            # Try Group
+                            try {
+                                $adParams.Remove('LDAPFilter')
+                                $adParams.Identity = $Name
+                                $adObject = Get-ADGroup @adParams -ErrorAction Stop
+                            } catch {
+                                # Try Group by SID
+                                try {
+                                    $adParams.Remove('Identity')
+                                    $adParams.LDAPFilter = "(objectSid=$Name)"
+                                    $adObject = Get-ADGroup @adParams -ErrorAction Stop
+                                    if (-not $adObject) { throw }
+                                } catch {
+                                    Write-LogMessage Verbose "No AD object found for '$Name' in domain '$Domain'"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if ($adObject) {
+                $adObjectName = if ($adObject.UserPrincipalName) { $adObject.UserPrincipalName } elseif ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.SamAccountName }
+                $adObjectSid = $adObject.SID.ToString()
+                Write-LogMessage Verbose "Resolved '$Name' to AD principal in '$Domain': $adObjectName ($adObjectSid)"
+                
+                # Upper the first letter of object class to match BloodHound kind
+                $kind = if ($adObject.ObjectClass -and $adObject.ObjectClass.Length -gt 0) { 
+                    $adObject.ObjectClass.Substring(0,1).ToUpper() + $adObject.ObjectClass.Substring(1).ToLower() 
+                } else { 
+                    $adObject.ObjectClass 
+                }
+                
+                $adPowershellSucceeded = $true
+                $result = [PSCustomObject]@{
+                    ObjectIdentifier = $adObjectSid
+                    Name = $adObjectName
+                    DistinguishedName = $adObject.DistinguishedName
+                    DNSHostName = $adObject.DNSHostName
+                    Domain = $Domain
+                    Enabled = $adObject.Enabled
+                    IsDomainPrincipal = $true
+                    SamAccountName = $adObject.SamAccountName
+                    SID = $adObject.SID.ToString()
+                    UserPrincipalName = $adObject.UserPrincipalName
+                    Type = $kind
+                    Error = $null
+                }
+                $script:ResolvedPrincipalCache[$cacheKey] = $result
+                return $result
+            }
+        } catch {
+            Write-LogMessage Verbose "AD PowerShell lookup failed for '$Name' in domain '$Domain': $_"
+        }
+    }
+    
+    # Try .NET DirectoryServices AccountManagement
+    if ($script:UseNetFallback -or -not (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) -or -not $adPowershellSucceeded) {
+        Write-LogMessage Verbose "Attempting .NET DirectoryServices AccountManagement for '$Name' in domain '$Domain'"
+        
+        try {
+            # Try AccountManagement approach
+             # Use Domain Controller if specified
+             if ($script:DomainController) {
+                Write-LogMessage Verbose "Creating PrincipalContext with domain controller $script:DomainController"
+                $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                    [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
+                    $script:DomainController
+                )
+            } else {
+                $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                    [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
+                    $Domain
+                )
+            }
+            $principal = $null
+            
+            # Try as Computer
+            try {
+                $principal = [System.DirectoryServices.AccountManagement.ComputerPrincipal]::FindByIdentity($context, $Name)
+                if ($principal) {
+                    Write-LogMessage Verbose "Found computer principal using .NET DirectoryServices: $($principal.Name)"
+                }
+            } catch {
+                Write-LogMessage Verbose "Computer lookup failed: $_"
+            }
+            
+            # Try as User if computer lookup failed
+            if (-not $principal) {
+                try {
+                    $principal = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity($context, $Name)
+                    if ($principal) {
+                        Write-LogMessage Verbose "Found user principal using .NET DirectoryServices: $($principal.Name)"
+                    }
+                } catch {
+                    Write-LogMessage Verbose "User lookup failed: $_"
+                }
+            }
+            
+            # Try as Group if user lookup failed
+            if (-not $principal) {
+                try {
+                    $principal = [System.DirectoryServices.AccountManagement.GroupPrincipal]::FindByIdentity($context, $Name)
+                    if ($principal) {
+                        Write-LogMessage Verbose "Found group principal using .NET DirectoryServices: $($principal.Name)"
+                    }
+                } catch {
+                    Write-LogMessage Verbose "Group lookup failed: $_"
+                }
+            }
+            
+            if ($principal) {
+                $principalType = $principal.GetType().Name -replace "Principal$", ""
+                
+                $result = [PSCustomObject]@{
+                    ObjectIdentifier = $principal.Sid.Value
+                    Name = if ($principal.UserPrincipalName) { $principal.UserPrincipalName } else { $principal.SamAccountName }
+                    DistinguishedName = $principal.DistinguishedName
+                    DNSHostName = if ($principal.GetType().Name -eq "ComputerPrincipal") { $principal.Name } else { $null }
+                    Domain = $Domain
+                    Enabled = if ($principal.PSObject.Properties['Enabled']) { $principal.Enabled } else { $null }
+                    IsDomainPrincipal = $true
+                    SamAccountName = $principal.SamAccountName
+                    SID = $principal.Sid.Value
+                    UserPrincipalName = $principal.UserPrincipalName
+                    Type = $principalType
+                    Error = $null
+                }
+                
+                $context.Dispose()
+                $script:ResolvedPrincipalCache[$cacheKey] = $result
+                return $result
+            }
+            
+            $context.Dispose()
+            
+        } catch {
+            Write-LogMessage Verbose "Failed .NET DirectoryServices AccountManagement for '$Name' in domain '$Domain': $_"
+        }
+        
+        # Try ADSISearcher approach
+        try {
+            Write-LogMessage Verbose "Attempting ADSISearcher for '$Name' in domain '$Domain'"
+            
+            # Build LDAP path
+            $domainDN = if ($Domain) {
+                "DC=" + ($Domain -replace "\.", ",DC=")
+            } else {
+                $null
+            }
+
+            # Use Domain Controller in LDAP path if specified
+            $ldapPath = if ($script:DomainController -and $domainDN) {
+                "LDAP://$($script:DomainController)/$domainDN"
+            } elseif ($domainDN) {
+                "LDAP://$domainDN"
+            } else {
+                "LDAP://"
+            }
+            
+            $adsiSearcher = if ($ldapPath -ne "LDAP://") {
+                New-Object System.DirectoryServices.DirectorySearcher([ADSI]$ldapPath)
+            } else {
+                New-Object System.DirectoryServices.DirectorySearcher
+            }
+            
+            # Try different search filters
+            $searchFilters = @(
+                "(samAccountName=$Name)",
+                "(objectSid=$Name)",
+                "(userPrincipalName=$Name)",
+                "(dnsHostName=$Name)",
+                "(cn=$Name)"
+            )
+            
+            $adsiResult = $null
+            foreach ($filter in $searchFilters) {
+                try {
+                    $adsiSearcher.Filter = $filter
+                    $adsiResult = $adsiSearcher.FindOne()
+                    if ($adsiResult) {
+                        Write-LogMessage Verbose "Found object using ADSISearcher with filter: $filter"
+                        break
+                    }
+                } catch {
+                    Write-LogMessage Verbose "ADSISearcher filter '$filter' failed: $_"
+                }
+            }
+            
+            if ($adsiResult) {
+                $props = $adsiResult.Properties
+                $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
+                $objectSid = if ($props["objectsid"]) { 
+                    (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
+                } else { 
+                    $null 
+                }
+                                
+                $result = [PSCustomObject]@{
+                    ObjectIdentifier = $objectSid
+                    Name = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } elseif ($props["dnshostname"]) { $props["dnshostname"][0] } else { $props["samaccountname"][0] }
+                    DistinguishedName = if ($props["distinguishedname"]) { $props["distinguishedname"][0] } else { $null }
+                    DNSHostName = if ($props["dnshostname"]) { $props["dnshostname"][0] } else { $null }
+                    Domain = $Domain
+                    Enabled = if ($props["useraccountcontrol"]) { 
+                        -not ([int]$props["useraccountcontrol"][0] -band 2) 
+                    } else { 
+                        $null 
+                    }
+                    IsDomainPrincipal = $true
+                    SamAccountName = if ($props["samaccountname"]) { $props["samaccountname"][0] } else { $null }
+                    SID = $objectSid
+                    UserPrincipalName = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } else { $null }
+                    Type = if ($objectClass -and $objectClass.Length -gt 0) { 
+                        $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower() 
+                    } else { 
+                        "Unknown" 
+                    }
+                    Error = $null
+                }
+                
+                $adsiSearcher.Dispose()
+                $script:ResolvedPrincipalCache[$cacheKey] = $result
+                return $result
+            }
+            
+            $adsiSearcher.Dispose()
+            
+        } catch {
+            Write-LogMessage Verbose "ADSISearcher lookup failed for '$Name' in domain '$Domain': $_"
+        }
+        
+        # Try DirectorySearcher as final .NET attempt
+        try {
+            Write-LogMessage Verbose "Attempting DirectorySearcher for '$Name' in domain '$Domain'"
+            
+            Add-Type -AssemblyName System.DirectoryServices -ErrorAction Stop
+            
+            $searcher = New-Object System.DirectoryServices.DirectorySearcher
+            $searcher.Filter = "(|(samAccountName=$Name)(objectSid=$Name)(userPrincipalName=$Name)(dnsHostName=$Name))"
+            $null = $searcher.PropertiesToLoad.Add("samAccountName")
+            $null = $searcher.PropertiesToLoad.Add("objectSid")
+            $null = $searcher.PropertiesToLoad.Add("distinguishedName")
+            $null = $searcher.PropertiesToLoad.Add("userPrincipalName")
+            $null = $searcher.PropertiesToLoad.Add("dnsHostName")
+            $null = $searcher.PropertiesToLoad.Add("objectClass")
+            $null = $searcher.PropertiesToLoad.Add("userAccountControl")
+            
+            $result = $searcher.FindOne()
+            if ($result) {
+                $objectClass = $result.Properties["objectclass"][$result.Properties["objectclass"].Count - 1]
+                $objectSid = (New-Object System.Security.Principal.SecurityIdentifier($result.Properties["objectsid"][0], 0)).Value
+                
+                Write-LogMessage Verbose "Found object using DirectorySearcher: $($result.Properties["samaccountname"][0])"
+                
+                $returnResult = [PSCustomObject]@{
+                    ObjectIdentifier = $objectSid
+                    Name = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } elseif ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $result.Properties["samaccountname"][0] }
+                    DistinguishedName = $result.Properties["distinguishedname"][0]
+                    DNSHostName = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
+                    Domain = $Domain
+                    Enabled = if ($result.Properties["useraccountcontrol"].Count -gt 0) { 
+                        -not ([int]$result.Properties["useraccountcontrol"][0] -band 2) 
+                    } else { 
+                        $null 
+                    }
+                    IsDomainPrincipal = $true
+                    SamAccountName = $result.Properties["samaccountname"][0]
+                    SID = $objectSid
+                    UserPrincipalName = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } else { $null }
+                    Type = $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower()
+                    Error = $null
+                }
+                
+                $searcher.Dispose()
+                $script:ResolvedPrincipalCache[$cacheKey] = $returnResult
+                return $returnResult
+            }
+            
+            $searcher.Dispose()
+            
+        } catch {
+            Write-LogMessage Verbose "DirectorySearcher failed for '$Name' in domain '$Domain': $_"
+        }
+    }
+    
+    # Try NTAccount translation
+    try {
+        Write-LogMessage Verbose "Attempting NTAccount translation for '$Name' in domain '$Domain'"
+        
+        # Try direct SID lookup
+        $ntAccount = New-Object System.Security.Principal.NTAccount($Domain, $Name)
+        $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier])
+        $resolvedSid = $sid.Value
+        Write-LogMessage Verbose "Resolved SID for '$Name' using NTAccount in '$Domain': $resolvedSid"
+        
+        $ntResult = [PSCustomObject]@{
+            Name = "$Domain\$Name"
+            SID = $resolvedSid
+            Domain = $Domain
+            Error = $null
+        }
+        $script:ResolvedPrincipalCache[$cacheKey] = $ntResult
+        return $ntResult
+    } catch {
+        Write-LogMessage Verbose "NTAccount translation failed for '$Name' in domain '$Domain': $_"
+    }
+    
+    # Try SID to name translation as final attempt (if input looks like a SID)
+    if ($Name -match "^S-\d+-\d+") {
+        try {
+            Write-LogMessage Verbose "Attempting SID to name translation for '$Name'"
+            $sid = New-Object System.Security.Principal.SecurityIdentifier($Name)
+            $resolvedName = $sid.Translate([System.Security.Principal.NTAccount]).Value
+            Write-LogMessage Verbose "Resolved name for SID '$Name': $resolvedName"
+            
+            $sidResult = [PSCustomObject]@{
+                Name = $resolvedName
+                SID = $Name
+                Domain = $Domain
+                Error = $null
+            }
+            $script:ResolvedPrincipalCache[$cacheKey] = $sidResult
+            return $sidResult
+        } catch {
+            Write-LogMessage Verbose "SID to name translation failed for '$Name': $_"
+        }
+    }
+    
+    # Return failure
+    $script:ResolvedPrincipalCache[$cacheKey] = $null
     return $null
 }
 
@@ -734,9 +845,435 @@ function Get-ActiveDirectoryObject {
     return $null
 }
 
+function Get-ForestRoot {
+    try {
+        if ($script:ADModuleAvailable) {
+            $rootDSE = Get-ADRootDSE -ErrorAction Stop
+            return $rootDSE.rootDomainNamingContext
+        } else {
+            $rootDSE = New-Object System.DirectoryServices.DirectoryEntry("LDAP://RootDSE")
+            return $rootDSE.Properties["rootDomainNamingContext"][0] 
+        }
+    } catch {
+        Write-LogMessage Warning "Failed to retrieve forest root: $_"
+    }
+    return $null
+}
+        
 #endregion
 
-#region LDAP Collection
+#region Helper Functions
+function Invoke-HttpRequest {
+    param(
+        [string]$Uri,
+        [int]$TimeoutSec = 5,
+        [switch]$UseDefaultCredentials = $false
+    )
+
+    $request = [System.Net.HttpWebRequest]::Create($Uri)
+    $request.Method = "GET"
+    $request.Timeout = $TimeoutSec * 1000
+
+    if ($UseDefaultCredentials) {
+        $request.UseDefaultCredentials = $true
+    }
+    
+    try {
+        $response = $request.GetResponse()
+        $stream = $response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $content = $reader.ReadToEnd()
+        
+        $result = [PSCustomObject]@{
+            StatusCode = [int]$response.StatusCode
+            Content = $content
+        }
+        
+        $reader.Close()
+        $stream.Close()
+        $response.Close()
+        
+        return $result
+        
+    } catch [System.Net.WebException] {
+        $webResponse = $_.Exception.Response
+        if ($webResponse) {
+            $statusCode = [int]$webResponse.StatusCode
+            return [PSCustomObject]@{
+                StatusCode = $statusCode
+                Content = $null
+            }
+        }
+        throw
+    }
+}
+
+function Test-AdminPrivileges {
+    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    return $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Add-DeviceToTargets {
+    param(
+        [string]$DeviceName,
+        [string]$Source
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($DeviceName)) { return $null }
+    
+    # Try to resolve to AD object to get canonical identifier
+    $adObject = Resolve-PrincipalInDomain -Name $DeviceName -Domain $script:Domain
+    
+    # Use ObjectSID as deduplication key if resolved, otherwise use lowercase name
+    if ($adObject -and $adObject.SID) {
+        $dedupKey = $adObject.SID
+        $canonicalName = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
+    } else {
+        $dedupKey = $DeviceName.ToLower()
+        $canonicalName = $DeviceName
+        Write-LogMessage Warning "Could not resolve '$DeviceName' to domain object"
+        return $null
+    }
+    
+    # Check if we already have this device
+    $existingTarget = $script:CollectionTargets.Values | Where-Object { $_.DedupKey -eq $dedupKey }
+    
+    if ($existingTarget) {
+        # Prefer FQDN: Update hostname if current input is FQDN and existing is not
+        if ($DeviceName -contains '.' -and $existingTarget.Hostname -notcontains '.') {
+            Write-LogMessage Verbose "Replacing NetBIOS name '$($existingTarget.Hostname)' with FQDN '$DeviceName'"
+            $existingTarget.Hostname = $DeviceName
+        }
+        
+        # Add source to existing entry
+        if ($existingTarget.Source -notlike "*$Source*") {
+            $existingTarget.Source += ", $Source"
+        }
+        
+        # Return existing target
+        $existingTarget.IsNew = $false
+        return $existingTarget
+    } else {
+        # Add new target
+        $script:CollectionTargets[$canonicalName] = @{
+            "ADObject" = if ($adObject) { $adObject } else { $null }
+            "Collected" = $false
+            "DedupKey" = $dedupKey
+            "Hostname" = $canonicalName
+            "IsNew" = $true
+            "Source" = $Source
+        }
+        Write-LogMessage Verbose "Added collection target: $canonicalName from $Source"
+        
+        # Return new target
+        return $script:CollectionTargets[$canonicalName]
+    }
+}
+
+function Get-SameAdminsAsSites {
+    param([string]$SiteIdentifier)
+    
+    $relatedSites = @()
+    $site = $script:Sites | Where-Object { $_.SiteIdentifier -eq $SiteIdentifier }
+    
+    if ($site) {
+        # Find all sites with same ParentSiteCode (same hierarchy)
+        $hierarchySites = $script:Sites | Where-Object { $_.ParentSiteCode -eq $site.ParentSiteCode }
+        $relatedSites += $hierarchySites
+        
+        # Recursively find sites connected via SCCM_SameAdminsAs edges
+        # This is a simplified version - full implementation would need graph traversal
+        $relatedSites += $script:Sites | Where-Object { 
+            $_.ParentSiteCode -eq $site.SiteCode -or 
+            $_.SiteCode -eq $site.ParentSiteCode 
+        }
+    }
+    
+    return ($relatedSites | Sort-Object SiteIdentifier -Unique)
+}
+
+function Remove-TimedOutJob {
+    param([System.Management.Automation.Job]$Job, [string]$Target)
+    
+    if (Get-Job $Job -ErrorAction SilentlyContinue) {
+        try {
+            Stop-Job $Job -PassThru -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-LogMessage Error "Job cleanup failed for $Target"
+        }
+    }
+}
+
+#endregion
+
+#region Node and Edge Functions
+function Add-Node {
+    param(
+        [string]$Id,
+        [string[]]$Kinds,
+        [hashtable]$Properties = @{},  # Default to empty hashtable, not null
+        [PSObject]$PSObject = $null
+    )
+   
+    # Start with provided properties
+    $finalProperties = if ($Properties) { $Properties.Clone() } else { @{} }
+    
+    # If PSObject is provided, add its properties automatically
+    if ($PSObject) {        
+        # Add all non-null object properties except SID, which is already the Id
+        $PSObject.PSObject.Properties | ForEach-Object {
+            if ($null -ne $_.Value `
+                -and $_.Name -ne "SID" `
+                -and $_.Name -ne "ObjectSid" `
+                -and -not $finalProperties.ContainsKey($_.Name)) {
+
+                    $finalProperties[$_.Name] = $_.Value
+            }
+        }
+    }
+   
+    # Check if node already exists and merge properties if it does
+    $existingNode = $script:Nodes | Where-Object { $_.id -eq $Id }
+    if ($existingNode) {
+        # Track which properties are being added/updated
+        $addedProperties = @()
+        $updatedProperties = @()
+        
+        # Merge new properties into existing node
+        foreach ($key in $finalProperties.Keys) {
+            if ($null -ne $finalProperties[$key]) {
+                if ($existingNode.properties.ContainsKey($key)) {
+                    $oldValue = $existingNode.properties[$key]
+                    $newValue = $finalProperties[$key]
+                    
+                    # Special handling for arrays - merge them
+                    if ($oldValue -is [Array] -and $newValue -is [Array]) {
+                        # Combine and deduplicate arrays
+                        $mergedArray = @($oldValue + $newValue | Select-Object -Unique)
+                        $existingNode.properties[$key] = $mergedArray
+                        
+                        # Update logging to show merge
+                        $addedItems = $newValue | Where-Object { $_ -notin $oldValue }
+                        if ($addedItems.Count -gt 0) {
+                            $updatedProperties += "$key`: Added [$($addedItems -join ', ')] to existing [$($oldValue -join ', ')]"
+                        }
+                    } else {
+                        # Non-array properties - check if different and replace
+                        if ($oldValue -ne $newValue) {
+                            $updatedProperties += "$key`: '$oldValue' -> '$newValue'"
+                        }
+                        $existingNode.properties[$key] = $newValue
+                    }
+                } else {
+                    # New property being added
+                    $valueStr = if ($finalProperties[$key] -is [Array]) { 
+                        "[$($finalProperties[$key] -join ', ')]" 
+                    } else { 
+                        "'$($finalProperties[$key])'" 
+                    }
+                    $addedProperties += "$key`: $valueStr"
+                    $existingNode.properties[$key] = $finalProperties[$key]
+                }
+            }
+        }
+        
+        # Create verbose message showing what was added/updated
+        $changes = @()
+        if ($addedProperties.Count -gt 0) {
+            $changes += "`n    Added:`n        $($addedProperties -join "`n        ")"
+        }
+        if ($updatedProperties.Count -gt 0) {
+            $changes += "`n    Updated:`n        $($updatedProperties -join "`n        ")"
+        }
+        
+        if ($changes.Count -gt 0) {
+            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $($existingNode.properties.SamAccountName) ($Id)$changes"
+        } else {
+            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $($existingNode.properties.SamAccountName) ($Id)`nNo new properties"
+        }
+    } else {
+        # Filter out null properties and create new node
+        $cleanProperties = @{}
+        foreach ($key in $finalProperties.Keys) {  # Use $finalProperties, not $Properties
+            if ($null -ne $finalProperties[$key]) {
+                $cleanProperties[$key] = $finalProperties[$key]
+            }
+        }
+       
+        $node = [PSCustomObject]@{
+            id = $Id
+            kinds = $Kinds
+            properties = $cleanProperties
+        }
+       
+        $script:Nodes += $node
+        Write-LogMessage Verbose "Added $($Kinds[0]) node: $Id (node count: $($script:Nodes.Count))"
+    }
+   
+    # Auto-create Host nodes and SameHostAs edges for Computer/ClientDevice pairs
+    if ($Kinds -contains "Computer" -or $Kinds -contains "SCCM_ClientDevice") {
+        Add-HostNodeAndEdges -NodeId $Id -NodeKinds $Kinds -NodeProperties $finalProperties  # Use $finalProperties
+    }
+
+    # Auto-create SCCM_SameAdminsAs edges for SCCM_Site nodes
+    if ($Kinds -contains "SCCM_Site") {
+        # Get the current site node and relevant properties
+        $currentSiteNode = $script:Nodes | Where-Object { $_.id -eq $Id }
+        if ($currentSiteNode -and $currentSiteNode.properties) {
+            $parentSiteCode = $currentSiteNode.properties.ParentSiteCode
+            $siteType = $currentSiteNode.properties.SiteType
+            
+            if ($parentSiteCode -and $parentSiteCode -ne "" -and $parentSiteCode -ne "None") {
+                # Create parent-child edges per rules:
+                # - Central <-> Primary (both directions)
+                # - Primary -> Secondary (one direction)
+                $parentCandidates = $script:Nodes | Where-Object {
+                    $_.kinds -contains "SCCM_Site" -and (
+                        $_.id -eq $parentSiteCode -or
+                        $_.properties.SiteCode -eq $parentSiteCode -or
+                        $_.properties.SiteIdentifier -eq $parentSiteCode
+                    )
+                }
+                if ($parentCandidates -and $parentCandidates.Count -gt 0) {
+                    $parent = $parentCandidates[0]
+                    $parentType = $parent.properties.SiteType
+                    # Central <-> Primary
+                    if ( ($parentType -eq "Central Administration Site" -and $siteType -eq "Primary Site") -or
+                         ($parentType -eq "Primary Site" -and $siteType -eq "Central Administration Site") ) {
+                        $existsP2C = $script:Edges | Where-Object { $_.start -eq $parent.id -and $_.end -eq $Id -and $_.kind -eq "SCCM_SameAdminsAs" }
+                        if (-not $existsP2C) { Add-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
+                        $existsC2P = $script:Edges | Where-Object { $_.start -eq $Id -and $_.end -eq $parent.id -and $_.kind -eq "SCCM_SameAdminsAs" }
+                        if (-not $existsC2P) { Add-Edge -Start $Id -Kind "SCCM_SameAdminsAs" -End $parent.id }
+                    }
+                    # Primary -> Secondary only
+                    elseif ($parentType -eq "Primary Site" -and $siteType -eq "Secondary Site") {
+                        $existsP2C = $script:Edges | Where-Object { $_.start -eq $parent.id -and $_.end -eq $Id -and $_.kind -eq "SCCM_SameAdminsAs" }
+                        if (-not $existsP2C) { Add-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# Helper function to add edges during collection and processing
+function Add-Edge {
+    param(
+        [string]$Start,
+        [string]$Kind,
+        [string]$End,
+        [hashtable]$Properties = @{}
+    )
+    
+    # Validate that both nodes exist
+    if ([string]::IsNullOrWhiteSpace($Start) -or [string]::IsNullOrWhiteSpace($End)) {
+        Write-LogMessage Warning "Cannot add edge '$Kind': start or end is null/empty"
+        Write-LogMessage Warning "Start: $Start, End: $End"
+        return
+    }
+    $startNode = $script:Nodes | Where-Object { $_.id -eq $Start }
+    if (-not $startNode) {
+        Write-LogMessage Warning ("Cannot add edge {0} -[{1}]-> {2}: start node not found" -f $Start, $Kind, $End)
+        return
+    }
+    $endNode = $script:Nodes | Where-Object { $_.id -eq $End }
+    if (-not $endNode) {
+        Write-LogMessage Warning ("Cannot add edge {0} -[{1}]-> {2}: end node not found" -f $Start, $Kind, $End)
+        return
+    }
+
+    # Deduplicate: skip if identical edge already exists
+    $duplicate = $script:Edges | Where-Object { $_.start -eq $Start -and $_.kind -eq $Kind -and $_.end -eq $End }
+    if ($duplicate) { return }
+
+    # Filter out null properties
+    $cleanProperties = @{}
+    foreach ($key in $Properties.Keys) {
+        if ($null -ne $Properties[$key]) {
+            $cleanProperties[$key] = $Properties[$key]
+        }
+    }
+
+    # Create new edge
+    $edge = @{
+        start = @{ value = $Start }
+        end = @{ value = $End }
+        kind = $Kind
+        properties = $cleanProperties
+    }
+    
+    $script:Edges += $edge
+    Write-LogMessage Verbose "Added edge: $Start -[$Kind]-> $End (edge count: $($script:Edges.Count))"
+}
+
+function Add-HostNodeAndEdges{
+    param(
+        [string]$NodeId,
+        [string[]]$NodeKinds,
+        [hashtable]$NodeProperties
+    )
+
+    $matchingNode = $null   
+    
+    if ($NodeKinds -contains "Computer") {
+
+        # Check if Host node already exists for this Computer SID
+        if ($script:Nodes | Where-Object { $_.kinds -contains "Host" -and $_.properties.Computer -eq $NodeId }) {
+            return  # Host already exists
+        }
+
+        # Look for SCCM_ClientDevice with ADDomainSID matching this Computer's ID
+        $matchingNode = $script:Nodes | Where-Object { 
+            $_.kinds -contains "SCCM_ClientDevice" -and 
+            $_.properties.ADDomainSID -eq $NodeId 
+        }
+        
+    } elseif ($NodeKinds -contains "SCCM_ClientDevice" -and $NodeProperties.ADDomainSID) {
+
+        # Check if Host node already exists for this client device
+        if ($script:Nodes | Where-Object { $_.kinds -contains "Host" -and $_.properties.SCCM_ClientDevice -eq $NodeId }) {
+            return  # Host already exists
+        }
+        # Look for Computer with ID matching this ClientDevice's ADDomainSID
+        $matchingNode = $script:Nodes | Where-Object { 
+            $_.kinds -contains "Computer" -and 
+            $_.id -eq $NodeProperties.ADDomainSID
+        }
+    }
+
+    if ($matchingNode) {
+        # Generate Host node ID: dnshostname_GUID
+        $hostGuid = [System.Guid]::NewGuid().ToString()
+        $hostId = "$($NodeProperties.DNSHostName)_${hostGuid}"
+        
+        $computerSid = if ($matchingNode.kinds -contains "Computer") { $matchingNode.id } else { $NodeId }
+        $clientDeviceId = if ($matchingNode.kinds -contains "SCCM_ClientDevice") { $matchingNode.id } else { $NodeId }
+
+        # Create Host node
+        Add-Node -Id $hostId -Kinds @("Host") -Properties @{
+            Name = $NodeProperties.DNSHostName
+            Computer = $computerSid
+            SCCM_ClientDevice = $clientDeviceId
+        }
+
+            # Create all four SameHostAs edges
+        $edgesToCreate = @(
+            @{Start = $computerSid; End = $hostId},      # Computer -> Host
+            @{Start = $hostId; End = $computerSid},      # Host -> Computer
+            @{Start = $clientDeviceId; End = $hostId},   # ClientDevice -> Host
+            @{Start = $hostId; End = $clientDeviceId}    # Host -> ClientDevice
+        )
+        
+        foreach ($edge in $edgesToCreate) {
+            Add-Edge -Start $edge.Start -Kind "SameHostAs" -End $edge.End
+        }
+        
+        Write-LogMessage Verbose "Created $computerSid <-[SameHostAs]-> $hostId <-[SameHostAs]-> $clientDeviceId nodes and edges"
+    }    
+}
+#endregion
+
+#region Collection Functions
 
 function Invoke-LDAPCollection {
     Write-LogMessage Info "Starting LDAP collection..."
@@ -1233,7 +1770,7 @@ function Invoke-LDAPCollection {
                     }
                     
                     # Resolve to AD Object
-                    $adObject = Get-ActiveDirectoryObject -Name $accountName -Domain $script:Domain
+                    $adObject = Resolve-PrincipalInDomain -Name $accountName -Domain $script:Domain
                     
                     if ($adObject -and $adObject.SID) {
                         Write-LogMessage Verbose "Resolved principal to $($adObject.Type): $($adObject.Name) ($($adObject.SID))"
@@ -1302,7 +1839,7 @@ function Invoke-LDAPCollection {
                             }
                             
                             # Resolve using our new generic function
-                            $adObject = Get-ActiveDirectoryObject -Name $accountName -Domain $script:Domain
+                            $adObject = Resolve-PrincipalInDomain -Name $accountName -Domain $script:Domain
                             
                             if ($adObject -and $adObject.SID) {
                                 Write-LogMessage Verbose "Resolved principal to $($adObject.Type): $($adObject.Name) ($($adObject.SID))"
@@ -1358,10 +1895,6 @@ function Invoke-LDAPCollection {
     }
 }
 
-#endregion
-
-#region Local Collection
-
 function Invoke-LocalCollection {
     Write-LogMessage Info "Starting Local collection..."
     
@@ -1405,7 +1938,7 @@ function Invoke-LocalCollection {
             Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                 "CollectionSource" = "Local-SMS_Authority"
                 "SiteCode" = $siteCode
-                "SiteType" = 2  # Primary (clients can only be joined to primary sites)
+                "SiteType" = "Primary Site"  # Primary (clients can only be joined to primary sites)
             }
         }
         
@@ -1473,7 +2006,7 @@ function Invoke-LocalCollection {
             # Resolve current management point SID
             $currentMPSid = $null
             if ($currentMP -and $localTarget.ADObject) {
-                $mpObject = Get-ActiveDirectoryObject -Name $currentMP -Domain $script:Domain
+                $mpObject = Resolve-PrincipalInDomain -Name $currentMP -Domain $script:Domain
                 $currentMPSid = $mpObject.SID
             }
             
@@ -1677,9 +2210,6 @@ function Invoke-LocalCollection {
     }
 }
 
-#endregion
-
-#region DNS Collection
 
 function Invoke-DNSCollection {
     Write-LogMessage Info "Starting DNS collection..."
@@ -1728,8 +2258,10 @@ function Invoke-DNSCollection {
                 if ($script:TargetSiteCodes) {
                     $targetSiteCodes += $script:TargetSiteCodes
                 }
-                if ($script:Sites) {
-                    $targetSiteCodes += $script:Sites | ForEach-Object { $_.SiteCode }
+
+                $siteNodes = $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }
+                if ($siteNodes) {
+                    $targetSiteCodes += $siteNodes | ForEach-Object { $_.Properties.SiteCode }
                 }
                 # Remove duplicates and empty values
                 $targetSiteCodes = $targetSiteCodes | Where-Object { $_ } | Sort-Object -Unique
@@ -1757,7 +2289,7 @@ function Invoke-DNSCollection {
                         
                         # Enhanced resolution using AD helper functions
                         try {
-                            $adObject = Get-ActiveDirectoryObject -Name $managementPointFQDN -Domain $script:Domain
+                            $adObject = Resolve-PrincipalInDomain -Name $managementPointFQDN -Domain $script:Domain
                             if ($adObject) {
                                 $adidnsRecords += @{
                                     "FQDN" = $managementPointFQDN
@@ -1798,7 +2330,7 @@ function Invoke-DNSCollection {
                         
                         # Enhanced resolution using AD helper functions
                         try {
-                            $adObject = Get-ActiveDirectoryObject -Name $managementPointFQDN -Domain $script:Domain
+                            $adObject = Resolve-PrincipalInDomain -Name $managementPointFQDN -Domain $script:Domain
                             if ($adObject) {
                                 # Check for RFC-1918 IP space
                                 $ipAddresses = @()
@@ -1903,21 +2435,6 @@ function Invoke-DNSCollection {
     }
 }
 
-#endregion
-
-#region Remote Registry Collection
-
-function Remove-TimedOutJob {
-    param([System.Management.Automation.Job]$Job, [string]$Target)
-    
-    if (Get-Job $Job -ErrorAction SilentlyContinue) {
-        try {
-            Stop-Job $Job -PassThru -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
-        } catch {
-            Write-LogMessage Error "Job cleanup failed for $Target"
-        }
-    }
-}
 function Invoke-RemoteRegistryCollection {
     param($Targets)
     
@@ -2176,7 +2693,7 @@ function Invoke-RemoteRegistryCollection {
                 Write-LogMessage Verbose "Found CurrentUser $currentUserSid on $target"
                 # Resolve SID to AD object
                 try {
-                    $userADObject = Get-ActiveDirectoryObject -Sid $currentUserSid -Domain $script:Domain
+                    $userADObject = Resolve-PrincipalInDomain -Sid $currentUserSid -Domain $script:Domain
 
                     if ($userADObject) {
                         Write-LogMessage Success "Found current user: $($userADObject.Name) ($currentUserSid)"
@@ -2210,737 +2727,1010 @@ function Invoke-RemoteRegistryCollection {
     Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
 }
 
-#endregion
-
-#region AdminService Collection
-
 function Invoke-AdminServiceCollection {
     param(
         $CollectionTarget
     )
     
-    $Target = $CollectionTarget.Hostname
-    Write-LogMessage Info "Attempting AdminService collection on: $Target"
-    
-    # Construct base AdminService URL
-    $baseUrl = "https://$Target/AdminService"
-    
-    # Test AdminService connectivity first
-    if (-not (Test-AdminServiceConnectivity -Target $Target -BaseUrl $baseUrl)) {
-        Write-LogMessage "AdminService connectivity test failed for $Target" -Level "Warning"
-        return $false
-    }
-    
-    # Attempt collection - AdminService will auto-detect the site code
-    $collectionsAttempted = 0
-    $collectionsSuccessful = 0
-    
+    $target = $CollectionTarget.Hostname
+    Write-LogMessage Info "Attempting AdminService collection on: $target"
+   
     try {
-        # Collection 1: Sites (SMS_Site) - this will tell us which site we're collecting from
-        $detectedSiteCode = $null
-        if (Get-SCCMSitesViaAdminService -Target $Target -BaseUrl $baseUrl -DetectedSiteCodeRef ([ref]$detectedSiteCode)) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Sites via AdminService (detected site: $detectedSiteCode)" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Sites via AdminService" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Use detected site code for remaining collections, fallback to provided SiteCode
-        $currentSiteCode = if ($detectedSiteCode) { $detectedSiteCode } else { $SiteCode }
-        
-        # Collection 2: Collections (SMS_Collection)
-        if (Get-SCCMCollectionsViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Collections via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Collections via AdminService" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Collection 3: Collection Members (SMS_FullCollectionMembership)
-        if (Get-SCCMCollectionMembersViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Collection Members via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Collection Members via AdminService" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Collection 4: Client Devices (SMS_CombinedDeviceResources or SMS_R_System)
-        if (Get-SCCMClientDevicesViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Client Devices via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Client Devices via AdminService" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Collection 5: Security Roles (SMS_Role) - Requires Read-only Analyst or higher
-        if (Get-SCCMSecurityRolesViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Security Roles via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Security Roles via AdminService (may require elevated privileges)" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Collection 6: Administrative Users (SMS_Admin) - Requires Read-only Analyst or higher
-        if (Get-SCCMAdminUsersViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Admin Users via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Admin Users via AdminService (may require elevated privileges)" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        # Collection 7: Site System Roles (SMS_SystemResourceList)
-        if (Get-SCCMSiteSystemRolesViaAdminService -Target $Target -BaseUrl $baseUrl -SiteCode $currentSiteCode) {
-            $collectionsSuccessful++
-            Write-LogMessage "Successfully collected Site System Roles via AdminService" -Level "Success"
-        } else {
-            Write-LogMessage "Failed to collect Site System Roles via AdminService" -Level "Warning"
-        }
-        $collectionsAttempted++
-        
-        Write-LogMessage "AdminService collection completed: $collectionsSuccessful/$collectionsAttempted successful" -Level "Info"
-        
-        if ($collectionsSuccessful -gt 0) {
-            # Mark target as successfully collected
-            if (-not $script:CollectionTargets.ContainsKey($Target)) {
-                $script:CollectionTargets[$Target] = @{}
-            }
-            $script:CollectionTargets[$Target]["Collected"] = $true
-            $script:CollectionTargets[$Target]["Method"] = "AdminService"
-            $script:CollectionTargets[$Target]["SiteCode"] = $currentSiteCode
-            
-            Write-LogMessage "AdminService collection successful on $Target ($collectionsSuccessful successful collections)" -Level "Success"
-            return $true
-        } else {
-            Write-LogMessage "AdminService collection failed - no successful collections on $Target" -Level "Error"
+        # This SMS Provider's site (SMS_Identification) - this will tell us which site we're collecting from
+        $detectedSiteCode = Get-ThisSmsProvidersSiteViaAdminService -Target $target
+        if (-not $detectedSiteCode) {
             return $false
         }
+
+        # Sites (SMS_Site) - this will tell us all the sites in the hierarchy
+        if (Get-SitesViaAdminService -Target $target) {
+            Write-LogMessage Success "Successfully collected sites via AdminService (detected site: $detectedSiteCode)"
+        } else {
+            Write-LogMessage Warning "Failed to collect sites via AdminService"
+        }
+
+        # Get the site GUID for the detected site from the nodes
+        $siteGUID = ($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $detectedSiteCode }).Properties.SiteGUID
+
+        if (-not $siteGUID) {
+            Write-LogMessage Warning "Failed to get site GUID for detected site: $detectedSiteCode"
+            $siteIdentifier = $detectedSiteCode
+        } else {
+            Write-LogMessage Success "Found site GUID for detected site: $siteGUID"
+            $siteIdentifier = "$detectedSiteCode.$siteGUID"
+        }
+                
+        # Client Devices (SMS_CombinedDeviceResources or SMS_R_System)
+        if (Get-CombinedDeviceResourcesViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected combined device resources via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect combined device resources via AdminService"
+        }
+
+        if (Get-SmsRSystemViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected client devices and site systems via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect client devices and site systems via AdminService"
+        }
+
+        if (Get-SmsRUserViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected users via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect users via AdminService"
+        }
+
+        # Collections (SMS_Collection)
+        if (Get-CollectionsViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected device/user collections via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect device/user collections via AdminService"
+        }
+        
+        # Collection Members (SMS_FullCollectionMembership) - must come after collections to resolve members
+        if (Get-CollectionMembersViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected collection members via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect collection members via AdminService"
+        }
+        
+        # Security Roles (SMS_Role)
+        if (Get-SecurityRolesViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected security roles via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect security roles via AdminService (may require elevated privileges)"
+        }
+        
+        # Administrative Users (SMS_Admin) - must come after collections to resolve members
+        if (Get-AdminUsersViaAdminService -Target $target -SiteIdentifier $siteIdentifier) {
+            Write-LogMessage Success "Successfully collected admin users via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect admin users via AdminService (may require elevated privileges)"
+        }
+        
+        # Site System Roles (SMS_SystemResourceList)
+        if (Get-SiteSystemRolesViaAdminService -Target $target -BaseUrl $baseUrl -SiteCode $detectedSiteCode) {
+            Write-LogMessage Success "Successfully collected site system roles via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect site system roles via AdminService"
+        }
+        
+        Write-LogMessage Info "AdminService collection completed: $collectionsSuccessful/$collectionsAttempted successful"
+        
+        # Mark target as successfully collected
+        if (-not $script:CollectionTargets.ContainsKey($target)) {
+            $script:CollectionTargets[$target] = @{}
+        }
+        $script:CollectionTargets[$target]["Collected"] = $true
+        $script:CollectionTargets[$target]["Method"] = "AdminService"
+        $script:CollectionTargets[$target]["SiteCode"] = $detectedSiteCode
+        
+        Write-LogMessage Success "AdminService collection successful on $target ($collectionsSuccessful successful collections)"
+        return $true
         
     } catch {
-        Write-LogMessage "AdminService collection failed on $Target`: $_" -Level "Error"
+        Write-LogMessage Error "AdminService collection failed for $target`: $_"
         return $false
     }
 }
 
-function Test-AdminServiceConnectivity {
+function Get-ThisSmsProvidersSiteViaAdminService {
     param(
-        [string]$Target,
-        [string]$BaseUrl
+        [string]$Target
     )
     
     try {
-        Write-LogMessage "Testing AdminService connectivity to $Target" -Level "Info"
-        
-        $response = Invoke-WebRequest -Method 'Get' -Uri "$BaseUrl/v1.0/`$metadata" -UseDefaultCredentials -TimeoutSec 3 -ErrorAction Stop
-        Write-LogMessage "System responded with status code: $($response.StatusCode)"
-        
-        if ($response.StatusCode -eq 200){
-            if ($response.Content -match "Microsoft\.ConfigurationManager"){
-                Write-LogMessage "$Target was confirmed to be an SMS Provider"
-            } else {
-                Write-LogMessage "Could not confirm that $Target is an SMS Provider (`"Microsoft.ConfigurationManager`" not in response content)"
-            }
+        Write-LogMessage Info "Collecting this SMS Provider's site via AdminService from $Target"
+        $baseUrl = "https://$Target/AdminService"
+        $siteIdQuery = "SMS_Identification"
+        $siteIdUrl = "$baseUrl/wmi/$siteIdQuery"
+    
+        try {
+            $siteIdResponse = Invoke-WebRequest -Uri $siteIdUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+        } catch {
+            Write-LogMessage Error "Failed to collect this site via AdminService from $Target`: $_"
+            return $null
         }
-
-
-        # Test basic connectivity with a simple query
-        $testUrl = "$BaseUrl/v1.0/`$metadata"
-        $testResponse = Invoke-RestMethod -Uri $testUrl -Method Get -UseDefaultCredentials -TimeoutSec 30 -ErrorAction Stop
-        
-        # Check if response contains expected structure
-        if ($testResponse -and ($testResponse.PSObject.Properties.Name -contains 'value' -or $testResponse.PSObject.Properties.Name -contains '@odata.context')) {
-            Write-LogMessage "AdminService connectivity test successful for $Target" -Level "Success"
-            return $true
-        } else {
-            Write-LogMessage "AdminService connectivity test failed - unexpected response format from $Target" -Level "Warning"
-            return $false
+    
+        if (-not $siteIdResponse -or -not $siteIdResponse.Content) {
+            Write-LogMessage Warning "No site identification returned from AdminService query on $Target"
+            return $null
         }
-        
+    
+        try {
+            $siteIdResponseContent = $siteIdResponse.Content | ConvertFrom-Json
+            $site = $siteIdResponseContent.value[0]
+            Write-LogMessage Success "Identified this SMS Provider's site via AdminService: $($site.ThisSiteCode) ($($site.ThisSiteName))"
+            return $site.ThisSiteCode
+        } catch {
+            Write-LogMessage Error "Failed to convert site identification response content to JSON from $Target`: $_"
+            return $null
+        }
+    
     } catch {
-        $errorMessage = $_.Exception.Message
-        
-        # Check for specific error conditions
-        if ($errorMessage -match "Could not establish trust relationship|SSL|certificate") {
-            Write-LogMessage "AdminService SSL/Certificate error for $Target`: $errorMessage" -Level "Warning"
-        } elseif ($errorMessage -match "401|Unauthorized") {
-            Write-LogMessage "AdminService authentication failed for $Target`: $errorMessage" -Level "Warning"
-        } elseif ($errorMessage -match "403|Forbidden") {
-            Write-LogMessage "AdminService access denied for $Target`: $errorMessage" -Level "Warning"
-        } elseif ($errorMessage -match "404|Not Found") {
-            Write-LogMessage "AdminService endpoint not found on $Target - may not be an SMS Provider" -Level "Warning"
-        } else {
-            Write-LogMessage "AdminService connectivity test failed for $Target`: $errorMessage" -Level "Warning"
-        }
-        
-        return $false
+        Write-LogMessage Error "Failed to collect this SMS Provider's site via AdminService from $Target`: $_"
+        return $null
     }
 }
 
-function Get-SCCMSitesViaAdminService {
+function Get-SitesViaAdminService {
     param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode = $null,
-        [ref]$DetectedSiteCodeRef = $null
+        [string]$Target
     )
-    
+
     try {
-        Write-LogMessage "Collecting sites via AdminService from $Target" -Level "Info"
-        
-        # Query SMS_Site with specific properties as per design document
+        Write-LogMessage Info "Collecting sites via AdminService from $Target"
+        $baseUrl = "https://$Target/AdminService"
         $siteQuery = "SMS_Site?`$select=BuildNumber,InstallDir,ReportingSiteCode,RequestedStatus,ServerName,SiteCode,SiteName,Status,TimeZoneInfo,Type,Version"
-        $siteUrl = "$BaseUrl/wmi/$siteQuery"
-        
-        $siteResponse = Invoke-RestMethod -Uri $siteUrl -Method Get -UseDefaultCredentials -TimeoutSec 120 -ErrorAction Stop
-        
-        if (-not $siteResponse -or -not $siteResponse.value) {
-            Write-LogMessage "No sites returned from AdminService query on $Target" -Level "Warning"
+        $siteUrl = "$baseUrl/wmi/$siteQuery"
+    
+        try {
+            $siteResponse = Invoke-WebRequest -Uri $siteUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+        } catch {
+            Write-LogMessage Error "Failed to collect this site via AdminService from $Target`: $_"
             return $false
         }
-        
-        # Use the first site's code as the detected site code
-        if ($DetectedSiteCodeRef -and $siteResponse.value.Count -gt 0) {
-            $DetectedSiteCodeRef.Value = $siteResponse.value[0].SiteCode
+    
+        if (-not $siteResponse -or -not $siteResponse.Content) {
+            Write-LogMessage Warning "No sites returned from AdminService query on $Target"
+            return $false
         }
-        
-        foreach ($site in $siteResponse.value) {
+    
+        try {
+            $siteResponseContent = $siteResponse.Content | ConvertFrom-Json
+            Write-LogMessage Info "Collected $($siteResponseContent.value.Count) sites via AdminService"
+        } catch {
+            Write-LogMessage Error "Failed to convert site response content to JSON from $Target`: $_"
+            return $false
+        }
+    
+        foreach ($site in $siteResponseContent.value) {
+    
+            # Don't collect again if we already have this site in the nodes array
+    
+            $existingSite = $script:Nodes | Where-Object { $_.Id -like "$($site.SiteCode).*" }
+            if ($existingSite) {
+                Write-LogMessage Verbose "Site $($site.SiteCode) already exists, skipping duplicate"
+                continue
+            }
+    
+            Write-LogMessage Success "Collected new site via AdminService: $($site.SiteName) ($($site.SiteCode))"
+    
             # Create SiteIdentifier (SiteCode.SiteGUID format or just SiteCode if no GUID available)
             $siteIdentifier = $site.SiteCode
             
             # Try to get SiteGUID from SMS_SCI_SiteDefinition
+            $siteDefQuery = "SMS_SCI_SiteDefinition?`$filter=SiteCode eq '$($site.SiteCode)'&`$select=ParentSiteCode,SiteCode,SiteName,SiteServerDomain,SiteServerName,SiteType,SQLDatabaseName,SQLServerName,Props"
+            $siteDefUrl = "$baseUrl/wmi/$siteDefQuery"
+    
             try {
-                $siteDefQuery = "SMS_SCI_SiteDefinition?`$filter=SiteCode eq '$($site.SiteCode)'&`$select=SiteCode,SiteGUID"
-                $siteDefUrl = "$BaseUrl/wmi/$siteDefQuery"
-                $siteDefResponse = Invoke-RestMethod -Uri $siteDefUrl -Method Get -UseDefaultCredentials -TimeoutSec 60 -ErrorAction Stop
+                $siteDefResponse = Invoke-WebRequest -Uri $siteDefUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Error retrieving SiteGUID for site $($site.SiteCode): $_"
+            }
+    
+            if (-not $siteDefResponse -or -not $siteDefResponse.Content) {
+                Write-LogMessage Warning "SMS_SCI_SiteDefinition not found for site $($site.SiteCode)"
+            }
+    
+            try {
+                $siteDefResponseContent = $siteDefResponse.Content | ConvertFrom-Json
+                Write-LogMessage Verbose "Collected $($siteDefResponseContent.value.Count) site definitions via AdminService"
                 
-                if ($siteDefResponse -and $siteDefResponse.value -and $siteDefResponse.value[0].SiteGUID) {
-                    $siteIdentifier = "$($site.SiteCode).{$($siteDefResponse.value[0].SiteGUID)}"
+            } catch {
+                Write-LogMessage Error "Failed to convert site definition response content to JSON from $Target`: $_"
+            }
+    
+            $siteGUID = $null
+            try {
+                $siteGUIDProp = $siteDefResponseContent.value[0].Props | Where-Object { $_.PropertyName -eq "SiteGUID" }
+                if ($siteGUIDProp) {
+                    $siteGUID = $siteGUIDProp.Value1
+                    $siteIdentifier = "$($site.SiteCode).$($siteGUID)"
+                    Write-LogMessage Success "Collected site GUID for site $($site.SiteCode): $($siteGUID)"
+                } else {
+                    Write-LogMessage Warning "SiteGUID property not found in SMS_SCI_SiteDefinition for site $($site.SiteCode)"
                 }
             } catch {
-                Write-LogMessage "Could not retrieve SiteGUID for site $($site.SiteCode), using SiteCode only" -Level "Warning"
+                Write-LogMessage Error "Failed to get site GUID for site $($site.SiteCode)`: $_"
             }
             
-            # Create site node following design document structure
-            $siteNode = @{
-                "ObjectIdentifier" = $siteIdentifier
-                "SiteIdentifier" = $siteIdentifier
-                "BuildNumber" = $site.BuildNumber
-                "InstallDir" = $site.InstallDir
-                "ParentSiteCode" = $site.ReportingSiteCode
-                "RequestedStatus" = $site.RequestedStatus
-                "SiteServerName" = $site.ServerName
-                "SiteCode" = $site.SiteCode
-                "SiteName" = $site.SiteName
-                "Status" = $site.Status
-                "TimeZoneInfo" = $site.TimeZoneInfo
-                "Type" = $site.Type
-                "Version" = $site.Version
-            }
-            
-            # Add to global sites collection
-            $existingSite = $script:Sites | Where-Object { $_.SiteCode -eq $site.SiteCode }
-            if (-not $existingSite) {
-                $script:Sites += $siteNode
-                Write-LogMessage "Collected site via AdminService: $($site.SiteName) ($($site.SiteCode))" -Level "Success"
-            } else {
-                Write-LogMessage "Site $($site.SiteCode) already exists, skipping duplicate" -Level "Info"
+            # Create or update SCCM_Site nodes
+            Add-Node -Id $siteIdentifier -Kinds @("SCCM_Site") -Properties @{
+                CollectionSource = @("AdminService-SMS_Sites")
+                BuildNumber = $site.BuildNumber
+                InstallDir = $site.InstallDir
+                ParentSiteCode = if ($site.ReportingSiteCode) { $site.ReportingSiteCode } else { "None" }
+                RequestedStatus = $site.RequestedStatus
+                SiteCode = $site.SiteCode
+                SiteGUID = $siteGUID
+                SiteName = $site.SiteName
+                SiteServerName = $site.ServerName
+                Status = $site.Status
+                TimeZoneInfo = $site.TimeZoneInfo
+                Type = $site.Type
+                Version = $site.Version
             }
         }
-        
+    
+        # Loop again to get parent site GUID from nodes array
+        foreach ($site in $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }) {
+            if ($site.ReportingSiteCode) {
+                $parentSiteCode = $site.ReportingSiteCode
+                $parentSiteGUID = ($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $parentSiteCode }).Properties.SiteGUID
+                $parentSiteIdentifier = "$($parentSiteCode).$($parentSiteGUID)"
+                Write-LogMessage Success "Collected parent site GUID for site $($site.SiteCode): $($parentSiteGUID)"
+    
+                Add-Node -Id $site.SiteIdentifier -Kinds @("SCCM_Site") -Properties @{
+                    CollectionSource = @("AdminService-SMS_SCI_SiteDefinition")
+                    ParentSiteGUID = $parentSiteGUID
+                    ParentSiteIdentifier = $parentSiteIdentifier
+                }
+            }
+        }
         return $true
-        
     } catch {
-        Write-LogMessage "Failed to collect sites via AdminService from $Target`: $_" -Level "Error"
+        Write-LogMessage Error "Failed to collect sites via AdminService from $Target`: $_"
         return $false
     }
 }
 
-function Get-SCCMCollectionsViaAdminService {
+function Get-CombinedDeviceResourcesViaAdminService {
     param(
         [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
+        [string]$SiteIdentifier
     )
-    
     try {
-        Write-LogMessage "Collecting collections via AdminService from $Target for site $SiteCode" -Level "Info"
-        
-        # Query SMS_Collection with specific properties as per design document
-        $collectionQuery = "SMS_Collection?`$select=CollectionID,CollectionType,CollectionVariablesCount,Comment,IsBuiltIn,LastChangeTime,LastMemberChangeTime,LimitToCollectionID,LimitToCollectionName,MemberCount,Name"
-        $collectionUrl = "$BaseUrl/wmi/$collectionQuery"
-        
-        $collectionResponse = Invoke-RestMethod -Uri $collectionUrl -Method Get -UseDefaultCredentials -TimeoutSec 120 -ErrorAction Stop
-        
-        if (-not $collectionResponse -or -not $collectionResponse.value) {
-            Write-LogMessage "No collections returned from AdminService query on $Target" -Level "Warning"
-            return $false
-        }
-        
-        foreach ($collection in $collectionResponse.value) {
-            # Find matching site for SourceSiteIdentifier
-            $sourceSiteIdentifier = $SiteCode
-            $matchingSite = $script:Sites | Where-Object { $_.SiteCode -eq $SiteCode }
-            if ($matchingSite -and $matchingSite.SiteIdentifier) {
-                $sourceSiteIdentifier = $matchingSite.SiteIdentifier
-            }
-            
-            # Create collection node following design document structure
-            $collectionNode = @{
-                "ObjectIdentifier" = $collection.CollectionID
-                "CollectionID" = $collection.CollectionID
-                "CollectionType" = $collection.CollectionType
-                "CollectionVariablesCount" = $collection.CollectionVariablesCount
-                "Comment" = $collection.Comment
-                "IsBuiltIn" = $collection.IsBuiltIn
-                "LastChangeTime" = $collection.LastChangeTime
-                "LastMemberChangeTime" = $collection.LastMemberChangeTime
-                "LimitToCollectionID" = $collection.LimitToCollectionID
-                "LimitToCollectionName" = $collection.LimitToCollectionName
-                "MemberCount" = $collection.MemberCount
-                "Members" = @()  # Will be populated by collection membership enumeration
-                "Name" = $collection.Name
-                "SourceSiteCode" = $SiteCode
-                "SourceSiteIdentifier" = $sourceSiteIdentifier
-            }
-            
-            # Add to global collections
-            $existingCollection = $script:Collections | Where-Object { $_.CollectionID -eq $collection.CollectionID }
-            if (-not $existingCollection) {
-                $script:Collections += $collectionNode
-                Write-LogMessage "Collected collection via AdminService: $($collection.Name) ($($collection.CollectionID))" -Level "Success"
-            } else {
-                Write-LogMessage "Collection $($collection.CollectionID) already exists, skipping duplicate" -Level "Info"
-            }
-        }
-        
-        return $true
-        
-    } catch {
-        Write-LogMessage "Failed to collect collections via AdminService from $Target`: $_" -Level "Error"
-        return $false
-    }
-}
+        Write-LogMessage Info "Collecting combined device resources via AdminService from $Target for site $SiteIdentifier"
+        $select = "`$select=AADDeviceID,AADTenantID,ADLastLogonTime,CNAccessMP,CNLastOfflineTime,CNLastOnlineTime,CoManaged,CurrentLogonUser,DeviceOS,DeviceOSBuild,IsClient,IsObsolete,IsVirtualMachine,LastActiveTime,LastMPServerName,Name,PrimaryUser,ResourceID,SiteCode,SMSID,UserName,UserDomainName"
+        $batchSize = 1000
+        $skip = 0
+        $totalProcessed = 0
 
-function Get-SCCMCollectionMembersViaAdminService {
-    param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
-    )
-    
-    try {
-        Write-LogMessage "Collecting collection members via AdminService from $Target for site $SiteCode" -Level "Info"
-        
-        # Query SMS_FullCollectionMembership as per design document
-        $memberQuery = "SMS_FullCollectionMembership?`$select=CollectionID,ResourceID,SiteCode"
-        $memberUrl = "$BaseUrl/wmi/$memberQuery"
-        
-        $memberResponse = Invoke-RestMethod -Uri $memberUrl -Method Get -UseDefaultCredentials -TimeoutSec 180 -ErrorAction Stop
-        
-        if (-not $memberResponse -or -not $memberResponse.value) {
-            Write-LogMessage "No collection members returned from AdminService query on $Target" -Level "Warning"
-            return $false
-        }
-        
-        # Group members by collection for efficient processing
-        $membersByCollection = $memberResponse.value | Group-Object -Property CollectionID
-        
-        foreach ($group in $membersByCollection) {
-            $collectionID = $group.Name
-            $collection = $script:Collections | Where-Object { $_.CollectionID -eq $collectionID }
-            
-            if ($collection) {
-                # Update the Members array with ResourceIDs
-                $collection.Members = $group.Group | ForEach-Object { $_.ResourceID }
-                Write-LogMessage "Updated collection $collectionID with $($group.Count) members via AdminService" -Level "Success"
-            } else {
-                Write-LogMessage "Collection $collectionID not found in script collections, cannot update members" -Level "Warning"
-            }
-        }
-        
-        return $true
-        
-    } catch {
-        Write-LogMessage "Failed to collect collection members via AdminService from $Target`: $_" -Level "Error"
-        return $false
-    }
-}
-
-function Get-SCCMClientDevicesViaAdminService {
-    param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
-    )
-    
-    try {
-        Write-LogMessage "Collecting client devices via AdminService from $Target for site $SiteCode" -Level "Info"
-        
-        # Try SMS_CombinedDeviceResources first (preferred), fallback to SMS_R_System
-        $deviceQueries = @(
-            @{
-                Class = "SMS_CombinedDeviceResources"
-                Select = "ResourceID,Name,Domain,SiteCode,IsClient,Client,IsObsolete,Obsolete,LastLogonUserDomain,LastLogonUserName,SystemRoles,AADDeviceID,AADTenantID,ADDomainSID,ADLastLogonTime,ADLastLogonUser,ADLastLogonUserDomain,CurrentLogonUser,CurrentManagementPoint,CurrentManagementPointSID,DeviceOS,DeviceOSBuild,DistinguishedName,dNSHostName,IsVirtualMachine,LastActiveTime,LastOfflineTime,LastOnlineTime,LastReportedMPServerName,LastReportedMPServerSID,PrimaryUser,SMSID"
-            },
-            @{
-                Class = "SMS_R_System"
-                Select = "ResourceId,Name,ResourceDomainORWorkgroup,SMSUniqueIdentifier,Client,Obsolete,LastLogonUserName,LastLogonUserDomain,SystemRoles,AgentName,AgentSite,AgentTime,IPAddresses,IPSubnets,IPXAddresses,IPXSocketNumbers,MACAddresses,NetbiosName,NetworkAdaptersCo,OperatingSystemNameandVersion,PlatformID,ResourceNames,ResourceType,SiteCode,SNMPCommunityName,SystemContainerName,SystemGroupName,SystemOUName,TotalPhysicalMemory,User"
-            }
-        )
-        
-        $deviceCollectionSuccessful = $false
-        
-        foreach ($queryInfo in $deviceQueries) {
+        do {
+            $combinedDeviceUrl = "https://$Target/AdminService/wmi/SMS_CombinedDeviceResources?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $deviceQuery = "$($queryInfo.Class)?`$select=$($queryInfo.Select)"
-                $deviceUrl = "$BaseUrl/wmi/$deviceQuery"
-                
-                Write-LogMessage "Attempting device collection via $($queryInfo.Class)" -Level "Info"
-                $deviceResponse = Invoke-RestMethod -Uri $deviceUrl -Method Get -UseDefaultCredentials -TimeoutSec 180 -ErrorAction Stop
-                
-                if ($deviceResponse -and $deviceResponse.value) {
-                    foreach ($device in $deviceResponse.value) {
-                        # Find matching site for SourceSiteIdentifier
-                        $sourceSiteIdentifier = $SiteCode
-                        $matchingSite = $script:Sites | Where-Object { $_.SiteCode -eq $SiteCode }
-                        if ($matchingSite -and $matchingSite.SiteIdentifier) {
-                            $sourceSiteIdentifier = $matchingSite.SiteIdentifier
-                        }
-                        
-                        # Create device node - structure varies based on source class
-                        $deviceNode = @{
-                            "SourceSiteCode" = $SiteCode
-                            "SourceSiteIdentifier" = $sourceSiteIdentifier
-                        }
-                        
-                        if ($queryInfo.Class -eq "SMS_CombinedDeviceResources") {
-                            $deviceNode["ObjectIdentifier"] = $device.SMSID
-                            $deviceNode["SMSID"] = $device.SMSID
-                            $deviceNode["ResourceID"] = $device.ResourceID
-                            $deviceNode["Name"] = $device.Name
-                            $deviceNode["Domain"] = $device.Domain
-                            $deviceNode["IsClient"] = $device.IsClient
-                            $deviceNode["Client"] = $device.Client
-                            $deviceNode["IsObsolete"] = $device.IsObsolete
-                            $deviceNode["Obsolete"] = $device.Obsolete
-                            $deviceNode["LastLogonUserDomain"] = $device.LastLogonUserDomain
-                            $deviceNode["LastLogonUserName"] = $device.LastLogonUserName
-                            $deviceNode["SystemRoles"] = $device.SystemRoles
-                            $deviceNode["AADDeviceID"] = $device.AADDeviceID
-                            $deviceNode["AADTenantID"] = $device.AADTenantID
-                            $deviceNode["ADDomainSID"] = $device.ADDomainSID
-                            $deviceNode["ADLastLogonTime"] = $device.ADLastLogonTime
-                            $deviceNode["ADLastLogonUser"] = $device.ADLastLogonUser
-                            $deviceNode["ADLastLogonUserDomain"] = $device.ADLastLogonUserDomain
-                            $deviceNode["CurrentLogonUser"] = $device.CurrentLogonUser
-                            $deviceNode["CurrentManagementPoint"] = $device.CurrentManagementPoint
-                            $deviceNode["CurrentManagementPointSID"] = $device.CurrentManagementPointSID
-                            $deviceNode["DeviceOS"] = $device.DeviceOS
-                            $deviceNode["DeviceOSBuild"] = $device.DeviceOSBuild
-                            $deviceNode["DistinguishedName"] = $device.DistinguishedName
-                            $deviceNode["dNSHostName"] = $device.dNSHostName
-                            $deviceNode["IsVirtualMachine"] = $device.IsVirtualMachine
-                            $deviceNode["LastActiveTime"] = $device.LastActiveTime
-                            $deviceNode["LastOfflineTime"] = $device.LastOfflineTime
-                            $deviceNode["LastOnlineTime"] = $device.LastOnlineTime
-                            $deviceNode["LastReportedMPServerName"] = $device.LastReportedMPServerName
-                            $deviceNode["LastReportedMPServerSID"] = $device.LastReportedMPServerSID
-                            $deviceNode["PrimaryUser"] = $device.PrimaryUser
-                        } else {
-                            # SMS_R_System structure
-                            $deviceNode["ObjectIdentifier"] = $device.SMSUniqueIdentifier
-                            $deviceNode["SMSID"] = $device.SMSUniqueIdentifier
-                            $deviceNode["ResourceID"] = $device.ResourceId
-                            $deviceNode["Name"] = $device.Name
-                            $deviceNode["Domain"] = $device.ResourceDomainORWorkgroup
-                            $deviceNode["Client"] = $device.Client
-                            $deviceNode["Obsolete"] = $device.Obsolete
-                            $deviceNode["LastLogonUserName"] = $device.LastLogonUserName
-                            $deviceNode["LastLogonUserDomain"] = $device.LastLogonUserDomain
-                            $deviceNode["SystemRoles"] = $device.SystemRoles
-                            $deviceNode["AgentName"] = $device.AgentName
-                            $deviceNode["AgentSite"] = $device.AgentSite
-                            $deviceNode["AgentTime"] = $device.AgentTime
-                            $deviceNode["IPAddresses"] = $device.IPAddresses
-                            $deviceNode["IPSubnets"] = $device.IPSubnets
-                            $deviceNode["MACAddresses"] = $device.MACAddresses
-                            $deviceNode["NetbiosName"] = $device.NetbiosName
-                            $deviceNode["OperatingSystemNameandVersion"] = $device.OperatingSystemNameandVersion
-                            $deviceNode["PlatformID"] = $device.PlatformID
-                            $deviceNode["ResourceNames"] = $device.ResourceNames
-                            $deviceNode["ResourceType"] = $device.ResourceType
-                            $deviceNode["TotalPhysicalMemory"] = $device.TotalPhysicalMemory
-                            $deviceNode["User"] = $device.User
-                        }
-                        
-                        # Add to global client devices if not already present
-                        $existingDevice = $script:ClientDevices | Where-Object { $_.ObjectIdentifier -eq $deviceNode.ObjectIdentifier }
-                        if (-not $existingDevice) {
-                            $script:ClientDevices += $deviceNode
-                            Write-LogMessage "Collected client device via AdminService: $($deviceNode.Name)" -Level "Success"
+                $combinedDeviceResponse = Invoke-WebRequest -Uri $combinedDeviceUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect combined device resources via SMS_CombinedDeviceResources (skip=$skip): $_"
+                return $false
+            }
+
+            if (-not $combinedDeviceResponse -or -not $combinedDeviceResponse.Content) {
+                Write-LogMessage Warning "No combined device resources returned from AdminService query on $Target via SMS_CombinedDeviceResources (skip=$skip)"
+                break
+            }
+
+            try {
+                $combinedDeviceResponseContent = $combinedDeviceResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert device response content to JSON from $Target via SMS_CombinedDeviceResources (skip=$skip)`: $_"
+                return $false
+            }
+
+            if ($combinedDeviceResponseContent -and $combinedDeviceResponseContent.value) {
+                foreach ($device in $combinedDeviceResponseContent.value) {
+                    # Skip if not a client or obsolete, which may occur when the client is reinstalled on the same machine
+                    if ($device.IsClient -eq $false -or $device.IsObsolete -eq $true) { continue }
+
+                    $adLastLogonUserObject = $null
+                    $currentLogonUserObject = $null
+                    $currentManagementPointObject = $null
+                    $lastReportedMPServerObject = $null
+                    $primaryUserObject = $null
+
+                    $thisClientDomainObject = Resolve-PrincipalInDomain -Name $device.Name -Domain $script:Domain
+                    if ($device.UserName) { $adLastLogonUserObject = Resolve-PrincipalInDomain -Name $device.UserName -Domain $script:Domain }
+                    if ($device.CurrentLogonUser) { $currentLogonUserObject = Resolve-PrincipalInDomain -Name $device.CurrentLogonUser -Domain $script:Domain }
+                    if ($device.CNAccessMP) { $currentManagementPointObject = Resolve-PrincipalInDomain -Name $device.CNAccessMP -Domain $script:Domain }
+                    if ($device.LastMPServerName) { $lastReportedMPServerObject = Resolve-PrincipalInDomain -Name $device.LastMPServerName -Domain $script:Domain }
+                    if ($device.PrimaryUser) { $primaryUserObject = Resolve-PrincipalInDomain -Name $device.PrimaryUser -Domain $script:Domain }
+
+                    Add-Node -Id $device.SMSID -Kinds @("SCCM_ClientDevice") -Properties @{
+                        CollectionSource = @("AdminService-SMS_CombinedDeviceResources")
+                        AADDeviceID = if ($device.AADDeviceID) { $device.AADDeviceID } else { $null }
+                        AADTenantID = if ($device.AADTenantID) { $device.AADTenantID } else { $null }
+                        ADDomainSID = if ($thisClientDomainObject.SID) { $thisClientDomainObject.SID } else { $null }
+                        ADLastLogonTime = if ($device.ADLastLogonTime) { $device.ADLastLogonTime } else { $null }
+                        ADLastLogonUser = if ($device.UserName) { $device.UserName } else { $null }
+                        ADLastLogonUserDomain = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
+                        ADLastLogonUserSID = if ($adLastLogonUserObject.SID) { $adLastLogonUserObject.SID } else { $null }
+                        CoManaged = if ($device.CoManaged) { $device.CoManaged } else { $null }
+                        CurrentLogonUser = if ($device.CurrentLogonUser) { $device.CurrentLogonUser } else { $null }
+                        CurrentLogonUserSID = if ($currentLogonUserObject.SID) { $currentLogonUserObject.SID } else { $null }
+                        CurrentManagementPoint = if ($device.CNAccessMP) { $device.CNAccessMP } else { $null }
+                        CurrentManagementPointSID = if ($currentManagementPointObject.SID) { $currentManagementPointObject.SID } else { $null }
+                        DeviceOS = if ($device.DeviceOS) { $device.DeviceOS } else { $null }
+                        DeviceOSBuild = if ($device.DeviceOSBuild) { $device.DeviceOSBuild } else { $null }
+                        DistinguishedName = if ($device.DistinguishedName) { $device.DistinguishedName } else { $null }
+                        DNSHostName = $thisClientDomainObject.DNSHostName
+                        Domain = if ($device.FullDomainName) { $device.FullDomainName } elseif ($device.Domain) { $device.Domain } else { $null }
+                        IsVirtualMachine = if ($device.IsVirtualMachine) { $device.IsVirtualMachine } else { $null }
+                        LastActiveTime = if ($device.LastActiveTime) { $device.LastActiveTime } else { $null }
+                        LastOfflineTime = if ($device.CNLastOfflineTime) { $device.CNLastOfflineTime } else { $null }
+                        LastOnlineTime = if ($device.CNLastOnlineTime) { $device.CNLastOnlineTime } else { $null }
+                        LastReportedMPServerName = if ($device.LastMPServerName) { $device.LastMPServerName } else { $null }
+                        LastReportedMPServerSID = if ($lastReportedMPServerObject.SID) { $lastReportedMPServerObject.SID } else { $null }
+                        Name = if ($device.Name) { $device.Name } else { $null }
+                        PrimaryUser = $device.PrimaryUser
+                        PrimaryUserSID = if ($primaryUserObject.SID) { $primaryUserObject.SID } else { $null }
+                        ResourceID = if ($device.ResourceID) { $device.ResourceID } else { $null }
+                        SiteCode = if ($device.SiteCode) { $device.SiteCode } else { $null }
+                        SMSID = if ($device.SMSID) { $device.SMSID } else { $null }
+                        SourceSiteCode = $SiteIdentifier.Split(".")[0]
+                        SourceSiteIdentifier = $SiteIdentifier
+                        UserName = if ($device.UserName) { $device.UserName } else { $null }
+                        UserDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
+                    }
+
+                    if ($thisClientDomainObject.SID) {
+                        Add-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                            SCCM_ResourceIDs = @("$($device.ResourceID)@$SiteIdentifier")
+                            SCCM_ClientDeviceIdentifier = $device.SMSUniqueIdentifier
                         }
                     }
-                    
-                    $deviceCollectionSuccessful = $true
-                    Write-LogMessage "Successfully collected $($deviceResponse.value.Count) devices via $($queryInfo.Class)" -Level "Success"
-                    break  # Success, no need to try other queries
+                    if ($adLastLogonUserObject.SID) {
+                        Add-Node -Id $adLastLogonUserObject.SID -Kinds @("User", "Base") -PSObject $adLastLogonUserObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                        }
+                    }
+                    if ($currentLogonUserObject.SID) {
+                        Add-Node -Id $currentLogonUserObject.SID -Kinds @("User", "Base") -PSObject $currentLogonUserObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                        }
+                    }
+                    if ($currentManagementPointObject.SID) {
+                        Add-Node -Id $currentManagementPointObject.SID -Kinds @("Computer", "Base") -PSObject $currentManagementPointObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                        }
+                    }
+                    if ($lastReportedMPServerObject.SID) {
+                        Add-Node -Id $lastReportedMPServerObject.SID -Kinds @("Computer", "Base") -PSObject $lastReportedMPServerObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                        }
+                    }
+                    if ($primaryUserObject.SID) {
+                        Add-Node -Id $primaryUserObject.SID -Kinds @("User", "Base") -PSObject $primaryUserObject -Properties @{
+                            CollectionSource = @("AdminService-ClientDevices")
+                        }
+                    }
+
+                    $totalProcessed++
                 }
-                
+            }
+            $skip += $batchSize
+        } while ($combinedDeviceResponseContent.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Successfully processed $totalProcessed combined device resources via SMS_CombinedDeviceResources"
+        return $true    
+    } catch {
+        Write-LogMessage Error "Failed to collect combined device resources via AdminService from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-SmsRSystemViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+
+    try {
+        Write-LogMessage Info "Collecting systems and groups via SMS_R_System from $Target for site $SiteIdentifier"
+        $select = "`$select=Client,Name,Obsolete,ResourceID,SID,SMSUniqueIdentifier,SecurityGroupName,SystemRoles"
+        $batchSize = 1000
+        $skip = 0
+        $totalSystemsProcessed = 0
+        $totalGroupsProcessed = 0
+
+        do {
+            $smsRSystemUrl = "https://$Target/AdminService/wmi/SMS_R_System?$select&`$top=$batchSize&`$skip=$skip"
+            try {
+                $smsRSystemResponse = Invoke-WebRequest -Uri $smsRSystemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
             } catch {
-                Write-LogMessage "Failed to collect devices via $($queryInfo.Class): $_" -Level "Warning"
-                continue
+                Write-LogMessage Error "Failed to collect systems and groups via SMS_R_System (skip=$skip): $_"
+                return $false
             }
-        }
-        
-        return $deviceCollectionSuccessful
-        
-    } catch {
-        Write-LogMessage "Failed to collect client devices via AdminService from $Target`: $_" -Level "Error"
-        return $false
-    }
-}
-
-function Get-SCCMSecurityRolesViaAdminService {
-    param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
-    )
-    
-    try {
-        Write-LogMessage "Collecting security roles via AdminService from $Target for site $SiteCode" -Level "Info"
-        
-        # Query SMS_Role as per design document
-        $roleQuery = "SMS_Role?`$select=RoleID,RoleName,RoleDescription,IsBuiltIn,CreatedBy,CreatedDate,ModifiedBy,ModifiedDate,GrantedOperations,GrantedOperationsOnTypeNames,Operations,CopiedFromID"
-        $roleUrl = "$BaseUrl/wmi/$roleQuery"
-        
-        $roleResponse = Invoke-RestMethod -Uri $roleUrl -Method Get -UseDefaultCredentials -TimeoutSec 120 -ErrorAction Stop
-        
-        if (-not $roleResponse -or -not $roleResponse.value) {
-            Write-LogMessage "No security roles returned from AdminService query on $Target (may require Read-only Analyst privileges or higher)" -Level "Warning"
-            return $false
-        }
-        
-        foreach ($role in $roleResponse.value) {
-            # Find matching site for SourceSiteIdentifier
-            $sourceSiteIdentifier = $SiteCode
-            $matchingSite = $script:Sites | Where-Object { $_.SiteCode -eq $SiteCode }
-            if ($matchingSite -and $matchingSite.SiteIdentifier) {
-                $sourceSiteIdentifier = $matchingSite.SiteIdentifier
-            }
-            
-            # Determine if this is a security admin role (has User.Add or User.Modify permissions)
-            $isSecAdminRole = $false
-            if ($role.GrantedOperations -or $role.Operations) {
-                $operations = @()
-                if ($role.GrantedOperations) { $operations += $role.GrantedOperations }
-                if ($role.Operations) { $operations += $role.Operations }
                 
-                $isSecAdminRole = ($operations -match "User\.Add|User\.Modify").Count -gt 0
+            if (-not $smsRSystemResponse -or -not $smsRSystemResponse.Content) {
+                Write-LogMessage Warning "No systems and groups returned from AdminService query on $Target via SMS_R_System (skip=$skip)"
+                break
             }
-            
-            # Create security role node following design document structure
-            $roleNode = @{
-                "ObjectIdentifier" = "$($role.RoleID)@$sourceSiteIdentifier"
-                "RoleID" = $role.RoleID
-                "RoleName" = $role.RoleName
-                "RoleDescription" = $role.RoleDescription
-                "IsBuiltIn" = $role.IsBuiltIn
-                "CreatedBy" = $role.CreatedBy
-                "CreatedDate" = $role.CreatedDate
-                "ModifiedBy" = $role.ModifiedBy
-                "ModifiedDate" = $role.ModifiedDate
-                "GrantedOperations" = $role.GrantedOperations
-                "GrantedOperationsOnTypeNames" = $role.GrantedOperationsOnTypeNames
-                "Operations" = $role.Operations
-                "CopiedFromID" = $role.CopiedFromID
-                "IsSecAdminRole" = $isSecAdminRole
-                "SourceSiteCode" = $SiteCode
-                "SourceSiteIdentifier" = $sourceSiteIdentifier
-            }
-            
-            # Add to global security roles
-            $existingRole = $script:SecurityRoles | Where-Object { $_.ObjectIdentifier -eq $roleNode.ObjectIdentifier }
-            if (-not $existingRole) {
-                $script:SecurityRoles += $roleNode
-                Write-LogMessage "Collected security role via AdminService: $($role.RoleName) ($($role.RoleID))" -Level "Success"
-            } else {
-                Write-LogMessage "Security role $($role.RoleID) already exists, skipping duplicate" -Level "Info"
-            }
-        }
         
-        return $true
-        
-    } catch {
-        Write-LogMessage "Failed to collect security roles via AdminService from $Target`: $_" -Level "Error"
-        return $false
-    }
-}
+            try {
+                $smsRSystemResponseContent = $smsRSystemResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert response content to JSON from $Target via SMS_R_System (skip=$skip)`: $_"
+                return $false
+            }
 
-function Get-SCCMAdminUsersViaAdminService {
-    param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
-    )
-    
-    try {
-        Write-LogMessage "Collecting admin users via AdminService from $Target for site $SiteCode" -Level "Info"
-        
-        # Query SMS_Admin as per design document
-        $adminQuery = "SMS_Admin?`$select=AdminID,LogonName,DistinguishedName,DisplayName,AccountType,CreatedBy,CreatedDate,ModifiedBy,ModifiedDate,Permissions,Roles,ExtendedData,TrustedForDelegation,Categories,CategoryNames,IsCovered,IsDeleted,CollectionsCount,AccountSID,SourceSite"
-        $adminUrl = "$BaseUrl/wmi/$adminQuery"
-        
-        $adminResponse = Invoke-RestMethod -Uri $adminUrl -Method Get -UseDefaultCredentials -TimeoutSec 120 -ErrorAction Stop
-        
-        if (-not $adminResponse -or -not $adminResponse.value) {
-            Write-LogMessage "No admin users returned from AdminService query on $Target (may require Read-only Analyst privileges or higher)" -Level "Warning"
-            return $false
-        }
-        
-        foreach ($admin in $adminResponse.value) {
-            # Find matching site for SourceSiteIdentifier
-            $sourceSiteIdentifier = $SiteCode
-            $matchingSite = $script:Sites | Where-Object { $_.SiteCode -eq $SiteCode }
-            if ($matchingSite -and $matchingSite.SiteIdentifier) {
-                $sourceSiteIdentifier = $matchingSite.SiteIdentifier
-            }
-            
-            # Create admin user node following design document structure
-            $adminNode = @{
-                "ObjectIdentifier" = "$($admin.LogonName)@$sourceSiteIdentifier"
-                "LogonName" = $admin.LogonName
-                "AdminID" = $admin.AdminID
-                "DistinguishedName" = $admin.DistinguishedName
-                "DisplayName" = $admin.DisplayName
-                "AccountType" = $admin.AccountType
-                "CreatedBy" = $admin.CreatedBy
-                "CreatedDate" = $admin.CreatedDate
-                "ModifiedBy" = $admin.ModifiedBy
-                "ModifiedDate" = $admin.ModifiedDate
-                "Permissions" = $admin.Permissions
-                "Roles" = $admin.Roles
-                "ExtendedData" = $admin.ExtendedData
-                "TrustedForDelegation" = $admin.TrustedForDelegation
-                "Categories" = $admin.Categories
-                "CategoryNames" = $admin.CategoryNames
-                "IsCovered" = $admin.IsCovered
-                "IsDeleted" = $admin.IsDeleted
-                "CollectionsCount" = $admin.CollectionsCount
-                "AccountSID" = $admin.AccountSID
-                "SourceSite" = $admin.SourceSite
-                "SourceSiteCode" = $SiteCode
-                "SourceSiteIdentifier" = $sourceSiteIdentifier
-            }
-            
-            # Add to global admin users
-            $existingAdmin = $script:AdminUsers | Where-Object { $_.ObjectIdentifier -eq $adminNode.ObjectIdentifier }
-            if (-not $existingAdmin) {
-                $script:AdminUsers += $adminNode
-                Write-LogMessage "Collected admin user via AdminService: $($admin.LogonName) ($($admin.AdminID))" -Level "Success"
-            } else {
-                Write-LogMessage "Admin user $($admin.LogonName) already exists, skipping duplicate" -Level "Info"
-            }
-        }
-        
-        return $true
-        
-    } catch {
-        Write-LogMessage "Failed to collect admin users via AdminService from $Target`: $_" -Level "Error"
-        return $false
-    }
-}
+            if ($smsRSystemResponseContent -and $smsRSystemResponseContent.value) {
+                foreach ($device in $smsRSystemResponseContent.value) {
 
-function Get-SCCMSiteSystemRolesViaAdminService {
-    param(
-        [string]$Target,
-        [string]$BaseUrl,
-        [string]$SiteCode
-    )
-    
-    try {
-        Write-LogMessage "Collecting site system roles via AdminService from $Target for site $SiteCode" -Level "Info"
+                    $siteSystemRoles = @()
+                    $siteSystemRoles += foreach ($role in $device.SystemRoles) {
+                        "$role@$SiteIdentifier"
+                    }
+
+                    $thisClientDomainObject = Resolve-PrincipalInDomain -Name $device.Name -Domain $script:Domain
         
-        # Query SMS_SystemResourceList as per design document
-        $systemQuery = "SMS_SystemResourceList?`$select=ServerName,SiteCode,RoleName,NALPath,NALType,NetworkOSPath,InternetFacing,SslState,Props"
-        $systemUrl = "$BaseUrl/wmi/$systemQuery"
+                    # Add or update Computer node if domain SID is not null
+                    if ($thisClientDomainObject.SID) {
+                        # Add or update Computer node
+                        Add-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
+                            CollectionSource = @("AdminService-SMS_R_System")
+                            SCCM_ResourceIDs = @("$($device.ResourceID)@$SiteIdentifier")
+                            SCCM_ClientDeviceIdentifier = $device.SMSUniqueIdentifier
+                            SCCM_SiteSystemRoles = if ($siteSystemRoles.Count -gt 0) { $siteSystemRoles } else { @() }
+                        }
+
+                        # Add Group nodes
+                        foreach ($group in $device.SecurityGroupName) {
+                            $thisGroupDomainObject = Resolve-PrincipalInDomain -Name $group -Domain $script:Domain
+                            if ($thisGroupDomainObject.SID) {
+                                Add-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
+                                    CollectionSource = @("AdminService-SMS_R_System")
+                                }
+                                Add-Edge -Start $thisClientDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID
+                                $totalGroupsProcessed++
+                            }
+                        }
+                    } else {
+                        Write-LogMessage Warning "No domain SID found for system $($device.Name)"
+                    }
+
+                    # Skip creation of SCCM_ClientDevice node if not a client or obsolete, which may occur when the client is reinstalled on the same machine
+                    if (-not $device.Client -or $device.Obsolete) {
+                        continue
+                    }
         
-        $systemResponse = Invoke-RestMethod -Uri $systemUrl -Method Get -UseDefaultCredentials -TimeoutSec 120 -ErrorAction Stop
-        
-        if (-not $systemResponse -or -not $systemResponse.value) {
-            Write-LogMessage "No site system roles returned from AdminService query on $Target" -Level "Warning"
-            return $false
-        }
-        
-        # Group by NetworkOSPath and SiteCode to combine roles for same system
-        $groupedSystems = $systemResponse.value | Group-Object -Property { "$($_.NetworkOSPath)_$($_.SiteCode)" }
-        
-        foreach ($group in $groupedSystems) {
-            $firstSystem = $group.Group[0]
-            
-            # Find matching site for SiteIdentifier
-            $siteIdentifier = $firstSystem.SiteCode
-            $matchingSite = $script:Sites | Where-Object { $_.SiteCode -eq $firstSystem.SiteCode }
-            if ($matchingSite -and $matchingSite.SiteIdentifier) {
-                $siteIdentifier = $matchingSite.SiteIdentifier
-            }
-            
-            # Collect all roles for this system
-            $roles = @()
-            foreach ($system in $group.Group) {
-                $roleInfo = @{
-                    "Name" = $system.RoleName
-                    "Properties" = $system.Props
-                    "SiteCode" = $system.SiteCode
-                    "SiteIdentifier" = $siteIdentifier
-                    "SourceForest" = $null  # Will be populated if available
+                    # Add or update SCCM_ClientDevice node
+                    Add-Node -Id $device.SMSUniqueIdentifier -Kinds @("SCCM_ClientDevice") -Properties @{
+                        CollectionSource = @("AdminService-SMS_R_System")
+                        ADDomainSID = if ($device.SID) { $device.SID } else { $null }
+                    }
+
+                    $totalSystemsProcessed++
                 }
-                $roles += $roleInfo
             }
-            
-            # Create site system node following design document structure
-            $systemNode = @{
-                "ObjectIdentifier" = $firstSystem.ServerName  # Using ServerName as ObjectIdentifier
-                "dNSHostName" = $firstSystem.ServerName
-                "ServerName" = $firstSystem.ServerName
-                "SiteCode" = $firstSystem.SiteCode
-                "NALPath" = $firstSystem.NALPath
-                "NALType" = $firstSystem.NALType
-                "NetworkOSPath" = $firstSystem.NetworkOSPath
-                "InternetFacing" = $firstSystem.InternetFacing
-                "SslState" = $firstSystem.SslState
-                "Roles" = $roles
-                "SiteIdentifier" = $siteIdentifier
-            }
-            
-            # Add to global site system roles
-            $existingSystem = $script:SiteSystemRoles | Where-Object { 
-                $_.ServerName -eq $firstSystem.ServerName -and $_.SiteCode -eq $firstSystem.SiteCode
-            }
-            if (-not $existingSystem) {
-                $script:SiteSystemRoles += $systemNode
-                Write-LogMessage "Collected site system via AdminService: $($firstSystem.ServerName) with $($roles.Count) roles" -Level "Success"
-            } else {
-                Write-LogMessage "Site system $($firstSystem.ServerName) already exists, skipping duplicate" -Level "Info"
-            }
-        }
-        
+            $skip += $batchSize
+        } while ($smsRSystemResponseContent.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Successfully processed $totalSystemsProcessed systems and $totalGroupsProcessed groups via SMS_R_System"
         return $true
-        
     } catch {
-        Write-LogMessage "Failed to collect site system roles via AdminService from $Target`: $_" -Level "Error"
+        Write-LogMessage Error "Failed to collect systems and groups via SMS_R_System from $Target`: $_"
         return $false
     }
 }
 
-#endregion
+function Get-SmsRUserViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
 
-#region WMI Collection
+    try {
+        Write-LogMessage Info "Collecting users and groups via SMS_R_User from $Target for site $SiteIdentifier"
+        $select = "`$select=AADTenantID,AADUserID,DistinguishedName,FullDomainName,FullUserName,Name,ResourceID,SecurityGroupName,SID,UniqueUserName,UserName,UserPrincipalName"
+        $batchSize = 1000
+        $skip = 0
+        $totalUsersProcessed = 0
+        $totalGroupsProcessed = 0
+
+        do {
+            $smsRUserUrl = "https://$Target/AdminService/wmi/SMS_R_User?$select&`$top=$batchSize&`$skip=$skip"
+            try {
+                $smsRUserResponse = Invoke-WebRequest -Uri $smsRUserUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect users and groups via SMS_R_User (skip=$skip): $_"
+                return $false
+            }
+                
+            if (-not $smsRUserResponse -or -not $smsRUserResponse.Content) {
+                Write-LogMessage Warning "No users returned from AdminService query on $Target via SMS_R_User (skip=$skip)"
+                break
+            }
+        
+            try {
+                $smsRUserResponseContent = $smsRUserResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert response content to JSON from $Target via SMS_R_User (skip=$skip)`: $_"
+                return $false
+            }
+
+            if ($smsRUserResponseContent -and $smsRUserResponseContent.value) {
+                foreach ($user in $smsRUserResponseContent.value) {
+          
+                    $thisUserDomainObject = Resolve-PrincipalInDomain -Name $user.SID -Domain $script:Domain
+        
+                    # Create User node if domain SID is not null
+                    if ($thisUserDomainObject.SID) {
+        
+                        Add-Node -Id $thisUserDomainObject.SID -Kinds @("User", "Base") -PSObject $thisUserDomainObject -Properties @{
+                            CollectionSource = @("AdminService-SMS_R_User")
+                            SCCM_ResourceIDs = @("$($user.ResourceID)@$SiteIdentifier")
+                        }
+
+                        # Add Group nodes
+                        foreach ($group in $user.SecurityGroupName) {
+                            $thisGroupDomainObject = Resolve-PrincipalInDomain -Name $group -Domain $script:Domain
+                            if ($thisGroupDomainObject.SID) {
+                                Add-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
+                                    CollectionSource = @("AdminService-SMS_R_User")
+                                    SCCM_ResourceIDs = @("$($user.ResourceID)@$SiteIdentifier")
+                                }
+                                Add-Edge -Start $thisUserDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID
+                                $totalGroupsProcessed++
+                            }
+                        }
+
+                        $totalUsersProcessed++
+                    } else {
+                        Write-LogMessage Warning "No domain SID found for user $($user.Name)"
+                    }
+                }
+            }
+            $skip += $batchSize
+        } while ($smsRUserResponseContent.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Successfully processed $totalUsersProcessed users and $totalGroupsProcessed groups via SMS_R_User"
+        return $true
+    } catch {
+        Write-LogMessage Error "Failed to collect users and groups via AdminService from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-CollectionsViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+
+    try {
+        Write-LogMessage Info "Collecting device/user collections via SMS_Collection from $Target for site $SiteIdentifier"
+        
+        # Query SMS_Collection with specific properties as per design document
+        $select = "`$select=CollectionID,CollectionType,CollectionVariablesCount,Comment,IsBuiltIn,LastChangeTime,LastMemberChangeTime,LimitToCollectionID,LimitToCollectionName,MemberCount,Name"
+        $batchSize = 1000
+        $skip = 0
+        $totalProcessed = 0
+
+        do {
+            $collectionUrl = "https://$Target/AdminService/wmi/SMS_Collection?$select&`$top=$batchSize&`$skip=$skip"
+            try {
+                $collectionResponse = Invoke-WebRequest -Uri $collectionUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect device/user collections via SMS_Collection from $Target (skip=$skip)`: $_"
+                return $false
+            }
+        
+            if (-not $collectionResponse -or -not $collectionResponse.Content) {
+                break
+            }
+        
+            try {
+                $collectionResponseContent = $collectionResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert collection response content to JSON from $Target (skip=$skip)`: $_"
+                return $false
+            }
+        
+            foreach ($collection in $collectionResponseContent.value) {
+                 
+                 # Create collection node
+                 Add-Node -Id "$($collection.CollectionID)@$SiteIdentifier" -Kinds @("SCCM_Collection") -Properties @{
+                     CollectionSource = @("AdminService-SMS_Collection")
+                     CollectionType = $collection.CollectionType
+                     CollectionVariablesCount = $collection.CollectionVariablesCount
+                     Comment = $collection.Comment
+                     IsBuiltIn = $collection.IsBuiltIn
+                     LastChangeTime = $collection.LastChangeTime
+                     LastMemberChangeTime = $collection.LastMemberChangeTime
+                     LimitToCollectionID = $collection.LimitToCollectionID
+                     LimitToCollectionName = $collection.LimitToCollectionName
+                     MemberCount = $collection.MemberCount
+                     Name = $collection.Name
+                     SourceSiteCode = $SiteIdentifier.Split(".")[0]
+                     SourceSiteIdentifier = $SiteIdentifier
+                 }
+                 $totalProcessed++
+            }
+
+            $skip += $batchSize
+        } while ($collectionResponseContent.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Collected $totalProcessed collections via AdminService"
+        
+        return $true
+    } catch {
+        Write-LogMessage Error "Failed to collect device/user collections via SMS_Collection from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-CollectionMembersViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+
+    try {
+        Write-LogMessage "Collecting collection members via SMS_FullCollectionMembership from $Target for site $SiteIdentifier" -Level "Info"
+        # Query SMS_FullCollectionMembership as per design document
+        $select = "`$select=CollectionID,ResourceID,SiteCode"
+        $batchSize = 1000
+        $skip = 0
+        $totalMembers = 0
+
+        do {
+            $memberUrl = "https://$Target/AdminService/wmi/SMS_FullCollectionMembership?$select&`$top=$batchSize&`$skip=$skip"
+            try {
+                $memberResponse = Invoke-WebRequest -Uri $memberUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect collection members via SMS_FullCollectionMembership from $Target (skip=$skip)`: $_"
+                return $false
+            }
+                
+            if (-not $memberResponse -or -not $memberResponse.Content) {
+                break
+            }
+        
+            try {
+                $memberResponseContent = $memberResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert member response content to JSON from $Target (skip=$skip)`: $_"
+                return $false
+            }
+        
+            # Group members by collection for efficient processing
+            $membersByCollection = $memberResponseContent.value | Group-Object -Property CollectionID
+            Write-LogMessage Success "Collected $($memberResponseContent.value.Count) collection members for $($membersByCollection.Count) collections via AdminService (page)"
+            
+            foreach ($collection in $membersByCollection) {
+
+                # Update collection node
+                Add-Node -Id "$($collection.Name)@$SiteIdentifier" -Kinds @("SCCM_Collection") -Properties @{
+                    CollectionSource = @("AdminService-SMS_FullCollectionMembership")
+                    Members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$SiteIdentifier" }
+                    SourceSiteCode = $SiteIdentifier.Split(".")[0]
+                    SourceSiteIdentifier = $SiteIdentifier
+                }
+
+                # Create edges for each member
+                foreach ($member in $collection.Group) {
+                    # First get the node for the member
+                    $memberUser = $script:Nodes | Where-Object { $_.kinds -contains "User" -and $_.properties.SCCM_ResourceIDs -contains "$($member.ResourceID)@$SiteIdentifier" }
+                    $memberGroup = $script:Nodes | Where-Object { $_.kinds -contains "Group" -and $_.properties.SCCM_ResourceIDs -contains "$($member.ResourceID)@$SiteIdentifier" }
+                    $memberDevice = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_ClientDevice" -and $_.properties.ResourceID -eq $member.ResourceID }
+                    if ($memberUser) {
+                        $memberNode = $memberUser
+                    } elseif ($memberGroup) {
+                        $memberNode = $memberGroup
+                    } elseif ($memberDevice) {
+                        $memberNode = $memberDevice
+                    }
+
+                    if ($memberNode) {
+                        Add-Edge -Start "$($collection.Name)@$SiteIdentifier" -Kind "SCCM_HasMember" -End $memberNode.Id
+                    } elseif ($member.ResourceID -eq '2046820352') {
+                        Write-LogMessage Verbose "Skipping built-in collection member $($member.ResourceID): x86 Unknown Computer"
+                    } elseif ($member.ResourceID -eq '2046820353') {
+                        Write-LogMessage Verbose "Skipping built-in collection member $($member.ResourceID): x64 Unknown Computer"
+                    } elseif ($member.ResourceID -like '203004*'){
+                        Write-LogMessage Verbose "Skipping built-in collection member $($member.ResourceID): Provisioning Device"
+                    } else {
+                        Write-LogMessage Warning "No node found for member $($member.ResourceID) in $($collection.Name)"
+                    }
+                }
+            }
+
+            $totalMembers += $memberResponseContent.value.Count
+            $skip += $batchSize
+        } while ($memberResponseContent.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Collected $totalMembers collection members via AdminService"
+        
+        return $true
+    } catch {
+        Write-LogMessage Error "Failed to collect device/user collection members in SMS_FullCollectionMembership from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-SecurityRolesViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+    
+    try {
+        Write-LogMessage Info "Collecting security roles via SMS_Role from $Target for site $SiteIdentifier"
+        
+        # select on lazy columns not supported for GetAll requests
+        #$select = "`$select=CopiedFromID,CreatedBy,CreatedDate,IsBuiltIn,IsSecAdminRole,LastModifiedBy,LastModifiedDate,NumberOfAdmins,Operations,RoleID,RoleName,RoleDescription,SourceSite"
+        $batchSize = 1000
+        $skip = 0
+        $totalProcessed = 0
+
+        do {
+            #$roleUrl = "https://$Target/AdminService/wmi/SMS_Role?$select&`$top=$batchSize&`$skip=$skip"
+            $roleUrl = "https://$Target/AdminService/wmi/SMS_Role?`$top=$batchSize&`$skip=$skip"
+            try {
+                $roleResponse = Invoke-WebRequest -Uri $roleUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect security roles via SMS_Role from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            if (-not $roleResponse -or -not $roleResponse.Content) { break }
+
+            try {
+                $roleResponseContent = $roleResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert role response content to JSON from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            foreach ($role in $roleResponseContent.value) {
+                        
+                Add-Node -Id "$($role.RoleID)@$SiteIdentifier" -Kinds @("SCCM_SecurityRole", "Base") -Properties @{
+                    CollectionSource = @("AdminService-SMS_Role")
+                    CopiedFromID = if ($role.CopiedFromID) { $role.CopiedFromID } else { $null }
+                    CreatedBy = if ($role.CreatedBy) { $role.CreatedBy } else { $null }
+                    CreatedDate = if ($role.CreatedDate) { $role.CreatedDate } else { $null }
+                    IsBuiltIn = if ($role.IsBuiltIn) { $role.IsBuiltIn } else { $null }
+                    IsSecAdminRole = if ($role.IsSecAdminRole) { $role.IsSecAdminRole } else { $null }
+                    LastModifiedBy = if ($role.LastModifiedBy) { $role.LastModifiedBy } else { $null }
+                    LastModifiedDate = if ($role.LastModifiedDate) { $role.LastModifiedDate } else { $null }
+                    NumberOfAdmins = if ($role.NumberOfAdmins) { $role.NumberOfAdmins } else { $null }
+                    Operations = if ($role.Operations) { $role.Operations } else { $null }
+                    RoleID = if ($role.RoleID) { $role.RoleID } else { $null }
+                    RoleName = if ($role.RoleName) { $role.RoleName } else { $null }
+                    RoleDescription = if ($role.RoleDescription) { $role.RoleDescription } else { $null }
+                    SourceSiteCode = $SiteIdentifier.Split(".")[0]    
+                    SourceSiteIdentifier = $SiteIdentifier
+                }
+                $totalProcessed++
+            }
+
+            $skip += $batchSize
+        } while ($roleResponse.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Collected $totalProcessed security roles via AdminService"        
+        return $true
+        
+    } catch {
+        Write-LogMessage Error "Failed to collect security roles via SMS_Role from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-AdminUsersViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+    
+    try {
+        Write-LogMessage Info "Collecting admin users via SMS_Admin from $Target for site $SiteIdentifier"
+        # select on lazy columns not supported for GetAll requests
+        #$select = "`$select=AccountType,AdminID,AdminSid,Categories,CategoryNames,CollectionNames,CreatedBy,CreatedDate,DisplayName,DistinguishedName,IsGroup,LastModifiedBy,LastModifiedDate,LogonName,RoleNames,Roles,SourceSite"
+        $batchSize = 1000
+        $skip = 0
+        $totalProcessed = 0
+
+        do {
+            #$adminUrl = "https://$Target/AdminService/wmi/SMS_Admin?$select&`$top=$batchSize&`$skip=$skip"
+            $adminUrl = "https://$Target/AdminService/wmi/SMS_Admin?`$top=$batchSize&`$skip=$skip"
+            try {
+                $adminResponse = Invoke-WebRequest -Uri $adminUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect admin users via SMS_Admin from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            if (-not $adminResponse -or -not $adminResponse.Content) { break }
+
+            try {
+                $adminResponseContent = $adminResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert admin response content to JSON from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            foreach ($admin in $adminResponseContent.value) {
+
+                Add-Node -Id "$($admin.LogonName)@$SiteIdentifier" -Kinds @("SCCM_AdminUser", "Base") -Properties @{
+                    CollectionSource = @("AdminService-SMS_Admin")
+                    AdminID = if ($admin.AdminID) { $admin.AdminID } else { $null }
+                    AdminSid = if ($admin.AdminSid) { $admin.AdminSid } else { $null }
+                    CollectionNames = if ($admin.CollectionNames) { $admin.CollectionNames } else { $null }
+                    RoleIDs = if ($admin.Roles) { $admin.Roles } else { $null }
+                    SourceSiteCode = if ($admin.SourceSite) { $admin.SourceSite } else { $null }
+                }
+
+                if ($admin.AdminSid) {
+                    $adminDomainObject = Resolve-PrincipalInDomain -Name $admin.AdminSid -Domain $script:Domain
+                    if ($adminDomainObject) {
+                        # Check if user or group
+                        if ($adminDomainObject.Type -eq "User") {
+                            $kinds = @("User", "Base")
+                        } else {
+                            $kinds = @("Group", "Base")
+                        }
+                        # Create or update domain object node
+                        Add-Node -Id $adminDomainObject.SID -Kinds $kinds -PSObject $adminDomainObject -Properties @{
+                            CollectionSource = @("AdminService-SMS_Admin")
+                        }
+
+                        # Create SCCM_IsMappedTo edge
+                        Add-Edge -Start $adminDomainObject.SID -Kind "SCCM_IsMappedTo" -End "$($admin.LogonName)@$SiteIdentifier"
+                    } else {
+                        Write-LogMessage Warning "No domain object found for admin user $($admin.LogonName)@$SiteIdentifier"
+                    }
+                } else {
+                    Write-LogMessage Warning "No domain SID found for admin user $($admin.LogonName)@$SiteIdentifier"
+                }
+
+                if ($admin.CollectionNames) {
+                    $collectionNames = $admin.CollectionNames -split ", "
+                    foreach ($collectionName in $collectionNames) {
+                        $collection = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Collection" -and $_.properties.Name -eq "$collectionName" -and $_.properties.SourceSiteIdentifier -eq $SiteIdentifier }
+                        if ($collection) {
+                            Add-Edge -Start "$($admin.LogonName)@$SiteIdentifier" -Kind "SCCM_IsAssigned" -End $collection.Id
+                        } else {
+                            Write-LogMessage Warning "No collection node found for $collectionName"
+                        }
+                    }
+                }
+
+                if ($admin.RoleIDs) {
+                    $roleIDs = $admin.RoleIDs -split ", "
+                    foreach ($roleID in $roleIDs) {
+                        $role = $script:Nodes | Where-Object { $_.Id -eq "$roleID@$SiteIdentifier" }
+                        if ($role) {
+                            Add-Edge -Start "$($admin.LogonName)@$SiteIdentifier" -Kind "SCCM_IsAssigned" -End $role.Id
+                        } else {
+                            Write-LogMessage Warning "No role node found for $roleID"
+                        }
+                    }
+                }
+                $totalProcessed++
+            }
+
+            $skip += $batchSize
+        } while ($adminResponse.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Collected $totalProcessed admin users via SMS_Admin"
+        
+        return $true
+        
+    } catch {
+        Write-LogMessage Error "Failed to collect admin users via SMS_Admin from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-SiteSystemRolesViaAdminService {
+    param(
+        [string]$Target,
+        [string]$SiteIdentifier
+    )
+    
+    try {
+        Write-LogMessage Info "Collecting site system roles via SMS_SCI_SysResUse from $Target for site $SiteIdentifier"
+        
+        # Batched query to SMS_SystemResourceList
+        $select = "`$select=ServerName,SiteCode,RoleName,NALPath,NetworkOSPath,Props"
+        $batchSize = 1000
+        $skip = 0
+        $totalProcessed = 0
+
+        do {
+            $systemUrl = "https://$Target/AdminService/wmi/SMS_SCI_SysResUse?`$top=$batchSize&`$skip=$skip"
+            try {
+                $systemResponse = Invoke-WebRequest -Uri $systemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            } catch {
+                Write-LogMessage Error "Failed to collect site system roles via SMS_SCI_SysResUse from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            if (-not $systemResponse -or -not $systemResponse.Content) { break }
+
+            try {
+                $systemResponseContent = $systemResponse.Content | ConvertFrom-Json
+            } catch {
+                Write-LogMessage Error "Failed to convert site system response content to JSON from $Target (skip=$skip)`: $_"
+                return $false
+            }
+            
+            if ($systemResponseContent -and $systemResponseContent.value) {
+
+                # Group by NetworkOSPath and SiteCode to combine roles for same system (per page)
+                $groupedSystems = $systemResponseContent.value | Group-Object -Property { "$(
+                    $_.NetworkOSPath
+                )_$(
+                    $_.SiteCode
+                )" }
+                
+                $roleNames = @()
+                foreach ($group in $groupedSystems) {                  
+                    $roleNames += @("$($group.Group.RoleName)@$SiteIdentifier")
+                }
+
+                foreach ($group in $groupedSystems) {
+                   
+                    foreach ($system in $group.Group) {
+
+                        # Create or update Computer node
+                        $computerObject = Resolve-PrincipalInDomain -Name $system.NetworkOSPath.Replace('\', '') -Domain $script:Domain
+                        if ($computerObject) {
+                            Add-Node -Id $computerObject.SID -Kinds @("Computer", "Base") -PSObject $computerObject -Properties @{
+                                CollectionSource = @("AdminService-SMS_SCI_SysResUse")
+                                SCCM_SiteSystemRoles = $roleNames
+                            }
+                        } else {
+                            Write-LogMessage Warning "No domain object found for $($system.NetworkOSPath.Replace('\', ''))"
+                        }
+
+                        # Get service account from props
+                        if ($system.Props) {
+                            $serviceAccount = $system.Props | Where-Object { $_.PropertyName -eq 'SQL Server Service Logon Account' } | Select-Object -ExpandProperty Value2
+                            if ($serviceAccount) {
+                                $serviceAccountObject = Resolve-PrincipalInDomain -Name $serviceAccount -Domain $script:Domain
+                                if ($serviceAccountObject) {
+                                    if ($serviceAccountObject.Type -eq "User") {
+                                        $kinds = @("User", "Base")
+                                    } else {
+                                        $kinds = @("Computer", "Base")
+                                    }
+                                    Add-Node -Id $serviceAccountObject.SID -Kinds $kinds -PSObject $serviceAccountObject -Properties @{
+                                        CollectionSource = @("AdminService-SMS_SCI_SysResUse")
+                                    }                               
+                                } else {
+                                    Write-LogMessage Warning "No domain object found for $serviceAccount"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            $totalProcessed += $systemResponse.value.Count
+            $skip += $batchSize
+        } while ($systemResponse.value.Count -eq $batchSize)
+
+        Write-LogMessage Success "Collected $totalProcessed site system roles via SMS_SCI_SysResUse"
+        
+        return $true
+        
+    } catch {
+        Write-LogMessage Error "Failed to collect site system roles via SMS_SCI_SysResUse from $Target`: $_"
+        return $false
+    }
+}
 
 function Invoke-SmsProviderWmiCollection {
     param($CollectionTargets)
@@ -3437,7 +4227,7 @@ function Get-SCCMSiteSystemRolesViaWMI {
             # Resolve hostname to AD object
             $systemADObject = $null
             try {
-                $systemADObject = Get-ActiveDirectoryObject -Name $hostname -Domain $script:Domain
+                $systemADObject = Resolve-PrincipalInDomain -Name $hostname -Domain $script:Domain
             } catch {
                 Write-LogMessage "Failed to resolve site system $hostname to AD object: $_" -Level "Warning"
             }
@@ -3480,10 +4270,6 @@ function Get-SCCMSiteSystemRolesViaWMI {
         return $false
     }
 }
-
-#endregion
-
-#region HTTP Collection
 
 function Invoke-HTTPCollection {
     param($Targets)
@@ -3553,9 +4339,7 @@ function Invoke-HTTPCollection {
                                                     Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                                                         CollectionSource = @("HTTP-MPKEYINFORMATION")
                                                         SiteCode = $siteCode
-                                                    }
-                                                        
-
+                                                    }                                                   
                                                 }
                                             }
                                         } catch {
@@ -3671,10 +4455,6 @@ function Invoke-HTTPCollection {
     
     Write-LogMessage Success "HTTP collection completed"
 }
-
-#endregion
-
-#region SMB Collection
 
 function Invoke-SMBCollection {
     param($Targets)
@@ -3926,10 +4706,7 @@ public const int NERR_ServerNotStarted = 2114;
 
 #endregion
 
-#region Post-Processing and Edge Creation
-
-#region Ingest Processing Functions
-
+#region Processing and Edge Creation
 function Process-SitesIngest {
     Write-LogMessage "Processing Sites ingest..." -Level "Info"
     
@@ -4189,10 +4966,6 @@ function Process-SiteSystemRolesIngest {
     Write-LogMessage "SiteSystemRoles ingest completed" -Level "Success"
 }
 
-#endregion
-
-#region Post-Processing Functions
-
 function Process-HasMemberEdges {
     Write-LogMessage "Post-processing: Creating SCCM_HasMember edges..." -Level "Info"
     
@@ -4396,93 +5169,6 @@ function Process-AssignSpecificPermissionsEdges {
     Write-LogMessage "SCCM_AssignSpecificPermissions edges created" -Level "Success"
 }
 
-#endregion
-
-#region Helper Functions
-
-function Add-DeviceToTargets {
-    param(
-        [string]$DeviceName,
-        [string]$Source
-    )
-    
-    if ([string]::IsNullOrWhiteSpace($DeviceName)) { return $null }
-    
-    # Try to resolve to AD object to get canonical identifier
-    $adObject = Get-ActiveDirectoryObject -Name $DeviceName -Domain $script:Domain
-    
-    # Use ObjectSID as deduplication key if resolved, otherwise use lowercase name
-    if ($adObject -and $adObject.SID) {
-        $dedupKey = $adObject.SID
-        $canonicalName = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
-    } else {
-        $dedupKey = $DeviceName.ToLower()
-        $canonicalName = $DeviceName
-        Write-LogMessage Warning "Could not resolve '$DeviceName' to domain object"
-        return $null
-    }
-    
-    # Check if we already have this device
-    $existingTarget = $script:CollectionTargets.Values | Where-Object { $_.DedupKey -eq $dedupKey }
-    
-    if ($existingTarget) {
-        # Prefer FQDN: Update hostname if current input is FQDN and existing is not
-        if ($DeviceName -contains '.' -and $existingTarget.Hostname -notcontains '.') {
-            Write-LogMessage Verbose "Replacing NetBIOS name '$($existingTarget.Hostname)' with FQDN '$DeviceName'"
-            $existingTarget.Hostname = $DeviceName
-        }
-        
-        # Add source to existing entry
-        if ($existingTarget.Source -notlike "*$Source*") {
-            $existingTarget.Source += ", $Source"
-        }
-        
-        # Return existing target
-        $existingTarget.IsNew = $false
-        return $existingTarget
-    } else {
-        # Add new target
-        $script:CollectionTargets[$canonicalName] = @{
-            "ADObject" = if ($adObject) { $adObject } else { $null }
-            "Collected" = $false
-            "DedupKey" = $dedupKey
-            "Hostname" = $canonicalName
-            "IsNew" = $true
-            "Source" = $Source
-        }
-        Write-LogMessage Verbose "Added collection target: $canonicalName from $Source"
-        
-        # Return new target
-        return $script:CollectionTargets[$canonicalName]
-    }
-}
-
-function Get-SameAdminsAsSites {
-    param([string]$SiteIdentifier)
-    
-    $relatedSites = @()
-    $site = $script:Sites | Where-Object { $_.SiteIdentifier -eq $SiteIdentifier }
-    
-    if ($site) {
-        # Find all sites with same ParentSiteCode (same hierarchy)
-        $hierarchySites = $script:Sites | Where-Object { $_.ParentSiteCode -eq $site.ParentSiteCode }
-        $relatedSites += $hierarchySites
-        
-        # Recursively find sites connected via SCCM_SameAdminsAs edges
-        # This is a simplified version - full implementation would need graph traversal
-        $relatedSites += $script:Sites | Where-Object { 
-            $_.ParentSiteCode -eq $site.SiteCode -or 
-            $_.SiteCode -eq $site.ParentSiteCode 
-        }
-    }
-    
-    return ($relatedSites | Sort-Object SiteIdentifier -Unique)
-}
-
-#endregion
-
-#region Recursive Helper Functions
-
 function Get-ConnectedSitesRecursive {
     param(
         [string]$SiteIdentifier,
@@ -4588,10 +5274,6 @@ function Find-ClientDevicesConnectedToCollection {
     return $connectedDevices
 }
 
-#endregion
-
-#region Main Processing Function
-
 function Start-IngestAndPostProcessing {
     Write-LogMessage "Starting ingest and post-processing..." -Level "Info"
     
@@ -4620,38 +5302,428 @@ function Start-IngestAndPostProcessing {
 
 #region Output Generation
 
-function Export-BloodHoundData {
-    Write-LogMessage Info "Writing BloodHound data..."
-
-    # Create BloodHound data file using the Nodes and Edges
-    $bloodhoundData = @{
-        "graph" = @{
-            "metadata" = @{
-                "source_kind" = "SCCM_Base"
+# Helper function to display current file size
+function Show-CurrentFileSize {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj,
+        [string]$Context = ""
+    )
+    
+    try {
+        # Calculate cumulative size of completed files only
+        $cumulativeSize = 0
+        $fileCount = $script:OutputFiles.Count
+        
+        foreach ($file in $script:OutputFiles) {
+            if (Test-Path $file) {
+                $fileInfo = Get-Item $file
+                $cumulativeSize += $fileInfo.Length
             }
-            "nodes" = @($script:Nodes | ForEach-Object {
-                @{
-                    id = $_.id
-                    kinds = $_.kinds
-                    properties = $_.properties
-                }
-            })
-            "edges" = @($script:Edges | ForEach-Object {
-                @{
-                    start = $_.start
-                    kind = $_.kind
-                    end = $_.end
-                    properties = $_.properties
-                }
-            })
+        }
+        
+        # Get current file size (not included in cumulative)
+        $currentFileSize = 0
+        if (Test-Path $WriterObj.FilePath) {
+            $fileInfo = Get-Item $WriterObj.FilePath
+            $currentFileSize = $fileInfo.Length
+            
+            # Format current file size for display
+            $currentSizeDisplay = if ($currentFileSize -ge 1GB) {
+                "$([math]::Round($currentFileSize/1GB, 2)) GB"
+            } elseif ($currentFileSize -ge 1MB) {
+                "$([math]::Round($currentFileSize/1MB, 2)) MB"
+            } elseif ($currentFileSize -ge 1KB) {
+                "$([math]::Round($currentFileSize/1KB, 2)) KB"
+            } else {
+                "$currentFileSize bytes"
+            }
+        }
+        
+        # Format cumulative size (completed files only)
+        $sizeDisplay = if ($cumulativeSize -ge 1GB) {
+            "$([math]::Round($cumulativeSize/1GB, 2)) GB"
+        } elseif ($cumulativeSize -ge 1MB) {
+            "$([math]::Round($cumulativeSize/1MB, 2)) MB"
+        } elseif ($cumulativeSize -ge 1KB) {
+            "$([math]::Round($cumulativeSize/1KB, 2)) KB"
+        } else {
+            "$cumulativeSize bytes"
+        }
+        
+        $contextText = if ($Context) { " ($Context)" } else { "" }
+        
+        # Show current file and cumulative of completed files
+        if ($fileCount -gt 0) {
+            Write-LogMessage Info "Current file size: $currentSizeDisplay`nCumulative file size: $sizeDisplay across $fileCount files$contextText"
+        } else {
+            Write-LogMessage Info "Current file size: $currentSizeDisplay"
         }
     }
-
-    $bloodhoundJson = $bloodhoundData | ConvertTo-Json -Depth 10
-    if ($OutputFormat -eq "StdOut") {
-        Write-Output $bloodhoundJson
-        return
+    catch {
+        # Silently continue if there's an error checking file size
     }
+}
+
+# Helper function to check if enough time has passed for periodic update
+function Test-ShouldShowPeriodicUpdate {
+    $currentTime = Get-Date
+    if (-not $script:LastFileSizeCheck) {
+        $script:LastFileSizeCheck = $currentTime
+        return $true
+    }
+    $timeSinceLastCheck = ($currentTime - $script:LastFileSizeCheck).TotalSeconds
+    $interval = if ($script:FileSizeCheckInterval) { $script:FileSizeCheckInterval } else { 5 }
+    if ($timeSinceLastCheck -ge $interval) {
+        $script:LastFileSizeCheck = $currentTime
+        return $true
+    }
+    return $false
+}
+
+# Helper function to check file size
+function Test-FileSizeLimit {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj,
+        [string]$SizeLimitString = "1GB"
+    )
+    
+    # If we're already stopping, just return true without additional warnings
+    if ($script:stopProcessing) {
+        return $true
+    }
+    
+    try {
+        # Parse the size limit string
+        $SizeLimitBytes = 0
+        if ([string]::IsNullOrWhiteSpace($SizeLimitString)) {
+            $SizeLimitBytes = 1GB
+        }
+        elseif ($SizeLimitString -match '^(\d+\.?\d*)\s*(GB|MB|KB|B)?$') {
+            $value = [double]$matches[1]
+            $unit = $matches[2]
+            
+            switch ($unit) {
+                "GB" { $SizeLimitBytes = $value * 1GB }
+                "MB" { $SizeLimitBytes = $value * 1MB }
+                "KB" { $SizeLimitBytes = $value * 1KB }
+                "B"  { $SizeLimitBytes = $value }
+                default { $SizeLimitBytes = $value * 1GB } # Default to GB if no unit
+            }
+        } else {
+            Write-LogMessage Warning "Invalid file size limit format: '$SizeLimitString'. Using default 1GB."
+            $SizeLimitBytes = 1GB
+        }
+        
+        # Calculate cumulative size of all completed files
+        $cumulativeSize = 0
+        foreach ($file in $script:OutputFiles) {
+            if (Test-Path $file) {
+                $fileInfo = Get-Item $file
+                $cumulativeSize += $fileInfo.Length
+            }
+        }
+        
+        # Add current file being written
+        if ($WriterObj.FilePath -and (Test-Path $WriterObj.FilePath)) {
+            $currentFileInfo = Get-Item $WriterObj.FilePath
+            $cumulativeSize += $currentFileInfo.Length
+        }
+        
+        if ($cumulativeSize -ge $SizeLimitBytes) {
+            $totalFiles = $script:OutputFiles.Count
+            if ($WriterObj.FilePath -and (Test-Path $WriterObj.FilePath)) {
+                $totalFiles++ # Include current file in count
+            }
+            Write-LogMessage Warning "Cumulative file size limit reached: $([math]::Round($cumulativeSize/1MB, 2)) MB >= $SizeLimitString"
+            Write-LogMessage Warning "Total files: $totalFiles ($(($script:OutputFiles.Count)) completed + 1 in progress)"
+            return $true
+        }
+        
+        return $false
+    }
+    catch {
+        Write-LogMessage Error "Error checking file size: $_"
+        return $false
+    }
+}
+
+# Memory monitoring function
+function Test-MemoryUsage {
+    param(
+        [int]$Threshold = 80
+    )
+    
+    $os = Get-CimInstance Win32_OperatingSystem
+    $memoryUsedGB = ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB
+    $totalMemoryGB = $os.TotalVisibleMemorySize / 1MB
+    $percentUsed = ($memoryUsedGB / $totalMemoryGB) * 100
+    
+    Write-LogMessage Info "Memory usage: $([math]::Round($percentUsed, 2))% ($([math]::Round($memoryUsedGB, 2))GB / $([math]::Round($totalMemoryGB, 2))GB)"
+    
+    if ($percentUsed -gt $Threshold) {
+        Write-LogMessage Warning "Memory usage is at $([math]::Round($percentUsed, 2))%. Threshold: $Threshold%"
+        return $false
+    }
+    return $true
+}
+
+# Create constructor functions for streaming writers
+function New-BaseStreamingWriter {
+    param(
+        [string]$FilePath,
+        [string]$WriterType = "Base"
+    )
+    
+    # Store the absolute path - ensure it's relative to current directory
+    if ([System.IO.Path]::IsPathRooted($FilePath)) {
+        $absolutePath = $FilePath
+    } else {
+        # Use PowerShell's current location for relative paths
+        $absolutePath = Join-Path (Get-Location).Path $FilePath
+    }
+
+    try {
+        # Ensure directory exists
+        $directory = [System.IO.Path]::GetDirectoryName($absolutePath)
+        if ($directory -and -not [System.IO.Directory]::Exists($directory)) {
+            [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+        }
+        
+        # Create the file with explicit encoding
+        $writer = New-Object System.IO.StreamWriter($absolutePath, $false, [System.Text.Encoding]::UTF8)
+        $writer.AutoFlush = $true
+        
+        # Verify file was created
+        if (Test-Path $absolutePath) {
+            Write-LogMessage Info "Created output file: $absolutePath"
+        } else {
+            throw "File was not created at: $absolutePath"
+        }
+        
+        # Return writer object with metadata
+        $writerObj = New-Object PSObject -Property @{
+            Writer = $writer
+            FilePath = $absolutePath
+            ItemCount = 0
+            WriterType = $WriterType
+        }
+        
+        return $writerObj
+    }
+    catch {
+        Write-LogMessage Error "Failed to create output file '$absolutePath': $_"
+        throw
+    }
+}
+
+function Close-StreamingWriter {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj
+    )
+    
+    try {
+        if ($WriterObj.Writer) {
+            $WriterObj.Writer.Flush()
+            $WriterObj.Writer.Close()
+            $WriterObj.Writer.Dispose()
+            $WriterObj.Writer = $null
+            
+            # Small delay to ensure file system has caught up
+            Start-Sleep -Milliseconds 100
+            
+            # Verify file exists and has content
+            if (Test-Path $WriterObj.FilePath) {
+                $fileInfo = Get-Item $WriterObj.FilePath
+                Write-LogMessage Success "Output written to $($WriterObj.FilePath)"
+                # Convert bytes to appropriate unit
+                $fileSize = $fileInfo.Length
+                if ($fileSize -ge 1MB) {
+                    Write-LogMessage Info "File size: $([math]::Round($fileSize/1MB, 2)) MB"
+                } elseif ($fileSize -ge 1KB) {
+                    Write-LogMessage Info "File size: $([math]::Round($fileSize/1KB, 2)) KB"
+                } else {
+                    Write-LogMessage Info "File size: $fileSize bytes"
+                }                
+            } else {
+                Write-LogMessage Error "File was not found after closing: $($WriterObj.FilePath)"
+            }
+        }
+    }
+    catch {
+        Write-LogMessage Error "Error closing file: $_"
+        Write-LogMessage Error $_.Exception.StackTrace
+    }
+}
+
+function New-StreamingBloodHoundWriter {
+    param(
+        [string]$FilePath
+    )
+    
+    $writerObj = New-BaseStreamingWriter -FilePath $FilePath -WriterType "BloodHound"
+    
+    # Add BloodHound-specific properties
+    $writerObj | Add-Member -MemberType NoteProperty -Name "FirstNode" -Value $true
+    $writerObj | Add-Member -MemberType NoteProperty -Name "FirstEdge" -Value $true
+    $writerObj | Add-Member -MemberType NoteProperty -Name "NodeCount" -Value 0
+    $writerObj | Add-Member -MemberType NoteProperty -Name "EdgeCount" -Value 0
+    
+    # Start JSON structure
+    $writerObj.Writer.WriteLine('{')
+    $writerObj.Writer.WriteLine('  "graph": {')
+    $writerObj.Writer.WriteLine('    "nodes": [')
+    $writerObj.Writer.Flush()
+    
+    return $writerObj
+}
+
+function Write-BloodHoundNode {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj,
+        
+        [Parameter(Mandatory=$true)]
+        [PSObject]$Node
+    )
+    
+    # Skip if we're already stopping
+    if ($script:stopProcessing) { return }
+    
+    try {
+        # Check file size limit
+        if (Test-FileSizeLimit -WriterObj $WriterObj -SizeLimitString $script:FileSizeLimit) {
+            $script:stopProcessing = $true
+            return
+        }
+        
+        # Show file size on first node write for this file
+        if ($WriterObj.NodeCount -eq 0) {
+            Show-CurrentFileSize -WriterObj $WriterObj
+        }
+        
+        # Show periodic file size update
+        if (Test-ShouldShowPeriodicUpdate) {
+            Show-CurrentFileSize -WriterObj $WriterObj -Context "periodic update"
+        }
+        
+        if (-not $WriterObj.FirstNode) {
+            $WriterObj.Writer.WriteLine(',')
+        }
+        $WriterObj.FirstNode = $false
+        $WriterObj.NodeCount++
+        $WriterObj.ItemCount++
+        
+        $json = $Node | ConvertTo-Json -Depth 10 -Compress
+        $WriterObj.Writer.Write('      ' + $json)
+        $WriterObj.Writer.Flush()
+    }
+    catch {
+        Write-LogMessage Error "Error writing node: $_"
+    }
+}
+
+function Write-BloodHoundEdge {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj,
+        
+        [Parameter(Mandatory=$true)]
+        [PSObject]$Edge
+    )
+    
+    # Skip if we're already stopping
+    if ($script:stopProcessing) { return }
+    
+    try {
+        # Check file size limit
+        if (Test-FileSizeLimit -WriterObj $WriterObj -SizeLimitString $script:FileSizeLimit) {
+            $script:stopProcessing = $true
+            return
+        }
+        
+        # Show periodic file size update
+        if (Test-ShouldShowPeriodicUpdate) {
+            Show-CurrentFileSize -WriterObj $WriterObj -Context "periodic update"
+        }
+        
+        # If this is the first edge ever, close nodes array and start edges array
+        if ($WriterObj.EdgeCount -eq 0 -and $WriterObj.NodeCount -gt 0) {
+            $WriterObj.Writer.WriteLine('')  # Close last node line
+            $WriterObj.Writer.WriteLine('    ],')
+            $WriterObj.Writer.WriteLine('    "edges": [')
+            $WriterObj.Writer.Flush()
+        }
+        
+        # Write comma if not first edge
+        if (-not $WriterObj.FirstEdge) {
+            $WriterObj.Writer.WriteLine(',')
+        }
+        $WriterObj.FirstEdge = $false
+        $WriterObj.EdgeCount++
+        $WriterObj.ItemCount++
+        
+        $json = $Edge | ConvertTo-Json -Depth 10 -Compress
+        $WriterObj.Writer.Write('      ' + $json)
+        $WriterObj.Writer.Flush()
+    }
+    catch {
+        Write-LogMessage Error "Error writing edge: $_"
+    }
+}
+
+function Close-BloodHoundWriter {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$WriterObj
+    )
+    
+    try {
+        # If we wrote nodes but no edges, close nodes array and add empty edges array
+        if ($WriterObj.NodeCount -gt 0 -and $WriterObj.EdgeCount -eq 0) {
+            $WriterObj.Writer.WriteLine('')
+            $WriterObj.Writer.WriteLine('    ],')
+            $WriterObj.Writer.WriteLine('    "edges": [')
+        }
+        
+        # Close the JSON structure
+        if ($WriterObj.EdgeCount -gt 0 -or $WriterObj.NodeCount -gt 0) {
+            $WriterObj.Writer.WriteLine('')
+        }
+        $WriterObj.Writer.WriteLine('    ],')
+        $WriterObj.Writer.WriteLine('    "metadata": {')
+        $WriterObj.Writer.WriteLine('      "source_kind": "SCCM_Base"')
+        $WriterObj.Writer.WriteLine('    }')
+        $WriterObj.Writer.WriteLine('  }')
+        $WriterObj.Writer.WriteLine('}')
+        
+        # Ensure everything is written
+        $WriterObj.Writer.Flush()
+                
+        Close-StreamingWriter -WriterObj $WriterObj
+    }
+    catch {
+        Write-LogMessage Error "Error closing BloodHound file: $_"
+        Write-LogMessage Error $_.Exception.StackTrace
+    }
+}
+
+function Export-BloodHoundData {
+    
+    # Report collection statistics
+    $totalTargets = $script:CollectionTargets.Count
+    $collectedTargets = ($script:CollectionTargets.Values | Where-Object { $_.Collected }).Count
+    $uncollectedTargets = $totalTargets - $collectedTargets
+    
+    Write-LogMessage Info "Collection Statistics:"
+    Write-LogMessage Info "Total targets identified: $totalTargets"
+    Write-LogMessage Success "Successfully collected: $collectedTargets"
+    Write-LogMessage Warning "Failed to collect: $uncollectedTargets"
+    
+    Write-LogMessage Info "Total nodes created: $($script:Nodes.Count)"
+    Write-LogMessage Info "Total edges created: $($script:Edges.Count)"
 
     # Set output directory
     if (-not $TempDir) {
@@ -4663,51 +5735,43 @@ function Export-BloodHoundData {
         New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
     }
     $bloodhoundFile = Join-Path $TempDir "sccm.json"
-    $bloodhoundJson | Out-File -FilePath $bloodhoundFile -Encoding UTF8
-
     $script:OutputFiles += $bloodhoundFile
     
-    if ($OutputFormat -eq "Zip") {
-        # Create ZIP file
-        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-        $zipFileName = "bloodhound-sccm-$timestamp.zip"
-        
-        if ($ZipDir) {
-            $zipPath = Join-Path $ZipDir $zipFileName
-        } else {
-            $zipPath = Join-Path (Get-Location).Path $zipFileName
-        }
-        
-        try {
-            if (Get-Command Compress-Archive -ErrorAction SilentlyContinue) {
-                Compress-Archive -Path $script:OutputFiles -DestinationPath $zipPath -CompressionLevel Optimal
-            } else {
-                # Fallback for older PowerShell
-                Add-Type -AssemblyName System.IO.Compression.FileSystem
-                [System.IO.Compression.ZipFile]::CreateFromDirectory($TempDir, $zipPath)
-            }
-            
-            $fileInfo = Get-Item $zipPath
-            Write-LogMessage Success "Created ZIP file: $zipPath"
-            Write-LogMessage Info "File size: $([math]::Round($fileInfo.Length/1MB, 2)) MB"
-            
-        } catch {
-            Write-LogMessage Error "Failed to create ZIP file: $_"
-        }
-    }
+    Write-LogMessage Info "Writing BloodHound data..."
 
-    # Cleanup temporary files
     try {
-        Remove-Item -Path $TempDir -Recurse -Force
-    } catch {
-        Write-LogMessage Error "Failed to cleanup temporary directory: $_"
+        $serverWriter = New-StreamingBloodHoundWriter -FilePath $bloodhoundFile
+        Write-LogMessage Info "Writing to file: $bloodhoundFile"
+        
+        # Write all nodes for this server
+        foreach ($node in $script:Nodes) {
+            Write-BloodHoundNode -WriterObj $serverWriter -Node $node
+        }
+        
+        # Write all edges for this server
+        foreach ($edge in $script:Edges) {
+            Write-BloodHoundEdge -WriterObj $serverWriter -Edge $edge
+        }
+        
+        Write-LogMessage Success "Wrote $(($script:Nodes).Count) nodes and $(($script:Edges).Count) edges"
+        
+        # Show final size before closing
+        Show-CurrentFileSize -WriterObj $serverWriter -Context "finalizing"
+
+        # Close this server's file
+        Close-BloodHoundWriter -WriterObj $serverWriter
+    }
+    catch {
+        Write-LogMessage Error "Failed to write BloodHound data to $bloodhoundFile`: $_"
+        if ($serverWriter) {
+            try { Close-BloodHoundWriter -WriterObj $serverWriter } catch {}
+        }
     }
 }
 
 #endregion
 
 #region Main Execution Logic
-
 function Start-SCCMCollection {
     Write-LogMessage Info "Initializing SCCM collection..."
     
@@ -4716,32 +5780,17 @@ function Start-SCCMCollection {
         Write-LogMessage Warning "Cannot specify both ComputerFile and SMSProvider"
         return
     }
-    
-    # Check for required modules
-    try {
-        if (Get-Module -ListAvailable -Name ActiveDirectory) {
-            Import-Module ActiveDirectory -ErrorAction SilentlyContinue
-            Write-LogMessage Success "Active Directory module loaded"
-            $script:ADModuleAvailable = $true
-        } else {
-            Write-LogMessage Warning "Active Directory module not available, using .NET fallback"
-            try {
-                Add-Type -AssemblyName System.DirectoryServices.AccountManagement
-                Add-Type -AssemblyName System.DirectoryServices
-                Write-LogMessage Success "DirectoryServices fallback initialized"
-            } catch {
-                Write-LogMessage Error "Failed to initialize DirectoryServices fallback: $_"
-            }
-        }
-    } catch {
-        Write-LogMessage Error "Failed to load Active Directory module: $_"
-    }
-    
+       
     # Determine collection strategy based on parameters
     if ($SMSProvider) {
         Write-LogMessage Info "Using SMS Provider mode: $SMSProvider"
 
         $collectionTarget = Add-DeviceToTargets -DeviceName $SMSProvider -Source "ScriptParameter-SMSProvider"
+
+        if (-not $collectionTarget) {
+            Write-LogMessage Error "Failed to add device to targets"
+            return
+        }
         
         # Only AdminService and WMI are applicable for SMS Provider mode
         if ($enableAdminService) {
@@ -4749,7 +5798,7 @@ function Start-SCCMCollection {
         }
         
         if ($enableWMI) {
-            Invoke-SmsProviderWmiCollection -CollectionTargets $script:CollectionTargets
+            Invoke-SmsProviderWmiCollection -CollectionTarget $collectionTarget
         }
         
     } elseif ($ComputerFile) {
@@ -4825,7 +5874,7 @@ function Start-SCCMCollection {
             
             # Phase 5: AdminService - On targets identified in previous phases
             if ($enableAdminService) {
-                foreach ($collectionTarget in $script:CollectionTargets) {
+                foreach ($collectionTarget in $script:CollectionTargets.Values) {
                     Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
                 }
             }
@@ -4861,96 +5910,10 @@ function Start-SCCMCollection {
             }
         }
     }
-    
-    # Report collection statistics
-    $totalTargets = $script:CollectionTargets.Count
-    $collectedTargets = ($script:CollectionTargets.Values | Where-Object { $_.Collected }).Count
-    $uncollectedTargets = $totalTargets - $collectedTargets
-    
-    Write-LogMessage "Collection Statistics:" -Level "Info"
-    Write-LogMessage "Total targets identified: $totalTargets" -Level "Info"
-    Write-LogMessage "Successfully collected: $collectedTargets" -Level "Success"
-    Write-LogMessage "Failed to collect: $uncollectedTargets" -Level "Warning"
-    
-    # Report collected data statistics
-    Write-LogMessage "Data Collection Summary:" -Level "Info"
-    Write-LogMessage "Sites: $($script:Sites.Count)" -Level "Info"
-    Write-LogMessage "Client Devices: $($script:ClientDevices.Count)" -Level "Info"
-    Write-LogMessage "Collections: $($script:Collections.Count)" -Level "Info"
-    Write-LogMessage "Security Roles: $($script:SecurityRoles.Count)" -Level "Info"
-    Write-LogMessage "Admin Users: $($script:AdminUsers.Count)" -Level "Info"
-    Write-LogMessage "Site System Roles: $($script:SiteSystemRoles.Count)" -Level "Info"
-    
-    # Post-processing and edge creation
-    #Invoke-PostProcessing
-    
-    # Report edge statistics
-    Write-LogMessage "Edge Creation Summary:" -Level "Info"
-    Write-LogMessage "Total nodes created: $($script:Nodes.Count)" -Level "Info"
-    Write-LogMessage "Total edges created: $($script:Edges.Count)" -Level "Info"
-    
-    # Export data
-    Export-BloodHoundData
-    
     Write-LogMessage "SCCM collection completed successfully!" -Level "Success"
 }
 
-#endregion
 
-#region Error Handling and Validation
-
-function Test-Prerequisites {
-    $issues = @()
-    
-    # Check PowerShell version
-    if ($PSVersionTable.PSVersion.Major -lt 4) {
-        $issues += "PowerShell 4.0 or higher is required"
-    }
-    
-    # Check if running in domain context
-    if (-not $script:Domain) {
-        $issues += "No domain context detected. Specify -Domain parameter or ensure machine is domain-joined"
-    }
-    
-    # Check permissions
-    $isAdmin = Test-AdminPrivileges
-    if (-not $isAdmin) {
-        Write-LogMessage Warning "Not running as administrator. Some collection methods may fail."
-    }
-    
-    # Validate ComputerFile if specified
-    if ($ComputerFile -and -not (Test-Path $ComputerFile)) {
-        $issues += "ComputerFile not found: $ComputerFile"
-    }
-    
-    # Validate output directories
-    if ($TempDir -and -not (Test-Path $TempDir)) {
-        try {
-            New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-        } catch {
-            $issues += "Cannot create TempDir: $TempDir"
-        }
-    }
-    
-    if ($ZipDir -and -not (Test-Path $ZipDir)) {
-        try {
-            New-Item -ItemType Directory -Path $ZipDir -Force | Out-Null
-        } catch {
-            $issues += "Cannot create ZipDir: $ZipDir"
-        }
-    }
-    
-    if ($issues.Count -gt 0) {
-        Write-LogMessage Error "Prerequisites check failed:"
-        foreach ($issue in $issues) {
-            Write-LogMessage Error "- $issue"
-        }
-        return $false
-    }
-    
-    Write-LogMessage Success "Prerequisites check passed"
-    return $true
-}
 
 #endregion
 
@@ -4958,19 +5921,192 @@ function Test-Prerequisites {
 
 # Main execution
 try {
+    # Display help text
+    if ($Help) {
+        Get-Help $MyInvocation.MyCommand.Path -Detailed
+        return
+    }
+
+    # Global variables
+    $script:CollectionTargets = @{}
+    $script:OutputFiles = @()
+    $script:UseNetFallback = $false
+    $script:FileSizeLimit = $FileSizeLimit
+    $script:LastFileSizeCheck = Get-Date
+    $script:FileSizeCheckInterval = $FileSizeUpdateInterval
+
+    # Initialize output structures
+    $script:Nodes = @()
+    $script:Edges = @()
+
+    # Script version information
+    $script:ScriptVersion = "1.0"
+    $script:ScriptName = "ConfigManBearPig"
+
+    if ($Version) {
+        Write-Host "$script:ScriptName version $script:ScriptVersion" -ForegroundColor Green
+        return
+    }
+
     Write-Host ("=" * 80 ) -ForegroundColor Cyan
     Write-Host "ConfigManBearPig - SCCM Data Collector for BloodHound" -ForegroundColor Cyan
     Write-Host "Version: $script:ScriptVersion" -ForegroundColor Cyan
     Write-Host "Collection Method: $CollectionMethods" -ForegroundColor Cyan
     Write-Host ("=" * 80) -ForegroundColor Cyan
     Write-Host ""
-    
+
     # Test prerequisites
     if (-not (Test-Prerequisites)) {
         Write-LogMessage Error "Prerequisites check failed. Exiting."
         exit 1
     }
+
+    if ($Domain) {
+        $script:Domain = $Domain
+    } else {
+        $script:Domain = $null
+    }
+    if ($DomainController) {
+        $script:DomainController = $DomainController
+    } else {
+        $script:DomainController = $null
+    }
+
+    if (Get-Module -ListAvailable -Name ActiveDirectory) {
+        try {
+            Import-Module ActiveDirectory -ErrorAction SilentlyContinue
+            Write-LogMessage Success "ActiveDirectory module loaded"
+        } catch {
+            Write-LogMessage Error "Failed to load ActiveDirectory module: $_"
+            return
+        }
+    } else {
+        Write-LogMessage Warning "ActiveDirectory module not found, using .NET DirectoryServices"
+        try {
+            Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction Stop
+            Add-Type -AssemblyName System.DirectoryServices -ErrorAction Stop
+            Write-LogMessage Success "DirectoryServices fallback initialized"
+            $script:UseNetFallback = $true
+        } catch {
+            Write-LogMessage Error "Failed to load .NET DirectoryServices assemblies: $_"
+            return
+        }
+    }
+
+    if (-not $script:Domain) {
+        try {
+            Write-LogMessage Warning "No domain provided and could not find `$env:USERDNSDOMAIN, trying computer's domain"
+            $script:Domain = (Get-CimInstance Win32_ComputerSystem).Domain
+            Write-LogMessage Info "Using computer's domain: $script:Domain"
+        } catch {
+            Write-LogMessage Error "Error getting computer's domain, using `$env:USERDOMAIN: $_"
+            $script:Domain = $env:USERDOMAIN
+        }
+    } 
+    else {
+        if (-not $script:DomainController) {
+            Write-LogMessage Warning "No domain controller provided, trying to find one"
+            try {
+                if (Get-Command -Name Get-ADDomainController -ErrorAction SilentlyContinue) {
+                    $dc = Get-ADDomainController -Discover -Domain $script:Domain -ErrorAction SilentlyContinue
+                    $script:DomainController = $dc.HostName[0]
+                } else {
+                    # Fallback using .NET
+                    $context = [System.DirectoryServices.ActiveDirectory.DirectoryContext]::new("Domain", $script:Domain)
+                    $gotDomain = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($context)
+                    $script:DomainController = $gotDomain.FindDomainController().Name
+                }
+            } catch {
+                Write-LogMessage Warning "Failed to find domain controller: $_"
+                return
+            }
+            if (-not $script:DomainController) {
+                Write-LogMessage Error "Failed to find domain controller"
+                return
+            }
+            Write-LogMessage Info "Using discovered domain controller: $script:DomainController"
+        } else {
+            Write-LogMessage Info "Using specified domain controller: $script:DomainController"
+        }
+    }
+    if (Test-DnsResolution -Domain $script:Domain) {
+        Write-LogMessage Info "DNS resolution successful"
+    } else {
+        Write-LogMessage Error "DNS resolution failed"
+        return
+    }
     
+    # Collection phases to run
+    $collectionMethodsSplit = $CollectionMethods -split "," | ForEach-Object { $_.Trim().ToUpper() }
+    $enableLDAP = $false
+    $enableLocal = $false
+    $enableDNS = $false
+    $enableRemoteRegistry = $false
+    $enableAdminService = $false
+    $enableWMI = $false
+    $enableHTTP = $false
+    $enableSMB = $false
+    
+    # Process each specified method
+    foreach ($method in $collectionMethodsSplit) {
+        switch ($method) {
+            "ALL" {
+                $enableLDAP = $true
+                $enableLocal = $true
+                $enableDNS = $true
+                $enableRemoteRegistry = $true
+                $enableAdminService = $true
+                $enableWMI = $true
+                $enableHTTP = $true
+                $enableSMB = $true
+            }
+            "LDAP" { $enableLDAP = $true }
+            "LOCAL" { $enableLocal = $true }
+            "DNS" { $enableDNS = $true }
+            "REMOTEREGISTRY" { $enableRemoteRegistry = $true }
+            "ADMINSERVICE" { $enableAdminService = $true }
+            "WMI" { $enableWMI = $true }
+            "HTTP" { $enableHTTP = $true }
+            "SMB" { $enableSMB = $true }
+            default {
+                Write-LogMessage Error "Unknown collection method: $method"
+            }
+        }
+    }
+    
+    # Parse SiteCodes parameter
+    $script:TargetSiteCodes = @()
+    if ($SiteCodes) {
+        if (Test-Path $SiteCodes) {
+            # File containing site codes
+            try {
+                $script:TargetSiteCodes = Get-Content $SiteCodes | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
+                Write-LogMessage Info "Loaded $($script:TargetSiteCodes.Count) site codes from file: $SiteCodes"
+            } catch {
+                Write-LogMessage Error "Failed to read site codes file: $_"
+                return
+            }
+        } else {
+            # Comma-separated string
+            $script:TargetSiteCodes = $SiteCodes -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+            Write-LogMessage Info "Targeting site codes: $($script:TargetSiteCodes -join ', ')"
+        }
+    }
+    
+    # Disable certificate validation
+    Add-Type @"
+        using System.Net;
+        using System.Security.Cryptography.X509Certificates;
+        public class TrustAllCertsPolicy : ICertificatePolicy {
+            public bool CheckValidationResult(
+                ServicePoint srvPoint, X509Certificate certificate,
+                WebRequest request, int certificateProblem) {
+                return true;
+            }
+        }
+"@
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+
     # Start collection
     Start-SCCMCollection
     
@@ -4979,10 +6115,164 @@ try {
     Write-LogMessage Error "Stack trace: $($_.Exception.StackTrace)"
     exit 1
 } finally {
+    # Always output what we can even if the script was stopped
+    Export-BloodHoundData
+    if ($script:OutputFiles.Count -gt 0) {
+        Write-LogMessage Info "Output files created:"
+        $totalSize = 0
+        
+        foreach ($file in $script:OutputFiles) {
+            if (Test-Path $file) {
+                $fileInfo = Get-Item $file
+                $totalSize += $fileInfo.Length
+                
+                $sizeDisplay = if ($fileInfo.Length -ge 1MB) {
+                    "$([math]::Round($fileInfo.Length/1MB, 2)) MB"
+                } elseif ($fileInfo.Length -ge 1KB) {
+                    "$([math]::Round($fileInfo.Length/1KB, 2)) KB"
+                } else {
+                    "$($fileInfo.Length) bytes"
+                }
+                
+                Write-LogMessage Info "  $file - $sizeDisplay" 
+            }
+        }
+        
+        # Show total size
+        $totalSizeDisplay = if ($totalSize -ge 1GB) {
+            "$([math]::Round($totalSize/1GB, 2)) GB"
+        } elseif ($totalSize -ge 1MB) {
+            "$([math]::Round($totalSize/1MB, 2)) MB"
+        } elseif ($totalSize -ge 1KB) {
+            "$([math]::Round($totalSize/1KB, 2)) KB"
+        } else {
+            "$totalSize bytes"
+        }
+        
+        if ($stopProcessing) {
+            $foregroundColor = "Red"
+        } else {
+            $foregroundColor = "Green"
+        }
+        Write-LogMessage Info "Total size: $totalSizeDisplay across $($script:OutputFiles.Count) files"
+        
+        # Automatically compress if CompressOutput is specified or if there are multiple files
+        if ($script:OutputFiles.Count -gt 0) {
+
+            try {
+                # Generate timestamp for unique filename
+                $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+                $zipFileName = "bloodhound-sccm-$timestamp.zip"
+                # Always output zip to current directory
+                if ($ZipDir) {
+                    $zipFilePath = $ZipDir
+                } else {
+                    $zipFilePath = Join-Path (Get-Location).Path $zipFileName
+                }
+
+                # PowerShell version check
+                if (Get-Command Compress-Archive -ErrorAction SilentlyContinue) {
+                    # PowerShell 5.0+ has built-in compression
+                    Compress-Archive -Path $script:OutputFiles -DestinationPath $zipFilePath -CompressionLevel Optimal
+                } else {
+                    # For older PowerShell versions, use .NET
+                    Write-LogMessage Info "Using .NET compression for PowerShell v$($PSVersionTable.PSVersion.Major)"
+                    
+                    # Load the required assembly
+                    Add-Type -AssemblyName System.IO.Compression.FileSystem
+                    
+                    # Create the ZIP file
+                    $compressionLevel = [System.IO.Compression.CompressionLevel]::Optimal
+                    
+                    # Ensure the ZIP file doesn't already exist
+                    if (Test-Path $zipFilePath) {
+                        Remove-Item $zipFilePath -Force
+                    }
+                    
+                    # Create the ZIP archive
+                    $zipArchive = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
+                    
+                    try {
+                        foreach ($file in $script:OutputFiles) {
+                            if (Test-Path $file) {
+                                Write-LogMessage Info "  Adding: $(Split-Path $file -Leaf)"
+                                $entryName = [System.IO.Path]::GetFileName($file)
+                                $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipArchive, $file, $entryName, $compressionLevel)
+                            }
+                        }
+                    }
+                    finally {
+                        # Always dispose of the ZIP archive
+                        if ($zipArchive) {
+                            $zipArchive.Dispose()
+                        }
+                    }
+                }
+                
+                # Verify ZIP was created
+                if (Test-Path $zipFilePath) {
+                    $zipInfo = Get-Item $zipFilePath
+                    $zipSizeDisplay = if ($zipInfo.Length -ge 1MB) {
+                        "$([math]::Round($zipInfo.Length/1MB, 2)) MB"
+                    } elseif ($zipInfo.Length -ge 1KB) {
+                        "$([math]::Round($zipInfo.Length/1KB, 2)) KB"
+                    } else {
+                        "$($zipInfo.Length) bytes"
+                    }
+                    
+                    Write-LogMessage Success "ZIP archive created successfully: $zipFileName ($zipSizeDisplay)"
+                    
+                    # Calculate compression ratio
+                    if ($totalSize -gt 0) {
+                        $compressionRatio = [math]::Round((1 - ($zipInfo.Length / $totalSize)) * 100, 1)
+                        Write-LogMessage Info "Compression ratio: $compressionRatio% reduction"
+                    }
+                    
+                    # Delete original files
+                    Write-LogMessage Info "Deleting original files..."
+                    $deletedCount = 0
+                    $failedDeletes = @()
+                    
+                    foreach ($file in $script:OutputFiles) {
+                        if (Test-Path $file) {
+                            try {
+                                Remove-Item $file -Force -ErrorAction Stop
+                                $deletedCount++
+                            } catch {
+                                $failedDeletes += $file
+                                Write-LogMessage Warning "Failed to delete: $(Split-Path $file -Leaf) - $_"
+                            }
+                        }
+                    }
+                    
+                    if ($deletedCount -gt 0) {
+                        Write-LogMessage Success "Successfully deleted $deletedCount original files"
+                    }
+                    
+                    if ($failedDeletes.Count -gt 0) {
+                        Write-LogMessage Warning "Failed to delete $($failedDeletes.Count) files. Manual cleanup required."
+                    }
+                    
+                    # Final output location
+                    $finalOutput = (Get-Item $zipFilePath).FullName
+                    Write-LogMessage Success "Final output: $finalOutput"
+                } else {
+                    Write-Error "Failed to create ZIP archive"
+                }
+            } catch {
+                Write-LogMessage Error "Error creating ZIP archive: $_"
+                Write-LogMessage Warning "Original files have been preserved"
+            }
+        } 
+    } else {
+        Write-LogMessage Warning "No output files were created"
+    }
+
     Write-Host ""
     Write-Host ("=" * 80) -ForegroundColor Cyan
     Write-Host "ConfigManBearPig execution completed" -ForegroundColor Cyan
     Write-Host ("=" * 80) -ForegroundColor Cyan
 }
+
 
 #endregion
