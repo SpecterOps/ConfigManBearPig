@@ -1265,8 +1265,11 @@ function Add-Edge {
     }
 
     # Deduplicate: skip if identical edge already exists
-    $duplicate = $script:Edges | Where-Object { $_.start -eq $Start -and $_.kind -eq $Kind -and $_.end -eq $End }
-    if ($duplicate) { return }
+    $duplicate = $script:Edges | Where-Object { $_.start.value -eq $Start -and $_.kind -eq $Kind -and $_.end.value -eq $End }
+    if ($duplicate) {
+        Write-LogMessage Verbose ("Skipping duplicate edge {0} -[{1}]-> {2}" -f $Start, $Kind, $End)
+        return
+    }
 
     # Filter out null properties
     $cleanProperties = @{}
