@@ -7,15 +7,16 @@ Author: Chris Thompson (@_Mayyhem) at SpecterOps
 
 Purpose:
     Collects BloodHound OpenGraph compatible SCCM data following these ordered steps:
-    1. LDAP (identify targets in System Management container)
-    2. Local (data available when running on an SCCM client)
-    3. DNS (management points published to DNS)
-    4. Remote Registry (on targets identified in previous phases)
-    5. MSSQL (on targets identified in previous phases)
-    6. AdminService (on targets identified in previous phases)
-    7. WMI (if AdminService collection fails)
-    8. HTTP (fallback method)
-    9. SMB (fallback method)
+    1.  LDAP (identify sites, site servers, fallback status points, and management points in System Management container)
+    2.  DHCP (identify PXE-enabled distribution points)
+    3.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
+    4.  DNS (identify management points published to DNS)
+    5.  Remote Registry (identify site servers, site databases, and current users on targets)
+    6.  MSSQL (check database servers for Extended Protection for Authentication)
+    7.  AdminService (collect information from SMS Providers with privileges to query site information)
+    8.  WMI (if AdminService collection fails)
+    9.  HTTP (identify management points and distribution points via exposed web services)
+    10. SMB (identify site servers and management points via file shares)
       
 System Requirements:
     - PowerShell 4.0 or higher
@@ -29,6 +30,7 @@ Display usage information
 Collection methods to use (comma-separated):
     - All (default): All SCCM collection methods
     - LDAP
+    - DHCP
     - Local
     - DNS
     - RemoteRegistry
@@ -39,7 +41,7 @@ Collection methods to use (comma-separated):
     - SMB
 
 .PARAMETER ComputerFile
-Specify the path to a file containing computer targets (limits to Remote Registry, AdminService, HTTP, SMB)
+Specify the path to a file containing computer targets (limits to Remote Registry, MSSQL, AdminService, HTTP, SMB)
 
 .PARAMETER Computers
 Specify a comma-separated list of computer names or IP addresses to target (limits to Remote Registry, MSSQL, AdminService, WMI, HTTP, SMB)
@@ -218,7 +220,7 @@ function Test-Prerequisites {
 #region Phase Orchestration
 
 # Phases that run ONCE for the whole run (can add targets)
-$script:PhasesOnce    = @('LDAP','Local','DNS')
+$script:PhasesOnce    = @('LDAP','DHCP','Local','DNS')
 
 # Phases that run PER HOST
 $script:PhasesPerHost = @('RemoteRegistry','MSSQL','AdminService','WMI','HTTP','SMB')
@@ -231,6 +233,7 @@ $script:AllPhases = $script:PhasesOnce + $script:PhasesPerHost
 #   - Per-host phases: { param($Target) <work per device> }
 $script:PhaseActionsOnce = @{
     LDAP = { param()  Write-LogMessage Verbose "LDAP phase starting"; Invoke-LDAPCollection; }
+    DHCP = { param()  Write-LogMessage Verbose "DHCP phase starting"; Invoke-DHCPCollection; }
     Local = { param() Write-LogMessage Verbose "Local phase starting"; Invoke-LocalCollection; }
     DNS = { param()   Write-LogMessage Verbose "DNS phase starting"; Invoke-DNSCollection; }
 }
@@ -240,8 +243,8 @@ $script:PhaseActionsPerHost = @{
     MSSQL = { param($Target) Write-LogMessage Verbose "MSSQL -> $($Target.Hostname)"; Invoke-MSSQLCollection -CollectionTarget $Target; }
     AdminService = { param($Target)   Write-LogMessage Verbose "AdminService -> $($Target.Hostname)"; Invoke-AdminServiceCollection -CollectionTarget $Target; }
     WMI = { param($Target)  Write-LogMessage Verbose "WMI -> $($Target.Hostname)"; Invoke-WMICollection -Target $Target; }
-    HTTP = { param($Target) Write-LogMessage Verbose "HTTP -> $($Target.Hostname)"; Invoke-HTTPCollection -Target $Target; }
-    SMB = { param($Target)  Write-LogMessage Verbose "SMB -> $($Target.Hostname)"; Invoke-SMBCollection -Target $Target; }
+    HTTP = { param($Target) Write-LogMessage Verbose "HTTP -> $($Target.Hostname)"; Invoke-HTTPCollection -CollectionTarget $Target; }
+    SMB = { param($Target)  Write-LogMessage Verbose "SMB -> $($Target.Hostname)"; Invoke-SMBCollection -CollectionTarget $Target; }
 }
 
 function Get-SelectedPhases {
@@ -2435,6 +2438,282 @@ function Invoke-LDAPCollection {
         Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
     } catch {
         Write-LogMessage "LDAP collection failed: $_" -Level "Error"
+    }
+}
+
+function Invoke-DHCPCollection {
+    Write-LogMessage Info "Starting DHCP collection..."
+    try {
+        # Helper: TFTP reachability test (send RRQ and accept ERROR or DATA)
+        function Test-TftpReachable {
+            param([string]$TftpHost, [string]$File = "pxecheck.bin", [int]$TimeoutMs = 1500)
+            try {
+                $udp = New-Object System.Net.Sockets.UdpClient
+                $endp = New-Object System.Net.IPEndPoint(([System.Net.Dns]::GetHostAddresses($TftpHost) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1),69)
+                if (-not $endp) { return $false }
+                # RRQ: [0x00,0x01] + filename + 0x00 + 'octet' + 0x00
+                $fn = [System.Text.Encoding]::ASCII.GetBytes($File)
+                $mode = [System.Text.Encoding]::ASCII.GetBytes('octet')
+                $payload = New-Object System.IO.MemoryStream
+                $bw = New-Object System.IO.BinaryWriter($payload)
+                $bw.Write([byte]0); $bw.Write([byte]1)
+                $bw.Write($fn); $bw.Write([byte]0)
+                $bw.Write($mode); $bw.Write([byte]0)
+                $bw.Flush()
+                $bytes = $payload.ToArray(); $bw.Dispose(); $payload.Dispose()
+                [void]$udp.Send($bytes,$bytes.Length,$endp)
+                $udp.Client.ReceiveTimeout = $TimeoutMs
+                try { $remote = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any,0); $null = $udp.Receive([ref]$remote); $udp.Close(); return $true } catch { $udp.Close(); return $false }
+            } catch { return $false }
+        }
+
+        # Helper: robust option 66 decode (string or IPv4 bytes)
+        function Convert-Opt66ToHost {
+            param([byte[]]$Val)
+            if (-not $Val) { return $null }
+            if ($Val.Length -eq 4) {
+                try { return (New-Object System.Net.IPAddress -ArgumentList $Val).ToString() } catch { }
+            }
+            try { return [System.Text.Encoding]::ASCII.GetString($Val) } catch { return $null }
+        }
+
+        # Build PXE-oriented DHCPINFORM (port 4011) and parse replies
+        # 1) Get MAC
+        $mac = [byte[]](0,0,0,0,0,0)
+        $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Where-Object { $_.OperationalStatus -eq 'Up' -and $_.NetworkInterfaceType -ne 'Loopback' }
+        foreach ($n in $nics) {
+            $bytes = $n.GetPhysicalAddress().GetAddressBytes()
+            if ($bytes.Length -eq 6) { $mac = $bytes; break }
+        }
+
+        # 2) Create BOOTP header (236 bytes)
+        $ms = New-Object System.IO.MemoryStream
+        $bw = New-Object System.IO.BinaryWriter($ms)
+        $rand = New-Object System.Random
+        $xidBuf = New-Object byte[] 4; $rand.NextBytes($xidBuf)
+        $bw.Write([byte]1)  # op
+        $bw.Write([byte]1)  # htype
+        $bw.Write([byte]6)  # hlen
+        $bw.Write([byte]0)  # hops
+        $bw.Write($xidBuf)  # xid (acceptable for our purposes)
+        $bw.Write([byte[]](0,0)) # secs
+        $bw.Write([byte[]](0x80,0x00)) # flags: broadcast
+        $bw.Write([byte[]](0,0,0,0)) # ciaddr
+        $bw.Write([byte[]](0,0,0,0)) # yiaddr
+        $bw.Write([byte[]](0,0,0,0)) # siaddr
+        $bw.Write([byte[]](0,0,0,0)) # giaddr
+        $chaddr = New-Object byte[] 16
+        [Array]::Copy($mac,0,$chaddr,0,6)
+        $bw.Write($chaddr)           # chaddr
+        $bw.Write((New-Object byte[] 64))  # sname
+        $bw.Write((New-Object byte[] 128)) # file
+        # magic cookie
+        $bw.Write([byte[]](99,130,83,99))
+        # options: 53=Inform, 60='PXEClient', 55=request (60,66,67)
+        $bw.Write([byte]53); $bw.Write([byte]1); $bw.Write([byte]8)
+        $vendor = [System.Text.Encoding]::ASCII.GetBytes('PXEClient')
+        $bw.Write([byte]60); $bw.Write([byte]$vendor.Length); $bw.Write($vendor)
+        $bw.Write([byte]55); $bw.Write([byte]3); $bw.Write([byte[]](60,66,67))
+        $bw.Write([byte]255)  # end
+        $payload = $ms.ToArray()
+        $bw.Dispose(); $ms.Dispose()
+
+        # 3) Send to broadcast:4011 and collect responses briefly
+        $udp = New-Object System.Net.Sockets.UdpClient
+        $udp.EnableBroadcast = $true
+        $remote = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Broadcast,4011)
+        [void]$udp.Send($payload,$payload.Length,$remote)
+        $udp.Client.ReceiveTimeout = 2000
+
+        $responses = @()
+        $start = Get-Date
+        while ((Get-Date) - $start -lt [TimeSpan]::FromMilliseconds(2000)) {
+            try {
+                $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any,0)
+                $buf = $udp.Receive([ref]$ep)
+                if ($buf) { $responses += [PSCustomObject]@{ Data = $buf; From = $ep } }
+            } catch { break }
+        }
+        $udp.Close()
+
+        if (-not $responses -or $responses.Count -eq 0) {
+            Write-LogMessage Info "No PXE (proxy DHCP) responses observed"
+            return
+        }
+
+        foreach ($r in $responses) {
+            $data = $r.Data
+            if ($data.Length -lt 240) { continue }
+            # siaddr (bytes 20..23)
+            $si = New-Object byte[] 4; [Array]::Copy($data,20,$si,0,4)
+            $siIp = (New-Object System.Net.IPAddress -ArgumentList $si).ToString()
+            # file path (108..235)
+            $fileBytes = @(); for ($i=108; $i -le 235 -and $i -lt $data.Length; $i++) { $fileBytes += $data[$i] }
+            $fileStr = ([System.Text.Encoding]::ASCII.GetString([byte[]]$fileBytes)).Trim([char]0)
+            # options start at 240
+            $vendor = $null; $tftpIp = $null; $bootOpt = $null
+            if ($data[236] -eq 99 -and $data[237] -eq 130 -and $data[238] -eq 83 -and $data[239] -eq 99) {
+                $idx = 240
+                while ($idx -lt $data.Length) {
+                    $code = [int]$data[$idx]; $idx++
+                    if ($code -eq 255) { break }
+                    if ($code -eq 0) { continue }
+                    if ($idx -ge $data.Length) { break }
+                    $len = [int]$data[$idx]; $idx++
+                    if ($idx + $len -gt $data.Length) { break }
+                    $val = New-Object byte[] $len; [Array]::Copy($data,$idx,$val,0,$len); $idx += $len
+                    switch ($code) {
+                        60 { $vendor = [System.Text.Encoding]::ASCII.GetString($val) }
+                        66 { $tftpIp = Convert-Opt66ToHost -Val $val }
+                        67 { $bootOpt = [System.Text.Encoding]::ASCII.GetString($val) }
+                    }
+                }
+            }
+
+            $isPXE = $false
+            if ($vendor -and $vendor -match 'PXEClient') { $isPXE = $true }
+            if ($fileStr) { $isPXE = $true }
+            if ($bootOpt) { $isPXE = $true }
+
+            $hintIp = $tftpIp
+            if (-not $hintIp -and $siIp -and $siIp -ne '0.0.0.0') { $hintIp = $siIp }
+            if (-not $hintIp) { $hintIp = $r.From.Address.ToString() }
+
+            $name = $hintIp
+            try { $name = ([System.Net.Dns]::GetHostEntry($hintIp)).HostName } catch { }
+
+            if ($isPXE) {
+                Write-LogMessage Success ("Found PXE server hint via DHCP: $name (nextServer=$siIp tftp=$tftpIp bootfile=$fileStr vendor=$vendor)")
+                $t = Add-DeviceToTargets -DeviceName $name -Source "DHCP-PXE"
+                if ($t -and $t.ADObject) {
+                    $bootValue = $fileStr
+                    if ($bootOpt) { $bootValue = $bootOpt }
+                    $tftpReachable = $null
+                    if ($tftpIp) { $tftpReachable = (Test-TftpReachable -TftpHost $tftpIp -File $bootValue) }
+                    Add-Node -Id $t.ADObject.SID -Kinds @("Computer","Base") -PSObject $t.ADObject -Properties @{
+                        collectionSource = @("DHCP-PXE")
+                        networkBootServer = $true
+                        isPXEServer = $true
+                        pxeVendorClass = $vendor
+                        pxeNextServer = $siIp
+                        pxeBootFile = $bootValue
+                        tftpReachable = $tftpReachable
+                    }
+                }
+            } else {
+                Write-LogMessage Verbose ("DHCP proxy responder: $name")
+            }
+        }
+
+        # Also try a standard DHCPDISCOVER on port 67 to tag servers and catch any PXE hints in offers
+        # Build a minimal DHCPDISCOVER (message type 1) using same BOOTP builder
+        $ms2 = New-Object System.IO.MemoryStream
+        $bw2 = New-Object System.IO.BinaryWriter($ms2)
+        $rand2 = New-Object System.Random
+        $xid2 = New-Object byte[] 4; $rand2.NextBytes($xid2)
+        $bw2.Write([byte]1); $bw2.Write([byte]1); $bw2.Write([byte]6); $bw2.Write([byte]0)
+        $bw2.Write($xid2); $bw2.Write([byte[]](0,0)); $bw2.Write([byte[]](0x80,0x00))
+        $bw2.Write([byte[]](0,0,0,0)); $bw2.Write([byte[]](0,0,0,0)); $bw2.Write([byte[]](0,0,0,0)); $bw2.Write([byte[]](0,0,0,0))
+        $c2 = New-Object byte[] 16; [Array]::Copy($mac,0,$c2,0,6); $bw2.Write($c2)
+        $bw2.Write((New-Object byte[] 64)); $bw2.Write((New-Object byte[] 128))
+        $bw2.Write([byte[]](99,130,83,99))
+        # options: 53=Discover, 55=request params (1,3,6,15,60,66,67), 60='PXEClient'
+        $bw2.Write([byte]53); $bw2.Write([byte]1); $bw2.Write([byte]1)
+        $bw2.Write([byte]55); $bw2.Write([byte]7); $bw2.Write([byte[]](1,3,6,15,60,66,67))
+        $v2 = [System.Text.Encoding]::ASCII.GetBytes('PXEClient'); $bw2.Write([byte]60); $bw2.Write([byte]$v2.Length); $bw2.Write($v2)
+        $bw2.Write([byte]255)
+        $bw2.Flush(); $discover = $ms2.ToArray(); $bw2.Dispose(); $ms2.Dispose()
+
+        $uc = New-Object System.Net.Sockets.UdpClient
+        $uc.EnableBroadcast = $true
+        # Try to bind to client port 68 to receive standard DHCP offers; fall back silently if unavailable
+        try {
+            $uc.Client.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket,[System.Net.Sockets.SocketOptionName]::ReuseAddress,$true)
+            $uc.Client.Bind((New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any,68)))
+        } catch { Write-LogMessage Verbose "Could not bind to UDP 68 for DHCP offers; falling back to ephemeral port." }
+        $srvEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Broadcast,67)
+        [void]$uc.Send($discover,$discover.Length,$srvEP)
+        $uc.Client.ReceiveTimeout = 1500
+        $dhcpOffers = @()
+        $st = Get-Date
+        while ((Get-Date) - $st -lt [TimeSpan]::FromMilliseconds(1500)) {
+            try { $rep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any,0); $dat = $uc.Receive([ref]$rep); if ($dat) { $dhcpOffers += [PSCustomObject]@{ Data=$dat; From=$rep } } } catch { break }
+        }
+        $uc.Close()
+
+        $seen67 = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($resp in $dhcpOffers) {
+            $fromIp = $resp.From.Address.ToString()
+            if (-not $seen67.Add($fromIp)) { continue }
+            $data = $resp.Data
+            if ($data.Length -lt 240) { continue }
+
+            # Parse minimal fields/options
+            $si = New-Object byte[] 4; [Array]::Copy($data,20,$si,0,4)
+            $siIp = (New-Object System.Net.IPAddress -ArgumentList $si).ToString()
+            $vendor = $null; $tftp = $null; $boot = $null
+            if ($data[236] -eq 99 -and $data[237] -eq 130 -and $data[238] -eq 83 -and $data[239] -eq 99) {
+                $i = 240
+                while ($i -lt $data.Length) {
+                    $code = [int]$data[$i]; $i++
+                    if ($code -eq 255) { break }
+                    if ($code -eq 0) { continue }
+                    if ($i -ge $data.Length) { break }
+                    $len = [int]$data[$i]; $i++
+                    if ($i + $len -gt $data.Length) { break }
+                    $val = New-Object byte[] $len; [Array]::Copy($data,$i,$val,0,$len); $i += $len
+                    switch ($code) {
+                        60 { $vendor = [System.Text.Encoding]::ASCII.GetString($val) }
+                        66 { $tftp = Convert-Opt66ToHost -Val $val }
+                        67 { $boot = [System.Text.Encoding]::ASCII.GetString($val) }
+                    }
+                }
+            }
+
+            # Add/tag DHCP server and optional PXE hint if present
+            $name = $fromIp; try { $name = ([System.Net.Dns]::GetHostEntry($fromIp)).HostName } catch { }
+            $target = Add-DeviceToTargets -DeviceName $name -Source "DHCP-Discover"
+            if ($target -and $target.ADObject) {
+                Add-Node -Id $target.ADObject.SID -Kinds @("Computer","Base") -PSObject $target.ADObject -Properties @{
+                    collectionSource = @("DHCP-Discover")
+                    isDHCPServer = $true
+                }
+            }
+
+            $hasPXEHint = $false
+            if ($vendor -and $vendor -match 'PXEClient') { $hasPXEHint = $true }
+            if ($boot) { $hasPXEHint = $true }
+            if ($siIp -and $siIp -ne '0.0.0.0') { $hasPXEHint = $true }
+            if ($tftp) { $hasPXEHint = $true }
+
+            if ($hasPXEHint) {
+                $pxeHost = $tftp; if (-not $pxeHost -and $siIp -and $siIp -ne '0.0.0.0') { $pxeHost = $siIp }
+                if ($pxeHost) {
+                    $pxeName = $pxeHost; try { $pxeName = ([System.Net.Dns]::GetHostEntry($pxeHost)).HostName } catch { }
+                    $p = Add-DeviceToTargets -DeviceName $pxeName -Source "DHCP-Discover"
+                    if ($p -and $p.ADObject) {
+                        $tftpReach = $null
+                        if ($tftp) {
+                            $rrqFile = 'pxecheck.bin'
+                            if ($boot) { $rrqFile = $boot }
+                            $tftpReach = (Test-TftpReachable -TftpHost $tftp -File $rrqFile)
+                        }
+                        Add-Node -Id $p.ADObject.SID -Kinds @("Computer","Base") -PSObject $p.ADObject -Properties @{
+                            collectionSource = @("DHCP-Discover")
+                            networkBootServer = $true
+                            isPXEServer = $true
+                            pxeVendorClass = $vendor
+                            pxeNextServer = $siIp
+                            pxeBootFile = $boot
+                            tftpReachable = $tftpReach
+                        }
+                    }
+                }
+            }
+        }
+        Write-LogMessage Success "DHCP collection completed"
+    } catch {
+        Write-LogMessage Error "DHCP collection failed: $_"
     }
 }
 
@@ -5891,7 +6170,7 @@ function Invoke-HTTPCollection {
                             }
                         } catch {
                             # Endpoint not accessible, move to next protocol
-                            Write-LogMessage Verbose "Management point endpoint not accessible on $endpoint`:`n$_"
+                            Write-LogMessage Verbose "Management point endpoint not accessible on $endpoint`: $_"
                             break
                         }
                     }
@@ -5915,7 +6194,7 @@ function Invoke-HTTPCollection {
                             if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq "Unauthorized") {
                                 $isDP = $true
                             } else {
-                                Write-LogMessage Verbose "Distribution point endpoint not accessible on $endpoint`:`n$_"
+                                Write-LogMessage Verbose "Distribution point endpoint not accessible on $endpoint`: $_"
                             }
                         }
 
@@ -7718,6 +7997,7 @@ try {
     # Collection phases to run
     $collectionMethodsSplit = $CollectionMethods -split "," | ForEach-Object { $_.Trim().ToUpper() }
     $enableLDAP = $false
+    $enableDHCP = $false
     $enableLocal = $false
     $enableDNS = $false
     $enableRemoteRegistry = $false
@@ -7732,6 +8012,7 @@ try {
         switch ($method) {
             "ALL" {
                 $enableLDAP = $true
+                $enableDHCP = $true
                 $enableLocal = $true
                 $enableDNS = $true
                 $enableRemoteRegistry = $true
@@ -7742,6 +8023,7 @@ try {
                 $enableSMB = $true
             }
             "LDAP" { $enableLDAP = $true }
+            "DHCP" { $enableDHCP = $true }
             "LOCAL" { $enableLocal = $true }
             "DNS" { $enableDNS = $true }
             "REMOTEREGISTRY" { $enableRemoteRegistry = $true }
