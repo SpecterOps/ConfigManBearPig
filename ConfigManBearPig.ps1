@@ -6043,6 +6043,13 @@ function Invoke-HTTPCollection {
         $target = $CollectionTarget.Hostname
         Write-LogMessage Info "Attempting HTTP collection on: $target"
         
+        # First, attempt to detect if this MP's site signing certificate issuer indicates a Site Server
+        try {
+            Get-ManagementPointCertIssuer -CollectionTarget $CollectionTarget | Out-Null
+        } catch {
+            Write-LogMessage Verbose "sitesigncert issuer probe failed or not applicable on ${target}: $_"
+        }
+        
         # Skip if this target has already been fully collected by another method
         if ($script:CollectionTargets[$target] -and $script:CollectionTargets[$target]["Collected"]) {
             Write-LogMessage Warning "Target $target already collected, skipping HTTP"
@@ -6226,6 +6233,80 @@ function Invoke-HTTPCollection {
         }
     } catch {}
     Write-LogMessage Success "HTTP collection completed"
+}
+
+function Get-ManagementPointCertIssuer {
+    param(
+        $CollectionTarget
+    )
+
+    try {
+        $target = $CollectionTarget.Hostname
+        if (-not $target) { return }
+
+        Write-LogMessage Verbose "Probing MP site signing certificate issuer on: $target"
+
+        $issuerCN = $null
+        $protocols = @('http','https')
+        foreach ($protocol in $protocols) {
+            $endpoint = "$protocol`://$target/SMS_MP/.sms_aut?sitesigncert"
+            try {
+                $resp = Invoke-HttpRequest $endpoint
+                if ($resp -and $resp.StatusCode -eq 200 -and $resp.Content) {
+                    # Extract the hex-encoded DER from the X509Certificate element content (ignore attributes like Signature)
+                    $hex = $null
+                    try {
+                        $xml = [xml]$resp.Content
+                        $certNode = $xml.SelectSingleNode('//X509Certificate')
+                        if ($certNode -and $certNode.InnerText) {
+                            $hex = ($certNode.InnerText).Trim()
+                        }
+                    } catch {
+                        Write-LogMessage Verbose "Failed to parse XML from sitesigncert on ${target}: $_"
+                    }
+
+                    if ($hex -and ($hex.Length % 2 -eq 0) -and $hex.Length -ge 20) {
+                        $bytes = New-Object byte[] ($hex.Length/2)
+                        for ($i=0; $i -lt $bytes.Length; $i++) {
+                            $bytes[$i] = [Convert]::ToByte($hex.Substring($i*2,2),16)
+                        }
+                        try {
+                            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes)
+                            $issuer = $cert.Issuer
+                            if ($issuer -match 'CN\s*=\s*([^,]+)') { $issuerCN = $matches[1].Trim() }
+                            if (-not $issuerCN) {
+                                # Fallback to simple name lookup on issuer
+                                $issuerCN = $cert.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $true)
+                            }
+                            Write-LogMessage Verbose "sitesigncert issuer CN: $issuerCN"
+                        } catch {
+                            Write-LogMessage Verbose "Failed to parse certificate from sitesigncert on ${target}: $_"
+                        }
+                    } else {
+                        Write-LogMessage Verbose "sitesigncert response did not contain a valid hex payload"
+                    }
+                }
+            } catch {
+                Write-LogMessage Verbose "sitesigncert endpoint not accessible via ${protocol} on ${target}: $_"
+            }
+
+            if ($issuerCN) { break }
+        }
+
+        if ($issuerCN -and ($issuerCN -match '(?i)^Site Server$' -or $issuerCN -match '(?i)Site Server')) {
+            Write-LogMessage Success "Detected Site Server certificate issuer via sitesigncert"
+            # Attach role to the computer node
+            $device = Add-DeviceToTargets -DeviceName $target -Source "HTTP-sitesigncert"
+            if ($device -and $device.ADObject -and $device.ADObject.SID) {
+                Add-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
+                    collectionSource = @("HTTP-sitesigncert")
+                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@${($CollectionTarget.SiteCode)}" })")
+                }
+            }
+        }
+    } catch {
+        Write-LogMessage Verbose "Get-ManagementPointCertIssuer encountered an error: $_"
+    }
 }
 
 function Invoke-SMBCollection {
@@ -7338,10 +7419,12 @@ function New-StreamingBloodHoundWriter {
     # Start JSON structure
     $writerObj.Writer.WriteLine('{')
     # Removing until deletion issue is fixed
-    #$WriterObj.Writer.WriteLine('  "metadata": {')
-    #$WriterObj.Writer.WriteLine('    "source_kind": "SCCM_Base"')
-    #$WriterObj.Writer.WriteLine('  },')
+
+    $writerObj.Writer.WriteLine('  "$schema": "https://raw.githubusercontent.com/MichaelGrafnetter/EntraAuthPolicyHound/refs/heads/main/bloodhound-opengraph.schema.json",')
     $writerObj.Writer.WriteLine('  "graph": {')
+    $writerObj.Writer.WriteLine('    "metadata": {')
+    $writerObj.Writer.WriteLine('      "source_kind": "SCCM_Base"')
+    $writerObj.Writer.WriteLine('    },')
     $writerObj.Writer.WriteLine('    "nodes": [')
     $writerObj.Writer.Flush()
     
