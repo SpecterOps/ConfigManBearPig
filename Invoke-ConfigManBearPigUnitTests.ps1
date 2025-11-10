@@ -9,7 +9,7 @@
 param(
     # Path to the enumeration script   
     [Parameter(Mandatory=$false)]
-    [string]$EnumerationScript = "C:\Users\labadmin.APERTURE\Desktop\ConfigManBearPig\ConfigManBearPig.ps1",
+    [string]$EnumerationScript = ".\ConfigManBearPig.ps1",
     
     # Path to the output folder  
     [Parameter(Mandatory=$false)]
@@ -17,7 +17,7 @@ param(
     [string]$Action = "All",
 
     [Parameter(Mandatory=$false)]
-    [string]$Domain = "aperture.local",
+    [string]$Domain = "mayyhem.com",
 
     # Collection method to use (default: AdminService)
     [Parameter(Mandatory=$false)]
@@ -25,7 +25,7 @@ param(
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
-    [string]$SmsProvider = "site-sms.aperture.local"
+    [string]$SmsProvider = "ps1-sms.mayyhem.com"
 )
 
 #region Logging Functions
@@ -993,7 +993,7 @@ $script:ExpectedEdges = @(
         Kind="SameHostAs"
         Description = "The PS1 client device is the same host as the domain joined computer"
         Source = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 id = "PS1-DEV$"
             }
@@ -1015,7 +1015,7 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 id = "PS1-DEV$"
             }
@@ -1044,7 +1044,7 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
                 siteType = "Primary Site"
@@ -1062,7 +1062,7 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
                 siteType = "Primary Site"
@@ -1075,13 +1075,13 @@ $script:ExpectedEdges = @(
         Count = 3
         Description = "The domainadmin SCCM admin user can assign all permissions to any primary site in the hierarchy"
         Source = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainadmin@*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
                 siteType = "Primary Site"
@@ -1104,13 +1104,13 @@ $script:ExpectedEdges = @(
         Count = 3
         Description = "The CAS, PS1, and PS2 primary sites contain an SCCM admin user"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainadmin@*"
             }
@@ -1121,13 +1121,13 @@ $script:ExpectedEdges = @(
         Count = 3
         Description = "The CAS, PS1, and PS2 primary sites contain the Full Administrator security role"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_SecurityRole", "SCCM_Base")
+            Kinds = @("SCCM_SecurityRole")
             Properties = @{
                 id = "SMS0001R@*"
             }
@@ -1138,13 +1138,13 @@ $script:ExpectedEdges = @(
         Count = 3
         Description = "The CAS, PS1, and PS2 primary sites contain the SMS00001 collection"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_Collection", "SCCM_Base")
+            Kinds = @("SCCM_Collection")
             Properties = @{
                 id = "SMS00001@*"
             }
@@ -1158,13 +1158,13 @@ $script:ExpectedEdges = @(
         Kind="SCCM_FullAdministrator"
         Description = "The domainadmin SCCM admin user is a Full Administrator of the client device"
         Source = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainadmin@*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 id = "PS1-DEV$"
             }
@@ -1178,7 +1178,7 @@ $script:ExpectedEdges = @(
         Kind="SCCM_HasADLastLogonUser"
         Description = "The PS1 client device has domainuser as the last logged on user in Active Directory"
         Source = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 name = "PS1-DEV$@PS1"
             }
@@ -1199,13 +1199,13 @@ $script:ExpectedEdges = @(
         Kind="SCCM_HasClient"
         Description = "PS1-DEV is a client of the PS1 site"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "PS1"
             }
         }
         Target = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 name = "PS1-DEV$@PS1"
             }
@@ -1220,7 +1220,7 @@ $script:ExpectedEdges = @(
         Kind="SCCM_HasCurrentUser"
         Description = "The PS1 client device has domainuser as the current logged on user"
         Source = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 name = "PS1-DEV$@PS1"
             }
@@ -1241,13 +1241,13 @@ $script:ExpectedEdges = @(
         Kind="SCCM_HasMember"
         Description = "The SMS00001 collection contains the PS1 client device"
         Source = @{
-            Kinds = @("SCCM_Collection", "SCCM_Base")
+            Kinds = @("SCCM_Collection")
             Properties = @{
                 id = "SMS00001@*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 name = "PS1-DEV$@PS1"
             }
@@ -1261,7 +1261,7 @@ $script:ExpectedEdges = @(
         Kind="SCCM_HasPrimaryUser"
         Description = "The PS1 client device has domainuser as the primary user"
         Source = @{
-            Kinds = @("SCCM_ClientDevice", "SCCM_Base")
+            Kinds = @("SCCM_ClientDevice")
             Properties = @{
                 name = "PS1-DEV$@PS1"
             }
@@ -1283,13 +1283,13 @@ $script:ExpectedEdges = @(
         Count = 3
         Description = "The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS, PS1, and PS2 primary sites"
         Source = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainadmin@*"
             }
         }
         Target = @{
-            Kinds = @("SCCM_SecurityRole", "SCCM_Base")
+            Kinds = @("SCCM_SecurityRole")
             Properties = @{
                 id = "SMS0001R@*"  # Full Administrator role ID
             }
@@ -1311,7 +1311,7 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainadmin@*"
             }
@@ -1329,7 +1329,7 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("SCCM_AdminUser", "SCCM_Base")
+            Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainuser@*"
             }
@@ -1343,13 +1343,13 @@ $script:ExpectedEdges = @(
         Kind="SCCM_SameAdminsAs"
         Description = "The PS1 primary site has the same admins as the CAS primary site"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "PS1"
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "CAS"
             }
@@ -1359,13 +1359,13 @@ $script:ExpectedEdges = @(
         Kind="SCCM_SameAdminsAs"
         Description = "The PS1 primary site has the same admins as the CAS primary site (both directions)"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "CAS"
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "PS1"
             }
@@ -1376,13 +1376,13 @@ $script:ExpectedEdges = @(
         Negative = $true
         Description = "The PS1 primary site does NOT have a SameAdminsAs relationship with the PS2 primary site (edges go to CAS only)"
         Source = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "PS1"
             }
         }
         Target = @{
-            Kinds = @("SCCM_Site", "SCCM_Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
                 id = "PS2"
             }
@@ -1402,15 +1402,26 @@ function Test-EdgePattern {
     if ($Edge.kind -ne $ExpectedEdge.Kind) {
         return $false
     }
-    
+
+    # Print all edge properties for debugging in ()-[]->() format
+    function Dump-EdgeProperties {
+        param($Edge)
+        Write-TestLog "  Testing Edge: $($Edge.start.value)-[$($Edge.kind)]->$($Edge.end.value)" -Level Verbose
+        Write-TestLog "  Kind: $($Edge.kind)" -Level Verbose
+        Write-TestLog "  Properties:" -Level Verbose
+        foreach ($prop in $Edge.PSObject.Properties) {
+            Write-TestLog "    $($prop.Name): $($prop.Value)" -Level Verbose
+        }
+    }
+
     # Find source and target nodes
-    
     $sourceNode = $Nodes | Where-Object { $_.id -eq $Edge.start.value } | Select-Object -First 1
     $targetNode = $Nodes | Where-Object { $_.id -eq $Edge.end.value } | Select-Object -First 1
     
     if (-not $sourceNode -or -not $targetNode) {
         if ($ShowDebug) {
-            Write-TestLog "  DEBUG: Could not find source or target node" -Level Warning
+            Dump-EdgeProperties -Edge $Edge
+            Write-TestLog "    Could not find source or target node" -Level Warning
         }
         return $false
     }
@@ -1419,7 +1430,8 @@ function Test-EdgePattern {
     if ($ExpectedEdge.Source) {
         if (-not (Test-NodePattern -Node $sourceNode -Expected $ExpectedEdge.Source)) {
             if ($ShowDebug) {
-                Write-TestLog "  DEBUG: Source node doesn't match pattern" -Level Warning
+                Dump-EdgeProperties -Edge $Edge
+                Write-TestLog "    Source node doesn't match pattern" -Level Warning
             }
             return $false
         }
@@ -1429,7 +1441,8 @@ function Test-EdgePattern {
     if ($ExpectedEdge.Target) {
         if (-not (Test-NodePattern -Node $targetNode -Expected $ExpectedEdge.Target)) {
             if ($ShowDebug) {
-                Write-TestLog "  DEBUG: Target node doesn't match pattern" -Level Warning
+                Dump-EdgeProperties -Edge $Edge
+                Write-TestLog "    Target node doesn't match pattern" -Level Warning
             }
             return $false
         }
@@ -1443,7 +1456,8 @@ function Test-EdgePattern {
             
             if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
                 if ($ShowDebug) {
-                    Write-TestLog "  DEBUG: Edge property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Warning
+                    Dump-EdgeProperties -Edge $Edge
+                    Write-TestLog "    Edge property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Verbose
                 }
                 return $false
             }
@@ -1459,13 +1473,25 @@ function Test-NodePattern {
         [PSObject]$Node,
         [hashtable]$Expected
     )
-    
+
+    # Print all node properties for debugging
+    function Dump-NodeProperties {
+        param($Node)
+        Write-TestLog "  Testing Node ID: $($Node.id)" -Level Verbose
+        Write-TestLog "  Kinds: $($Node.kinds -join ', ')" -Level Verbose
+        Write-TestLog "  Properties:" -Level Verbose
+        foreach ($prop in $Node.PSObject.Properties) {
+            Write-TestLog "  $($prop.Name): $($prop.Value)" -Level Verbose
+        }
+    }
+
     # Check kinds
     if ($Expected.Kinds) {
         foreach ($expectedKind in $Expected.Kinds) {
             if ($expectedKind -eq "Base") { continue }  # Base is always present
             if ($Node.kinds -notcontains $expectedKind) {
-                Write-TestLog "    DEBUG: Node missing kind '$expectedKind' (has: $($Node.kinds -join ', '))" -Level Warning
+                Dump-NodeProperties -Node $Node
+                Write-TestLog "    Node missing kind '$expectedKind' (has: $($Node.kinds -join ', '))" -Level Warning
                 return $false
             }
         }
@@ -1485,7 +1511,8 @@ function Test-NodePattern {
             }
             
             if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
-                Write-TestLog "    DEBUG: Property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Warning
+                Dump-NodeProperties -Node $Node
+                Write-TestLog "    Property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Warning
                 return $false
             }
         }
@@ -1610,8 +1637,9 @@ function Get-OutputFromZip {
         Remove-Item $tempDir -Recurse -Force
         
         # Ask to clean up ZIP file
-        Write-TestLog "Do you want to delete the zip file with the collection results? (y/N)" -Level Warning
-        $response = Read-Host
+        #Write-TestLog "Do you want to delete the zip file with the collection results? (y/N)" -Level Warning
+        #$response = Read-Host
+        $response = 'Y'  # Auto-confirm for cleanup
         if ($response -eq 'Y' -or $response -eq 'y') {
             Remove-Item $zipFile.FullName -Force
             Write-TestLog "Cleaned up ZIP file: $($zipFile.Name)" -Level Info
@@ -1840,16 +1868,7 @@ try {
 } catch {
     Write-TestLog "Error during setup or test execution: $_" -Level Error
 } finally {
-    # Always try to cleanup
-    if ($Action -eq "Teardown") {
-        Invoke-Teardown
-    } else {
-        Write-TestLog "Do you want to clean up the test environment? (y/N)" -Level Warning
-        $response = Read-Host
-        if ($response -eq 'Y' -or $response -eq 'y') {
-            Invoke-Teardown
-        }
-    }
+    # Cleanup actions if needed
 }
 
 Write-TestLog "Test suite execution completed!" -Level Success

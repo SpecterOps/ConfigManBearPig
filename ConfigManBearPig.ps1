@@ -141,20 +141,13 @@ function Write-LogMessage {
         "Warning" { "Yellow" }
         "Success" { "Green" }
         "Info" { "White" }
-        "Important" { "Cyan" }
-        "Verbose" { "Magenta" }
+        "Verbose" { "DarkGray" }
         "Debug" { "DarkYellow" }
         default { "White" }
     }
    
-    if ($Level -eq "Verbose" -and $VerbosePreference -eq 'SilentlyContinue') {
-        return
-    } elseif ($Level -eq "Debug" -and $DebugPreference -eq 'SilentlyContinue') {
-        return
-    } else {
-        $padding = " " * (9 - $Level.Length)
-        Write-Host "[$timestamp] [$Level]$padding $Message" -ForegroundColor $color
-    }
+    $padding = " " * (9 - $Level.Length)
+    Write-Host "[$timestamp] [$Level]$padding $Message" -ForegroundColor $color
 }
 
 #endregion
@@ -512,6 +505,97 @@ function Resolve-PrincipalInDomain {
             Write-LogMessage Verbose "AD PowerShell lookup failed for '$Name' in domain '$Domain': $_"
         }
     }
+
+    # Try ADSISearcher approach before .NET methods (.NET does not return dNSHostName property)
+    try {
+        Write-LogMessage Verbose "Attempting ADSISearcher for '$Name' in domain '$Domain'"
+        
+        # Build LDAP path
+        $domainDN = if ($Domain) {
+            "DC=" + ($Domain -replace "\.", ",DC=")
+        } else {
+            $null
+        }
+
+        # Use Domain Controller in LDAP path if specified
+        $ldapPath = if ($script:DomainController -and $domainDN) {
+            "LDAP://$($script:DomainController)/$domainDN"
+        } elseif ($domainDN) {
+            "LDAP://$domainDN"
+        } else {
+            "LDAP://"
+        }
+        
+        $adsiSearcher = if ($ldapPath -ne "LDAP://") {
+            New-Object System.DirectoryServices.DirectorySearcher([ADSI]$ldapPath)
+        } else {
+            New-Object System.DirectoryServices.DirectorySearcher
+        }
+        
+        # Try different search filters
+        $searchFilters = @(
+            "(samAccountName=$Name)",
+            "(objectSid=$Name)",
+            "(userPrincipalName=$Name)",
+            "(dnsHostName=$Name)",
+            "(cn=$Name)"
+        )
+        
+        $adsiResult = $null
+        foreach ($filter in $searchFilters) {
+            try {
+                $adsiSearcher.Filter = $filter
+                $adsiResult = $adsiSearcher.FindOne()
+                if ($adsiResult) {
+                    Write-LogMessage Verbose "Found object using ADSISearcher with filter: $filter"
+                    break
+                }
+            } catch {
+                Write-LogMessage Verbose "ADSISearcher filter '$filter' failed: $_"
+            }
+        }
+        
+        if ($adsiResult) {
+            $props = $adsiResult.Properties
+            $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
+            $objectSid = if ($props["objectsid"]) { 
+                (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
+            } else { 
+                $null 
+            }
+                            
+            $result = [PSCustomObject]@{
+                name = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } elseif ($props["dnshostname"]) { $props["dnshostname"][0] } else { $props["samaccountname"][0] }
+                distinguishedName = if ($props["distinguishedname"]) { $props["distinguishedname"][0] } else { $null }
+                DNSHostName = if ($props["dnshostname"]) { $props["dnshostname"][0] } else { $null }
+                Domain = $Domain
+                Enabled = if ($props["useraccountcontrol"]) { 
+                    -not ([int]$props["useraccountcontrol"][0] -band 2) 
+                } else { 
+                    $null 
+                }
+                IsDomainPrincipal = $true
+                SamAccountName = if ($props["samaccountname"]) { $props["samaccountname"][0] } else { $null }
+                SID = $objectSid
+                UserPrincipalName = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } else { $null }
+                Type = if ($objectClass -and $objectClass.Length -gt 0) { 
+                    $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower() 
+                } else { 
+                    "Unknown" 
+                }
+                Error = $null
+            }
+            
+            $adsiSearcher.Dispose()
+            $script:ResolvedPrincipalCache[$cacheKey] = $result
+            return $result
+        }
+        
+        $adsiSearcher.Dispose()
+        
+    } catch {
+        Write-LogMessage Verbose "ADSISearcher lookup failed for '$Name' in domain '$Domain': $_"
+    }    
     
     # Try .NET DirectoryServices AccountManagement
     if ($script:UseNetFallback -or -not (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) -or -not $adPowershellSucceeded) {
@@ -521,7 +605,6 @@ function Resolve-PrincipalInDomain {
             # Try AccountManagement approach
              # Use Domain Controller if specified
              if ($script:DomainController) {
-                Write-LogMessage Verbose "Creating PrincipalContext with domain controller $script:DomainController"
                 $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
                     [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
                     $script:DomainController
@@ -588,103 +671,15 @@ function Resolve-PrincipalInDomain {
                 $context.Dispose()
                 $script:ResolvedPrincipalCache[$cacheKey] = $result
                 return $result
+
+            } else {
+                Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$Domain'"
             }
             
             $context.Dispose()
             
         } catch {
-            Write-LogMessage Verbose "Failed .NET DirectoryServices AccountManagement for '$Name' in domain '$Domain': $_"
-        }
-        
-        # Try ADSISearcher approach
-        try {
-            Write-LogMessage Verbose "Attempting ADSISearcher for '$Name' in domain '$Domain'"
-            
-            # Build LDAP path
-            $domainDN = if ($Domain) {
-                "DC=" + ($Domain -replace "\.", ",DC=")
-            } else {
-                $null
-            }
-
-            # Use Domain Controller in LDAP path if specified
-            $ldapPath = if ($script:DomainController -and $domainDN) {
-                "LDAP://$($script:DomainController)/$domainDN"
-            } elseif ($domainDN) {
-                "LDAP://$domainDN"
-            } else {
-                "LDAP://"
-            }
-            
-            $adsiSearcher = if ($ldapPath -ne "LDAP://") {
-                New-Object System.DirectoryServices.DirectorySearcher([ADSI]$ldapPath)
-            } else {
-                New-Object System.DirectoryServices.DirectorySearcher
-            }
-            
-            # Try different search filters
-            $searchFilters = @(
-                "(samAccountName=$Name)",
-                "(objectSid=$Name)",
-                "(userPrincipalName=$Name)",
-                "(dnsHostName=$Name)",
-                "(cn=$Name)"
-            )
-            
-            $adsiResult = $null
-            foreach ($filter in $searchFilters) {
-                try {
-                    $adsiSearcher.Filter = $filter
-                    $adsiResult = $adsiSearcher.FindOne()
-                    if ($adsiResult) {
-                        Write-LogMessage Verbose "Found object using ADSISearcher with filter: $filter"
-                        break
-                    }
-                } catch {
-                    Write-LogMessage Verbose "ADSISearcher filter '$filter' failed: $_"
-                }
-            }
-            
-            if ($adsiResult) {
-                $props = $adsiResult.Properties
-                $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
-                $objectSid = if ($props["objectsid"]) { 
-                    (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
-                } else { 
-                    $null 
-                }
-                                
-                $result = [PSCustomObject]@{
-                    name = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } elseif ($props["dnshostname"]) { $props["dnshostname"][0] } else { $props["samaccountname"][0] }
-                    distinguishedName = if ($props["distinguishedname"]) { $props["distinguishedname"][0] } else { $null }
-                    DNSHostName = if ($props["dnshostname"]) { $props["dnshostname"][0] } else { $null }
-                    Domain = $Domain
-                    Enabled = if ($props["useraccountcontrol"]) { 
-                        -not ([int]$props["useraccountcontrol"][0] -band 2) 
-                    } else { 
-                        $null 
-                    }
-                    IsDomainPrincipal = $true
-                    SamAccountName = if ($props["samaccountname"]) { $props["samaccountname"][0] } else { $null }
-                    SID = $objectSid
-                    UserPrincipalName = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } else { $null }
-                    Type = if ($objectClass -and $objectClass.Length -gt 0) { 
-                        $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower() 
-                    } else { 
-                        "Unknown" 
-                    }
-                    Error = $null
-                }
-                
-                $adsiSearcher.Dispose()
-                $script:ResolvedPrincipalCache[$cacheKey] = $result
-                return $result
-            }
-            
-            $adsiSearcher.Dispose()
-            
-        } catch {
-            Write-LogMessage Verbose "ADSISearcher lookup failed for '$Name' in domain '$Domain': $_"
+            Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$Domain': $_"
         }
         
         # Try DirectorySearcher as final .NET attempt
@@ -892,7 +887,7 @@ function Get-ActiveDirectoryObject {
     }
 
     # Try DirectoryServices .NET fallback
-    Write-LogMessage Debug "Trying DirectoryServices for '$searchValue' in domain '$Domain'"
+    Write-LogMessage Verbose "Trying DirectoryServices for '$searchValue' in domain '$Domain'"
     
     try {
         $domainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $Domain)
@@ -1192,7 +1187,7 @@ function Add-DeviceToTargets {
     $canonicalName = $DeviceName
     if ($adObject -and $adObject.SID) {
         $dedupKey      = $adObject.SID
-        $canonicalName = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.Name }
+        $canonicalName = if ($adObject.DNSHostName) { $adObject.DNSHostName } else { $DeviceName }
     } else {
         $dedupKey = $DeviceName.ToLowerInvariant()
         if (-not ($DeviceName -match '\.')) {
@@ -1264,7 +1259,7 @@ function Remove-TimedOutJob {
 #endregion
 
 #region Node and Edge Functions
-function Add-Node {
+function Upsert-Node {
     param(
         [string]$Id,
         [string[]]$Kinds,
@@ -1307,7 +1302,7 @@ function Add-Node {
                     # Special handling for arrays - merge them
                     if ($oldValue -is [Array] -and $newValue -is [Array]) {
                         # Combine and deduplicate arrays
-                        $mergedArray = @($oldValue + $newValue | Select-Object -Unique)
+                        $mergedArray = @(($oldValue + $newValue) | Where-Object { $_ -ne $null } | Select-Object -Unique)
                         $existingProps[$key] = $mergedArray
                         
                         # Update logging to show merge
@@ -1345,9 +1340,9 @@ function Add-Node {
         }
         
         if ($changes.Count -gt 0) {
-            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $($existingNode.properties.samAccountName) ($Id)$changes"
+            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $Id $(if ($existingNode.Properties.samAccountName) {"($($existingNode.properties.samAccountName))"})$changes"
         } else {
-            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $($existingNode.properties.samAccountName) ($Id)`nNo new properties"
+            Write-LogMessage Verbose "Found existing $($Kinds[0]) node: $Id $(if ($existingNode.Properties.samAccountName) {"($($existingNode.properties.samAccountName))"})`nNo new properties"
         }
 
         # Replace properties with normalized/merged set
@@ -1390,29 +1385,33 @@ function Add-Node {
                 if ($primarySite) {
 
                     # Add AdminTo edges from site servers to all the other site systems in primary sites
-                    $siteServer = $script:Nodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySite.Id)"}
-                    if ($siteServer) {
-                        # Don't add AdminTo edges from the site server to the site server -- the computer account may not be in the local admins group
-                        if ($Id -ne $siteServer.Id) {
-                            Add-Edge -Start $siteServer.Id -Kind "AdminTo" -End $Id -Properties @{
-                                collectionSource = $finalProperties["collectionSource"]
-                            }
-                        # If this is a primary site server, add AdminTo edges to all the other site systems 
-                        } else {
-                            $siteSystems = $script:Nodes | Where-Object { $_.properties.SCCMSiteSystemRoles -like "*@$($primarySite.Id)" -and $_.properties.SCCMSiteSystemRoles -notlike "*SMS Site Server@$($primarySite.Id)*" }
-                            if ($siteSystems) {
-                                foreach ($siteSystem in $siteSystems) {
-                                    Add-Edge -Start $Id -Kind "AdminTo" -End $siteSystem.Id -Properties @{
-                                        collectionSource = $finalProperties["collectionSource"]
-                                    }            
+                    $siteServers = $script:Nodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySite.Id)"}
+                    if ($siteServers) {
+                        foreach ($siteServer in $siteServers) {
+                            # Don't add AdminTo edges from the site server to the site server -- the computer account may not be in the local admins group
+                            if ($Id -ne $siteServer.Id) {
+                                Upsert-Edge -Start $siteServer.Id -Kind "AdminTo" -End $Id -Properties @{
+                                    collectionSource = $finalProperties["collectionSource"]
+                                }
+                            # If this is a primary site server, add AdminTo edges to all the other site systems 
+                            } else {
+                                $siteSystems = $script:Nodes | Where-Object { $_.properties.SCCMSiteSystemRoles -like "*@$($primarySite.Id)" -and $_.properties.SCCMSiteSystemRoles -notlike "*SMS Site Server@$($primarySite.Id)*" }
+                                if ($siteSystems) {
+                                    foreach ($siteSystem in $siteSystems) {
+                                        if ($Id -ne $siteSystem.Id) {
+                                            Upsert-Edge -Start $Id -Kind "AdminTo" -End $siteSystem.Id -Properties @{
+                                                collectionSource = $finalProperties["collectionSource"]
+                                            }
+                                        }        
+                                    }
                                 }
                             }
-                        }
+                        } 
                     }
 
                     # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site server and a MSSQL_HasLogin edge to the site database login
                     if ($finalProperties["SCCMSiteSystemRoles"] -contains "SMS Provider@$($primarySite.Id)") {
-                        Add-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $siteCode -Properties @{
+                        Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $siteCode -Properties @{
                             collectionSource = $finalProperties["collectionSource"]
                         }
                         $siteDatabaseComputerNodes = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.SCCMSiteSystemRoles -contains "SMS Site Database@$($primarySite.Id)" }
@@ -1421,7 +1420,7 @@ function Add-Node {
                             foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
                                 $siteDatabaseLoginNode = $script:Nodes | Where-Object { $_.kinds -eq "MSSQL_Login" -and $_.Id -eq "$($finalProperties["name"])@$($siteDatabaseComputerNode.Id)" }
                                 if ($siteDatabaseLoginNode) {
-                                    Add-Edge -Start $Id -Kind "MSSQL_HasLogin" -End $siteDatabaseLoginNode.Id -Properties @{
+                                    Upsert-Edge -Start $Id -Kind "MSSQL_HasLogin" -End $siteDatabaseLoginNode.Id -Properties @{
                                         collectionSource = $finalProperties["collectionSource"]
                                     }
                                 }
@@ -1450,13 +1449,13 @@ function Add-Node {
             # Create MSSQL_HasLogin edges from site server and SMS Provider Computer nodes to site database MSSQL_Login nodes
             $siteServerComputerNode = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.samAccountName -eq $($Id.Split('@')[0]) -and $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$siteCode" }
             if ($siteServerComputerNode) {
-                Add-Edge -Start $Id -Kind "MSSQL_HasLogin" -End $siteServerComputerNode.Id -Properties @{
+                Upsert-Edge -Start $Id -Kind "MSSQL_HasLogin" -End $siteServerComputerNode.Id -Properties @{
                     collectionSource = $finalProperties["collectionSource"]
                 }
             }
             $smsProviderComputerNode = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.samAccountName -eq $($Id.Split('@')[0]) -and $_.properties.SCCMSiteSystemRoles -contains "SMS Provider@$siteCode" }
             if ($smsProviderComputerNode) {
-                Add-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $smsProviderComputerNode.Id -Properties @{
+                Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $smsProviderComputerNode.Id -Properties @{
                     collectionSource = $finalProperties["collectionSource"]
                 }
             }
@@ -1472,7 +1471,7 @@ function Add-Node {
         $smsProviderComputerNodes = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Provider@$Id" }
         if ($smsProviderComputerNodes -and $smsProviderComputerNodes.Count -gt 0) {
             foreach ($smsProviderComputerNode in $smsProviderComputerNodes) {
-                Add-Edge -Start $smsProviderComputerNode.Id -Kind "SCCM_AssignAllPermissions" -End $Id -Properties @{
+                Upsert-Edge -Start $smsProviderComputerNode.Id -Kind "SCCM_AssignAllPermissions" -End $Id -Properties @{
                     collectionSource = $finalProperties["collectionSource"]
                 }
             }
@@ -1499,14 +1498,14 @@ function Add-Node {
                 if ( ($parentType -eq "Central Administration Site" -and $siteType -eq "Primary Site") -or
                         ($parentType -eq "Primary Site" -and $siteType -eq "Central Administration Site") ) {
                     $existsP2C = $script:Edges | Where-Object { $_.start -eq $parent.id -and $_.end -eq $Id -and $_.kind -eq "SCCM_SameAdminsAs" }
-                    if (-not $existsP2C) { Add-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
+                    if (-not $existsP2C) { Upsert-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
                     $existsC2P = $script:Edges | Where-Object { $_.start -eq $Id -and $_.end -eq $parent.id -and $_.kind -eq "SCCM_SameAdminsAs" }
-                    if (-not $existsC2P) { Add-Edge -Start $Id -Kind "SCCM_SameAdminsAs" -End $parent.id }
+                    if (-not $existsC2P) { Upsert-Edge -Start $Id -Kind "SCCM_SameAdminsAs" -End $parent.id }
                 }
                 # Primary -> Secondary only
                 elseif ($parentType -eq "Primary Site" -and $siteType -eq "Secondary Site") {
                     $existsP2C = $script:Edges | Where-Object { $_.start -eq $parent.id -and $_.end -eq $Id -and $_.kind -eq "SCCM_SameAdminsAs" }
-                    if (-not $existsP2C) { Add-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
+                    if (-not $existsP2C) { Upsert-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
                 }
             }
         }
@@ -1514,7 +1513,7 @@ function Add-Node {
 }
 
 # Helper function to add edges during collection and processing
-function Add-Edge {
+function Upsert-Edge {
     param(
         [string]$Start,
         [string]$Kind,
@@ -1614,7 +1613,7 @@ function Add-HostNodeAndEdges{
         $clientDeviceId = if ($matchingNode.kinds -contains "SCCM_ClientDevice") { $matchingNode.id } else { $NodeId }
 
         # Create Host node
-        Add-Node -Id $hostId -Kinds @("Host") -Properties @{
+        Upsert-Node -Id $hostId -Kinds @("Host") -Properties @{
             name = "Host_$($matchingNode.Properties.DNSHostName)"
             computer = $computerSid
             SCCMClientDevice = $clientDeviceId
@@ -1629,7 +1628,7 @@ function Add-HostNodeAndEdges{
         )
         
         foreach ($edge in $edgesToCreate) {
-            Add-Edge -Start $edge.Start -Kind "SameHostAs" -End $edge.End
+            Upsert-Edge -Start $edge.Start -Kind "SameHostAs" -End $edge.End
         }
         
         Write-LogMessage Verbose "Created $computerSid <-[SameHostAs]-> $hostId <-[SameHostAs]-> $clientDeviceId nodes and edges"
@@ -1856,11 +1855,12 @@ function Invoke-LDAPCollection {
             $objectIdentifier = $siteCode
             
             # Create/update SCCM_Site node
-            Add-Node -Id $objectIdentifier -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+            Upsert-Node -Id $objectIdentifier -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = @("LDAP-mSSMSSite")
                 displayName = $null
                 distinguishedName = $mSSMSSiteObj.DistinguishedName
                 parentSiteCode = $null # Will be determined by mSSMSManagementPoint
+                SCCMInfra = $true
                 siteCode = $siteCode
                 siteGUID = $siteGuid
                 siteServerDomainSID = $null
@@ -1913,7 +1913,7 @@ function Invoke-LDAPCollection {
                 }
                 # Create or update Computer node
                 if ($mpTarget.ADObject) {
-                    Add-Node -Id $mpTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mpTarget.ADObject -Properties @{
+                    Upsert-Node -Id $mpTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mpTarget.ADObject -Properties @{
                         collectionSource = @("LDAP-mSSMSManagementPoint")
                         SCCMSiteSystemRoles = @("SMS Management Point@$mpSiteCode")
                     }
@@ -1995,11 +1995,12 @@ function Invoke-LDAPCollection {
                 if ($parentSiteCode -and $parentSiteCode -ne "None") {
                     $existingParentSite = $script:Nodes | Where-Object { $_.id -eq $parentSiteCode }
                     if (-not $existingParentSite) {
-                        Add-Node -Id $parentSiteCode -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+                        Upsert-Node -Id $parentSiteCode -Kinds @("SCCM_Site") -Properties @{
                             collectionSource = @("LDAP-mSSMSManagementPoint")
                             displayName = $null
                             distinguishedName = $null
                             parentSiteCode = "None"
+                            SCCMInfra = $true
                             siteCode = $parentSiteCode
                             siteGUID = $null
                             siteServerDomainSID = $null
@@ -2029,7 +2030,7 @@ function Invoke-LDAPCollection {
                         }
                         # Create or update Computer node
                         if ($fspTarget.ADObject) {
-                            Add-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $fspTarget.ADObject -Properties @{
+                            Upsert-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $fspTarget.ADObject -Properties @{
                                 collectionSource = @("LDAP-mSSMSManagementPoint")
                                 SCCMSiteSystemRoles = @("SMS Fallback Status Point@$siteCode")
                             }
@@ -2079,7 +2080,7 @@ function Invoke-LDAPCollection {
 
             # Create Computer node for these systems
             if ($system.ObjectSid) {
-                Add-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
+                Upsert-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
                     collectionSource = @("LDAP-CmRcService")
                     SCCMHasClientRemoteControlSPN = $true
                 }
@@ -2162,7 +2163,7 @@ function Invoke-LDAPCollection {
                     # Create or update Computer node
                     if ($collectionTarget.ADObject) {
                         
-                        Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
+                        Upsert-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
                             collectionSource = @("LDAP-$($server.ObjectClass)")
                             networkBootServer = $true
                         }
@@ -2237,7 +2238,7 @@ function Invoke-LDAPCollection {
                 
                 # Create or update Computer node
                 if ($collectionTarget.ADObject) {
-                    Add-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
+                    Upsert-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
                         collectionSource = @("LDAP-NamePattern")
                     }
                 
@@ -2280,7 +2281,7 @@ function Invoke-LDAPCollection {
                         # Create appropriate node based on object type
                         switch ($adObject.Type) {
                             "Computer" {                                
-                                Add-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
+                                Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
                                 }
                                 
@@ -2288,25 +2289,25 @@ function Invoke-LDAPCollection {
                                 if ($adObject.DNSHostName) {
                                     $null = Add-DeviceToTargets -DeviceName $adObject.DNSHostName -Source "LDAP-GenericAll"
                                 } else {
-                                    Write-LogMessage Warning "Cannot add computer $($adObject.Name) to targets - no FQDN available"
+                                    $null = Add-DeviceToTargets -DeviceName $accountName -Source "LDAP-GenericAll"
                                 }
                             }
                             
                             "User" {
-                                Add-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
+                                Upsert-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
                                 }
                             }
                             
                             "Group" {                              
-                                Add-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
+                                Upsert-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
                                 }
                             }
                             
                             default {
                                 # Handle unknown object types
-                                Add-Node -Id $adObject.SID -Kinds @($adObject.Type, "Base") -PSObject $adObject -Properties @{
+                                Upsert-Node -Id $adObject.SID -Kinds @($adObject.Type, "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
                                 }
                                 Write-LogMessage Warning "Created node for unknown object type '$($adObject.Type)': $($adObject.Name)"
@@ -2349,7 +2350,7 @@ function Invoke-LDAPCollection {
                                 # Create appropriate node based on object type (same switch logic as above)
                                 switch ($adObject.Type) {
                                     "Computer" {
-                                        Add-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
+                                        Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
                                         }
                                         
@@ -2357,18 +2358,18 @@ function Invoke-LDAPCollection {
                                         if ($adObject.DNSHostName) {
                                             $null = Add-DeviceToTargets -DeviceName $adObject.DNSHostName -Source "LDAP-GenericAll"
                                         } else {
-                                            Write-LogMessage Warning "Cannot add computer $($adObject.Name) to targets - no FQDN available"
+                                            $null = Add-DeviceToTargets -DeviceName $accountName -Source "LDAP-GenericAll"
                                         }
                                     }
                                     
                                     "User" {
-                                        Add-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
+                                        Upsert-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
                                         }
                                     }
                                     
                                     "Group" {
-                                        Add-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
+                                        Upsert-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
                                         }
                                     }
@@ -2393,7 +2394,7 @@ function Invoke-LDAPCollection {
         Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
         Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
     } catch {
-        Write-LogMessage "LDAP collection failed: $_" -Level "Error"
+        Write-LogMessage Error "LDAP collection failed: $_"
     }
 }
 
@@ -2546,7 +2547,7 @@ function Invoke-DHCPCollection {
                     if ($bootOpt) { $bootValue = $bootOpt }
                     $tftpReachable = $null
                     if ($tftpIp) { $tftpReachable = (Test-TftpReachable -TftpHost $tftpIp -File $bootValue) }
-                    Add-Node -Id $t.ADObject.SID -Kinds @("Computer","Base") -PSObject $t.ADObject -Properties @{
+                    Upsert-Node -Id $t.ADObject.SID -Kinds @("Computer","Base") -PSObject $t.ADObject -Properties @{
                         collectionSource = @("DHCP-PXE")
                         networkBootServer = $true
                         isPXEServer = $true
@@ -2630,7 +2631,7 @@ function Invoke-DHCPCollection {
             $name = $fromIp; try { $name = ([System.Net.Dns]::GetHostEntry($fromIp)).HostName } catch { }
             $target = Add-DeviceToTargets -DeviceName $name -Source "DHCP-Discover"
             if ($target -and $target.ADObject) {
-                Add-Node -Id $target.ADObject.SID -Kinds @("Computer","Base") -PSObject $target.ADObject -Properties @{
+                Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer","Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("DHCP-Discover")
                     isDHCPServer = $true
                 }
@@ -2654,7 +2655,7 @@ function Invoke-DHCPCollection {
                             if ($boot) { $rrqFile = $boot }
                             $tftpReach = (Test-TftpReachable -TftpHost $tftp -File $rrqFile)
                         }
-                        Add-Node -Id $p.ADObject.SID -Kinds @("Computer","Base") -PSObject $p.ADObject -Properties @{
+                        Upsert-Node -Id $p.ADObject.SID -Kinds @("Computer","Base") -PSObject $p.ADObject -Properties @{
                             collectionSource = @("DHCP-Discover")
                             networkBootServer = $true
                             isPXEServer = $true
@@ -2712,8 +2713,9 @@ function Invoke-LocalCollection {
             }
 
             # Create or update SCCM_Site node
-            Add-Node -Id $siteCode -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+            Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = "Local-SMS_Authority"
+                SCCMInfra = $true
                 siteCode = $siteCode
                 siteType = "Primary Site"  # Primary (clients can only be joined to primary sites)
             }
@@ -2742,7 +2744,7 @@ function Invoke-LocalCollection {
                 }
                 
                 if ($mp.ADObject) {
-                    Add-Node -Id $mp.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mp.ADObject -Properties @{
+                    Upsert-Node -Id $mp.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mp.ADObject -Properties @{
                         collectionSource = @("Local-SMS_LookupMP")
                         SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                     }
@@ -2788,7 +2790,7 @@ function Invoke-LocalCollection {
             }
             
             # Create SCCM_ClientDevice node
-            Add-Node -Id $clientId -Kinds @("SCCM_ClientDevice") -Properties @{
+            Upsert-Node -Id $clientId -Kinds @("SCCM_ClientDevice") -Properties @{
                 collectionSource = @("Local-CCM_Client")
                 ADDomainSID = if ($localTarget.ADObject) { $localTarget.ADObject.SID } else { $null }
                 currentManagementPoint = $currentMP
@@ -2803,7 +2805,7 @@ function Invoke-LocalCollection {
             }
             
             # Also create/update the Computer node for the system running the collector
-            Add-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
+            Upsert-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
                 collectionSource = @("Local-CCM_Client")
             }
         }
@@ -2824,7 +2826,7 @@ function Invoke-LocalCollection {
                     $logFiles = Get-ChildItem -Path $logPath -ErrorAction SilentlyContinue
                     foreach ($logFile in $logFiles) {
                         try {
-                            Write-LogMessage "$logFile" -Level Verbose
+                            Write-LogMessage Verbose "$logFile"
                             $content = Get-Content -Path $logFile.FullName -ErrorAction SilentlyContinue
                             
                             # Look for UNC paths and URLs that might be SCCM components
@@ -2835,7 +2837,7 @@ function Invoke-LocalCollection {
                             foreach ($match in $uncMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $uncPath = $matchGroup.Value.Trim()
-                                    Write-LogMessage "Found UNC path: $uncPath" -Level Debug
+                                    Write-LogMessage Debug "  Found UNC path: $uncPath"
                                     
                                     # Extract hostname from UNC path
                                     if ($uncPath -match "^\\\\([^\\]+)") {
@@ -2858,13 +2860,13 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage Debug "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
+                                                            Write-LogMessage Verbose "    Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
                                                         }
                                                     }
                                                 }
                                             } catch {
                                                 # DNS resolution failed
-                                                Write-LogMessage Debug "Failed to resolve hostname $hostname from UNC path: $_"
+                                                Write-LogMessage Verbose "    Failed to resolve hostname $hostname from UNC path: $_"
                                             }
                                             
                                             # Only add if resolves to RFC1918 private IP
@@ -2873,7 +2875,7 @@ function Invoke-LocalCollection {
                                                 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
-                                                    Write-LogMessage Verbose "Found host: $hostname ($($ip.IPAddressToString))"
+                                                    Write-LogMessage Verbose "    Found host: $hostname ($($ip.IPAddressToString))"
 
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
@@ -2898,7 +2900,7 @@ function Invoke-LocalCollection {
                             foreach ($match in $urlMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $fullUrl = $matchGroup.Value.Trim()
-                                    Write-LogMessage Debug "Found URL: $fullUrl"
+                                    Write-LogMessage Verbose "  Found URL: $fullUrl"
                                     
                                     # Extract just the domain/hostname portion using named capture group
                                     if ($fullUrl -match "^https?://([^/@:]+)") {
@@ -2921,13 +2923,13 @@ function Invoke-LocalCollection {
                                                             $shouldAdd = $true
                                                             break
                                                         } else {
-                                                            Write-LogMessage Debug "Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
+                                                            Write-LogMessage Verbose "    Host resolved to non-RFC1918 IP address: $hostname ($($ip.IPAddressToString))"
                                                         }
                                                     }
                                                 }
                                             } catch {
                                                 # DNS resolution failed
-                                                Write-LogMessage Debug "Failed to resolve hostname $hostname from URL: $_"
+                                                Write-LogMessage Verbose "    Failed to resolve hostname $hostname from URL: $_"
                                             }
                                             
                                             # Only add if resolves to RFC1918 private IP
@@ -2935,7 +2937,7 @@ function Invoke-LocalCollection {
 
                                                 # Add unique hostnames to additional components
                                                 if (-not $additionalComponents.ContainsKey($hostname)) {
-                                                    Write-LogMessage Verbose "Found host: $hostname ($($ip.IPAddressToString))"
+                                                    Write-LogMessage Verbose "    Found host: $hostname ($($ip.IPAddressToString))"
 
                                                     $additionalComponents[$hostname] = @{
                                                         "Hostname" = $hostname
@@ -2957,7 +2959,7 @@ function Invoke-LocalCollection {
                             }
                             
                         } catch {
-                            Write-LogMessage Error "Failed to search log file $($logFile.FullName): $_"
+                            Write-LogMessage Error "  Failed to search log file $($logFile.FullName): $_"
                         }
                     }
                 }
@@ -2981,7 +2983,7 @@ function Invoke-LocalCollection {
         }
         
         # Report what was collected
-        Write-LogMessage Success "Local collection completed" -Level "Success"
+        Write-LogMessage Success "Local collection completed"
         Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
         Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
         Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
@@ -3197,7 +3199,7 @@ function Invoke-DNSCollection {
 
             # Create or update Computer node
             if ($adObject) {
-                Add-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
+                Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                     collectionSource = @("DNS")
                     SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                 }
@@ -3239,7 +3241,6 @@ function Invoke-RemoteRegistryCollection {
             }
         }
         
-        Write-LogMessage Info "Testing Remote Registry connection to $target..."
         $j1 = Start-Job -ScriptBlock $registryConnectionCode -ArgumentList $target
         $connectionSuccess = $false
         
@@ -3252,7 +3253,7 @@ function Invoke-RemoteRegistryCollection {
 
         if (-not $connectionSuccess) {
             Write-LogMessage Warning "Remote Registry connection failed for $target"
-            continue
+            return
         }
         
         Write-LogMessage Success "Remote Registry connection successful: $target"
@@ -3292,7 +3293,6 @@ function Invoke-RemoteRegistryCollection {
             Write-LogMessage Error "Error querying Triggers key on $target`: $triggersResult"
         } elseif ($triggersResult -and $triggersResult.Count -eq 1) {
             $siteCode = $triggersResult
-            Write-LogMessage Success "Found site code: $siteCode"
         } elseif ($triggersResult -and $triggersResult.Count -gt 1) {
             Write-LogMessage Warning "Multiple site codes found under Triggers key on $target`: $($triggersResult -join ', ')"
             $siteCode = $triggersResult[0] # Use first one
@@ -3301,7 +3301,11 @@ function Invoke-RemoteRegistryCollection {
         }
         
         if ($siteCode) {
-            Add-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+            # Only display if site code not already in nodes
+            if (-not ($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $siteCode })) {
+                Write-LogMessage Success "Found site code: $siteCode"
+            }
+            Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = @("RemoteRegistry")
                 siteCode = $siteCode
             }
@@ -3356,7 +3360,7 @@ function Invoke-RemoteRegistryCollection {
                         }
                         # Add site system role to Computer node
                         if ($componentServer.ADObject) {
-                            Add-Node -Id $componentServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $componentServer.ADObject -Properties @{
+                            Upsert-Node -Id $componentServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $componentServer.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
                                 SCCMSiteSystemRoles = @("SMS Component Server@$siteCode")
                             }
@@ -3364,7 +3368,7 @@ function Invoke-RemoteRegistryCollection {
 
                         # We also now know that the system we're connected to is a site server
                         if ($siteCode -and $CollectionTarget.ADObject) {
-                            Add-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
+                            Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
                                 SCCMSiteSystemRoles = @("SMS Site Server@$siteCode")
                             }
@@ -3414,7 +3418,7 @@ function Invoke-RemoteRegistryCollection {
 
             # Add site system roles to Computer node
             if ($target.ADObject) {
-                Add-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
+                Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                     SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode", "SMS Site Server@$siteCode")
                 }
@@ -3423,7 +3427,7 @@ function Invoke-RemoteRegistryCollection {
             # Add MSSQL nodes/edges for local SQL instance
             if ($CollectionTarget -and $CollectionTarget.ADObject) {
 
-                Add-MSSQLNodesAndEdgesForSite -SiteCode $siteCode `
+                Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
                                               -SqlServerDomainObject $CollectionTarget.ADObject `
                                               -SiteServerDomainObject $CollectionTarget.ADObject `
                                               -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -3434,7 +3438,7 @@ function Invoke-RemoteRegistryCollection {
                 if ($epaSettings) {
 
                     # Update Computer node with EPA settings
-                    Add-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
+                    Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
                         restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
@@ -3444,7 +3448,7 @@ function Invoke-RemoteRegistryCollection {
                     $SQLServerDomainSID = "$($CollectionTarget.ADObject.SID)$portSuffix"
 
                     # Update MSSQL_Server node with EPA settings
-                    Add-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
+                    Upsert-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         extendedProtection = $epaSettings.ExtendedProtection
                         forceEncryption = $epaSettings.ForceEncryption
@@ -3454,9 +3458,9 @@ function Invoke-RemoteRegistryCollection {
         } elseif ($multisiteResult -and $multisiteResult.Count -gt 0) {
 
             if ($multisiteResult.Count -eq 1) {
-                Write-LogMessage Info "Found single remote site database server: $($multisiteResult)"
+                Write-LogMessage Verbose "Found single remote site database server: $($multisiteResult)"
             } elseif ($multisiteResult.Count -gt 1) {
-                Write-LogMessage Info "Found clustered site database servers: $($multisiteResult -join ', ')"
+                Write-LogMessage Verbose "Found clustered site database servers: $($multisiteResult -join ', ')"
             }
 
             foreach ($sqlServerFQDN in $multisiteResult) {
@@ -3471,14 +3475,14 @@ function Invoke-RemoteRegistryCollection {
 
                 # Add site system roles to Computer node
                 if ($sqlServer -and $sqlServer.ADObject) {
-                    Add-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
+                    Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode")
                     }
 
                     # Add MSSQL nodes/edges for remote SQL instance
                     if ($CollectionTarget -and $CollectionTarget.ADObject) {
-                        Add-MSSQLNodesAndEdgesForSite -SiteCode $siteCode `
+                        Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
                                                     -SqlServerDomainObject $sqlServer.ADObject`
                                                     -SiteServerDomainObject $CollectionTarget.ADObject `
                                                     -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -3489,7 +3493,7 @@ function Invoke-RemoteRegistryCollection {
 
                     if ($epaSettings) {
                         # Update Computer node with EPA settings
-                        Add-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
+                        Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                             collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                             disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
                             restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
@@ -3499,7 +3503,7 @@ function Invoke-RemoteRegistryCollection {
                         $SQLServerDomainSID = "$($sqlServer.ADObject.SID)$portSuffix"
 
                         # Update MSSQL_Server node with EPA settings
-                        Add-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
+                        Upsert-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
                             collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                             extendedProtection = $epaSettings.ExtendedProtection
                             forceEncryption = $epaSettings.ForceEncryption
@@ -3564,12 +3568,12 @@ function Invoke-RemoteRegistryCollection {
                     Write-LogMessage Success "Found current user: $($userADObject.Name) ($currentUserSid)"
                     
                     # Create User node for current user
-                    Add-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
+                    Upsert-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
                         collectionSource = @("RemoteRegistry-CurrentUser")
                     }
 
                     # Create Computer -[HasSession]-> User edge
-                    Add-Edge -Start $CollectionTarget.ADObject.SID -Kind "HasSession" -End $currentUserSid -Properties @{
+                    Upsert-Edge -Start $CollectionTarget.ADObject.SID -Kind "HasSession" -End $currentUserSid -Properties @{
                         collectionSource = @("RemoteRegistry-CurrentUser")
                     }
                 } else {
@@ -4030,7 +4034,7 @@ public class EPATester
     }
 }
 
-function Add-MSSQLNodesAndEdgesForSite {
+function Add-MSSQLNodesAndEdgesForPrimarySite {
     param(
         [Parameter(Mandatory = $true)][string]$SiteCode,
         [Parameter(Mandatory = $true)][PSObject]$sqlServerDomainObject,
@@ -4042,16 +4046,24 @@ function Add-MSSQLNodesAndEdgesForSite {
     )
 
     try {
+        # Bail if this is a secondary site or if site type is not defined
+        $siteNode = $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $SiteCode }
+        if (-not $siteNode.Properties.siteType -or $siteNode.Properties.siteType -eq "Secondary Site") {
+            Write-LogMessage Verbose "Skipping MSSQL node/edge creation for unidentified or secondary site $SiteCode"
+            return
+        }
+
         # Create or update MSSQL_Server node
         $portSuffix = if ($SqlServicePort) { ":$SqlServicePort" } else { ":1433" }
         $SQLServerDomainSID = "$( $sqlServerDomainObject.SID )$portSuffix"
-        Add-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server", "Base", "SCCM_Infra") -Properties @{
+        Upsert-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
             collectionSource = @($CollectionSource)
             databases = if ($SqlDatabaseName) { @($SqlDatabaseName) } else { @() }
             extendedProtection = if ($EPASettings) { $EPASettings.ExtendedProtection } else { $null }
             forceEncryption = if ($EPASettings) { $EPASettings.ForceEncryption } else { $null }
             name = "$($SqlServerFQDN)$portSuffix"
             port = if ($SqlServicePort) { $SqlServicePort } else { 1433 }
+            SCCMInfra = $true
             SCCMSite = $SiteCode
         }
 
@@ -4069,25 +4081,27 @@ function Add-MSSQLNodesAndEdgesForSite {
             $siteServerMssqlLogin = "$($SiteServerDomainObject.Domain.Split('.')[0])\$($SiteServerDomainObject.SamAccountName)@$SQLServerDomainSID"
 
             # Create or update MSSQL_Login node for the primary site server
-            Add-Node -Id $siteServerMssqlLogin -Kinds @("MSSQL_Login", "Base", "SCCM_Infra") -Properties @{
+            Upsert-Node -Id $siteServerMssqlLogin -Kinds @("MSSQL_Login") -Properties @{
                 collectionSource = @($CollectionSource)
                 loginType = "Windows"
                 # We know the primary site server is a member of the sysadmin role
                 memberOfRoles = @("sysadmin@$SQLServerDomainSID")
                 name = $SiteServerDomainObject.SamAccountName
+                SCCMInfra = $true
                 SCCMSite = $SiteCode
                 SQLServer = $SqlServerFQDN
             }
 
             # Create or update MSSQL_DatabaseUser node for the primary site server
             $siteServerMssqlDatabaseUser = "$( $SiteServerDomainObject.SamAccountName )@$sqlDatabaseIdentifier"
-            Add-Node -Id $siteServerMssqlDatabaseUser -Kinds @("MSSQL_DatabaseUser", "Base", "SCCM_Infra") -Properties @{
+            Upsert-Node -Id $siteServerMssqlDatabaseUser -Kinds @("MSSQL_DatabaseUser") -Properties @{
                 collectionSource = @($CollectionSource)
                 database = $SqlDatabaseName
                 # We know the primary site server is a member of the db_owner role
                 memberOfRoles = @("db_owner@$sqlDatabaseIdentifier")
                 name = $SiteServerDomainObject.SamAccountName
                 login = $($script:Nodes | Where-Object { $_.Id -eq $siteServerMssqlLogin }).Properties.name
+                SCCMInfra = $true
                 SCCMSite = $SiteCode
                 SQLServer = $SqlServerFQDN
             }
@@ -4096,32 +4110,35 @@ function Add-MSSQLNodesAndEdgesForSite {
         }
 
         # We know the built-in sysadmin server role exists on all SQL instances
-        Add-Node -Id "sysadmin@$SQLServerDomainSID" -Kinds @("MSSQL_ServerRole", "Base", "SCCM_Infra") -Properties @{
+        Upsert-Node -Id "sysadmin@$SQLServerDomainSID" -Kinds @("MSSQL_ServerRole") -Properties @{
             collectionSource = @($CollectionSource)
             isFixedRole = $true
             # We know the primary site server is a member of the sysadmin role
             members = if ($SiteServerDomainObject) { @($SiteServerDomainObject.SamAccountName) } else { @() }
             name = "sysadmin"
+            SCCMInfra = $true
             SCCMSite = $SiteCode
             SQLServer = $SqlServerFQDN
         }
 
         # Create or update MSSQL_Database node
-        Add-Node -Id $sqlDatabaseIdentifier -Kinds @("MSSQL_Database", "Base", "SCCM_Infra") -Properties @{
+        Upsert-Node -Id $sqlDatabaseIdentifier -Kinds @("MSSQL_Database") -Properties @{
             collectionSource = @($CollectionSource)
             isTrustworthy = $true
             name = $SqlDatabaseName
+            SCCMInfra = $true
             SCCMSite = $SiteCode
             SQLServer = $SqlServerFQDN
         }
 
         # Create or update MSSQL_DatabaseRole node
-        Add-Node -Id "db_owner@$sqlDatabaseIdentifier" -Kinds @("MSSQL_DatabaseRole", "Base", "SCCM_Infra") -Properties @{
+        Upsert-Node -Id "db_owner@$sqlDatabaseIdentifier" -Kinds @("MSSQL_DatabaseRole") -Properties @{
             collectionSource = @($CollectionSource)
             database = $SqlDatabaseName
             isFixedRole = $true
             members = if ($SiteServerDomainObject) { @($SiteServerDomainObject.SamAccountName) } else { @() }
             name = "db_owner"
+            SCCMInfra = $true
             SCCMSite = $SiteCode
             SQLServer = $SqlServerFQDN
         }
@@ -4129,73 +4146,73 @@ function Add-MSSQLNodesAndEdgesForSite {
         # Create edges
         ## Computer level
         ### (Computer) -[MSSQL_HostFor]-> (MSSQL_Server)
-        Add-Edge -Start $sqlServerDomainObject.SID -Kind "MSSQL_HostFor" -End $SQLServerDomainSID -Properties @{
+        Upsert-Edge -Start $sqlServerDomainObject.SID -Kind "MSSQL_HostFor" -End $SQLServerDomainSID -Properties @{
             collectionSource = @($CollectionSource)
         }
         ### (MSSQL_Server) -[MSSQL_ExecuteOnHost]-> (Computer)
-        Add-Edge -Start $SQLServerDomainSID -Kind "MSSQL_ExecuteOnHost" -End $sqlServerDomainObject.SID -Properties @{
+        Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_ExecuteOnHost" -End $sqlServerDomainObject.SID -Properties @{
             collectionSource = @($CollectionSource)
         }
 
         ## Server level
         ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_Database)
-        Add-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End $sqlDatabaseIdentifier -Properties @{
+        Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End $sqlDatabaseIdentifier -Properties @{
             collectionSource = @($CollectionSource)
         }
         ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_ServerRole)
-        Add-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End "sysadmin@$SQLServerDomainSID" -Properties @{
+        Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End "sysadmin@$SQLServerDomainSID" -Properties @{
             collectionSource = @($CollectionSource)
         }
         if ($siteServerMssqlLogin) {
             ### (MSSQL_Login) -[MSSQL_MemberOf]-> (MSSQL_ServerRole)
-            Add-Edge -Start $siteServerMssqlLogin -Kind "MSSQL_MemberOf" -End "sysadmin@$SQLServerDomainSID" -Properties @{
+            Upsert-Edge -Start $siteServerMssqlLogin -Kind "MSSQL_MemberOf" -End "sysadmin@$SQLServerDomainSID" -Properties @{
                 collectionSource = @($CollectionSource)
             }
             ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_Login)
-            Add-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End $siteServerMssqlLogin -Properties @{
+            Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_Contains" -End $siteServerMssqlLogin -Properties @{
                 collectionSource = @($CollectionSource)
             }
             ### (Computer) -[MSSQL_HasLogin]-> (MSSQL_Login)
             if ($SiteServerDomainObject -and $SiteServerDomainObject.SID) {
-                Add-Edge -Start $SiteServerDomainObject.SID -Kind "MSSQL_HasLogin" -End $siteServerMssqlLogin -Properties @{
+                Upsert-Edge -Start $SiteServerDomainObject.SID -Kind "MSSQL_HasLogin" -End $siteServerMssqlLogin -Properties @{
                     collectionSource = @($CollectionSource)
                 }
             }
         }
         ### (MSSQL_ServerRole) -[MSSQL_ControlServer]-> (MSSQL_Server)
-        Add-Edge -Start "sysadmin@$SQLServerDomainSID" -Kind "MSSQL_ControlServer" -End $SQLServerDomainSID -Properties @{
+        Upsert-Edge -Start "sysadmin@$SQLServerDomainSID" -Kind "MSSQL_ControlServer" -End $SQLServerDomainSID -Properties @{
             collectionSource = @($CollectionSource)
         }
 
         ## Database Level
         ### (MSSQL_Login) -[MSSQL_IsMappedTo]-> (MSSQL_DatabaseUser)
         if ($siteServerMssqlLogin -and $siteServerMssqlDatabaseUser) {
-            Add-Edge -Start $siteServerMssqlLogin -Kind "MSSQL_IsMappedTo" -End $siteServerMssqlDatabaseUser -Properties @{
+            Upsert-Edge -Start $siteServerMssqlLogin -Kind "MSSQL_IsMappedTo" -End $siteServerMssqlDatabaseUser -Properties @{
                 collectionSource = @($CollectionSource)
             }
         }
         ### (MSSQL_Database) -[MSSQL_Contains]-> (MSSQL_DatabaseRole)
-        Add-Edge -Start $sqlDatabaseIdentifier -Kind "MSSQL_Contains" -End "db_owner@$sqlDatabaseIdentifier" -Properties @{
+        Upsert-Edge -Start $sqlDatabaseIdentifier -Kind "MSSQL_Contains" -End "db_owner@$sqlDatabaseIdentifier" -Properties @{
             collectionSource = @($CollectionSource)
         }
         ### (MSSQL_DatabaseUser) -[MSSQL_MemberOf]-> (MSSQL_DatabaseRole)
         if ($siteServerMssqlDatabaseUser) {
-            Add-Edge -Start $siteServerMssqlDatabaseUser -Kind "MSSQL_MemberOf" -End "db_owner@$sqlDatabaseIdentifier" -Properties @{
+            Upsert-Edge -Start $siteServerMssqlDatabaseUser -Kind "MSSQL_MemberOf" -End "db_owner@$sqlDatabaseIdentifier" -Properties @{
                 collectionSource = @($CollectionSource)
             }
         }
         ### (MSSQL_DatabaseRole) -[MSSQL_ControlDB]-> (MSSQL_Database)
-        Add-Edge -Start "db_owner@$sqlDatabaseIdentifier" -Kind "MSSQL_ControlDB" -End $sqlDatabaseIdentifier -Properties @{
+        Upsert-Edge -Start "db_owner@$sqlDatabaseIdentifier" -Kind "MSSQL_ControlDB" -End $sqlDatabaseIdentifier -Properties @{
             collectionSource = @($CollectionSource)
         }
         ### (MSSQL_Database) -[MSSQL_Contains]-> (MSSQL_DatabaseUser)
         if ($siteServerMssqlDatabaseUser) {
-            Add-Edge -Start $sqlDatabaseIdentifier -Kind "MSSQL_Contains" -End $siteServerMssqlDatabaseUser -Properties @{
+            Upsert-Edge -Start $sqlDatabaseIdentifier -Kind "MSSQL_Contains" -End $siteServerMssqlDatabaseUser -Properties @{
                 collectionSource = @($CollectionSource)
             }
         }
         ### (MSSQL_Database) -[SCCM_AssignAllPermissions]-> (SCCM_Site)
-        Add-Edge -Start $sqlDatabaseIdentifier -Kind "SCCM_AssignAllPermissions" -End $SiteCode -Properties @{
+        Upsert-Edge -Start $sqlDatabaseIdentifier -Kind "SCCM_AssignAllPermissions" -End $SiteCode -Properties @{
             collectionSource = @($CollectionSource)
         }
     } catch {
@@ -4228,9 +4245,9 @@ function Invoke-MSSQLCollection {
 
         $epaResult = Get-MssqlEpaSettingsViaTDS -ServerNameOrIP $target -Port $Port -ServerString $serverString
         if ($epaResult) {
-            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"            
+            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"   
 
-            Add-MSSQLNodesAndEdgesForSite -SiteCode $CollectionTarget.SiteCode `
+            Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $CollectionTarget.SiteCode `
                                           -SqlServerDomainObject $CollectionTarget.ADObject `
                                           -SqlServicePort $Port `
                                           -CollectionSource @("MSSQL-ScanForEPA") `
@@ -4282,13 +4299,13 @@ function Process-CoerceAndRelayToAdminService {
             $authedUsersObjectId = "$($siteServer.Properties.Domain)`-S-1-5-11"
 
             # Add node for Authenticated Users so we don't get Unknown kind
-            Add-Node -Id $authedUsersObjectId `
+            Upsert-Node -Id $authedUsersObjectId `
                     -Kinds $("Group", "Base") `
                     -Properties @{
                         name = "AUTHENTICATED USERS@$($siteServer.Properties.Domain)"
                     }
             
-            Add-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToAdminService" -End $SiteCode -Properties @{
+            Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToAdminService" -End $SiteCode -Properties @{
                 collectionSource = @($CollectionSource)
                 coercionVictimHostName = $siteServer.Properties.dNSHostName
                 relayTargetHostName = $smsProviderComputerNode.Properties.ADObject.dNSHostName
@@ -4338,7 +4355,7 @@ function Process-CoerceAndRelayToMSSQL {
 
         # Check EPA settings on the site database server
         if (-not $mssqlServerNode) {
-            Write-LogMessage Warning "No MSSQL_Server node found for site database server $($siteDatabaseComputerNode.Id) to create coerce and relay to MSSQL edge"
+            Write-LogMessage Verbose "No MSSQL_Server node found for site database server $($siteDatabaseComputerNode.Id) to create coerce and relay to MSSQL edge"
             continue
         }
 
@@ -4360,20 +4377,20 @@ function Process-CoerceAndRelayToMSSQL {
             # Get the corresponding MSSQL login for the computer
             $mssqlLogin = $script:Nodes | Where-Object { $_.Kinds -contains "MSSQL_Login" -and $_.Id -eq "$computerDomain\$($computerWithMssqlLogin.Properties.SAMAccountName)@$($mssqlServerNode.Id)" }
             if (-not $mssqlLogin) {
-                Write-LogMessage Warning "No corresponding MSSQL login found for computer $($computerWithMssqlLogin.Id) to create coerce and relay to MSSQL edge"
+                Write-LogMessage Verbose "No corresponding MSSQL login found for computer $($computerWithMssqlLogin.Id) to create coerce and relay to MSSQL edge"
                 continue
             }
 
             $authedUsersObjectId = "$($computerWithMssqlLogin.Properties.Domain)`-S-1-5-11"
 
             # Add node for Authenticated Users so we don't get Unknown kind
-            Add-Node -Id $authedUsersObjectId `
+            Upsert-Node -Id $authedUsersObjectId `
                     -Kinds $("Group", "Base") `
                     -Properties @{
                         name = "AUTHENTICATED USERS@$($computerWithMssqlLogin.Properties.Domain)"
                     }
             
-            Add-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToMSSQL" -End $mssqlLogin.Id -Properties @{
+            Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToMSSQL" -End $mssqlLogin.Id -Properties @{
                 collectionSource = @($CollectionSource)
                 coercionVictimHostName = $computerWithMssqlLogin.Properties.dNSHostName
                 relayTargetHostName = $mssqlServerNode.Properties.ADObject.dNSHostName
@@ -4547,7 +4564,13 @@ function Get-SitesViaAdminService {
         }
     
         foreach ($site in $siteResponseContent.value) {
-                  
+
+            # Skip creation of nodes for secondary sites
+            if ($site.Type -eq 1) {
+                Write-LogMessage Verbose "Skipping node creation for secondary site $($site.SiteCode)"
+                continue
+            }
+
             # Try to get siteGUID from SMS_SCI_SiteDefinition
             $siteDefQuery = "SMS_SCI_SiteDefinition?`$filter=SiteCode eq '$($site.siteCode)'&`$select=ParentSiteCode,SiteCode,SiteName,SiteServerDomain,SiteServerName,SiteType,SQLDatabaseName,SQLServerName,Props"
             $siteDefUrl = "$baseUrl/wmi/$siteDefQuery"
@@ -4600,10 +4623,11 @@ function Get-SitesViaAdminService {
             # Create or update the Computer node for the primary site server
             $siteServerDomainObject = Resolve-PrincipalInDomain -Name $site.ServerName -Domain $script:Domain
             if ($siteServerDomainObject) {
-                Write-LogMessage Success "Found primary site server for site $($site.SiteCode): $($site.ServerName)"
-                Add-Node -Id $siteServerDomainObject.SID -Kinds @("Computer", "Base", "SCCM_Infra") -PSObject $siteServerDomainObject -Properties @{
+                Write-LogMessage Success "Found site server for site $($site.SiteCode): $($site.ServerName)"
+                Upsert-Node -Id $siteServerDomainObject.SID -Kinds @("Computer", "Base") -PSObject $siteServerDomainObject -Properties @{
                     collectionSource = @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
-                    SCCMSiteSystemRoles = @("SMS Site Server@$siteCode")
+                    SCCMSiteSystemRoles = @("SMS Site Server@$($site.SiteCode)")
+                    SCCMInfra = $true
                 }
             } else {
                 Write-LogMessage Warning "Failed to resolve primary site server $($site.ServerName) to AD object"
@@ -4617,37 +4641,32 @@ function Get-SitesViaAdminService {
                     return
                 }
 
-                Write-LogMessage Success "Found SQL Server for site $SiteCode`: $SqlServerFQDN"
+                Write-LogMessage Success "Found SQL Server for site $($site.SiteCode)`: $SqlServerFQDN"
 
                 # Create or update Computer node for SQL Server
-                Add-Node -Id $sqlServerDomainObject.SID -Kinds @("Computer", "Base", "SCCM_Infra") -PSObject $sqlServerDomainObject -Properties @{
-                    collectionSource = @($CollectionSource)
-                    SCCMSiteSystemRoles = @("SMS SQL Server@$SiteCode")
+                Upsert-Node -Id $sqlServerDomainObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServerDomainObject -Properties @{
+                    collectionSource = @("AdminService-SMS_SCI_SiteDefinition")
+                    SCCMSiteSystemRoles = @("SMS SQL Server@$($site.SiteCode)")
+                    SCCMInfra = $true
                 }
-
-                Add-MSSQLNodesAndEdgesForSite -SiteCode $site.SiteCode `
-                                              -SqlServerDomainObject $sqlServerDomainObject `
-                                              -SqlDatabaseName $sqlDatabaseName `
-                                              -SqlServicePort $sqlServicePort `
-                                              -SiteServerDomainObject $siteServerDomainObject `
-                                              -CollectionSource @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
             } else {
                 Write-LogMessage Warning "No SQL Server FQDN found for site $($site.SiteCode)"
             }
             
-            # Create or update SCCM_Site nodes
-            Add-Node -Id $site.SiteCode -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+            # Update SCCM_Site nodes
+            Upsert-Node -Id $site.SiteCode -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
                 buildNumber = if ($site.BuildNumber) { $site.BuildNumber } else { $null }
                 displayName = if ($site.SiteName) { $site.SiteName } else { $null }
                 installDir = if ($site.InstallDir) { $site.InstallDir } else { $null }
                 parentSiteCode = if ($site.ReportingSiteCode) { $site.ReportingSiteCode } else { "None" }
+                SCCMInfra = $true 
                 siteCode = $site.SiteCode
                 siteGUID = if ($siteGUID) { $siteGUID } else { $null }
                 siteServerDomainSID = if ($siteServerDomainObject.SID) { $siteServerDomainObject.SID } else { $null }
                 siteServerFQDN = if ($siteServerDomainObject.dNSHostName) { $siteServerDomainObject.dNSHostName } else { $null }
                 siteServerName = if ($site.ServerName) { $site.ServerName } else { $null }
-                siteType = if ($site.SiteType) { switch ($site.SiteType) {
+                siteType = if ($site.Type) { switch ($site.Type) {
                     1 { "Secondary Site" }
                     2 { "Primary Site" }
                     4 { "Central Administration Site" }
@@ -4660,18 +4679,27 @@ function Get-SitesViaAdminService {
                 SQLServicePort = $sqlServicePort
                 version = if ($site.Version) { $site.Version } else { $null }
             }
+
+            # Finally, add MSSQL nodes and edges for each site
+            Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $site.SiteCode `
+                                        -SqlServerDomainObject $sqlServerDomainObject `
+                                        -SqlDatabaseName $sqlDatabaseName `
+                                        -SqlServicePort $sqlServicePort `
+                                        -SiteServerDomainObject $siteServerDomainObject `
+                                        -CollectionSource @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
         }
     
-        # Loop again to add parent site edges now that all sites are created
+        # Loop again to add parent site edges now that all sites are created and populated
         foreach ($site in $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }) {
-            if ($site.ParentSiteCode -and $site.ParentSiteCode -ne "None") {
+            if ($site.properties.ParentSiteCode -and $site.properties.ParentSiteCode -ne "None") {
     
                 # Create Site-to-Site edge
-                Add-Edge -Start $site.SiteCode -Kind "SCCM_AdminsReplicatedTo" -End $site.ParentSiteCode -Properties @{
+                Upsert-Edge -Start $site.properties.SiteCode -Kind "SCCM_AdminsReplicatedTo" -End $site.properties.ParentSiteCode -Properties @{
                     collectionSource = @("AdminService-SMS_SCI_SiteDefinition")
                 }
             }
         }
+
         return $true
 
     } catch {
@@ -4733,14 +4761,14 @@ function Get-CombinedDeviceResourcesViaAdminService {
 
                     # Create or update Computer nodes before creating SCCM_ClientDevice node to ensure we have the dNSHostname and SID for Host node creation
                     if ($thisClientDomainObject.SID) {
-                        Add-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
+                        Upsert-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                             SCCMResourceIDs = @("$($device.ResourceID)@$SiteCode")
                             SCCMClientDeviceIdentifier = $device.SMSUniqueIdentifier
                         }
                     }
 
-                    Add-Node -Id $device.SMSID -Kinds @("SCCM_ClientDevice") -Properties @{
+                    Upsert-Node -Id $device.SMSID -Kinds @("SCCM_ClientDevice") -Properties @{
                         collectionSource = @("AdminService-SMS_CombinedDeviceResources")
                         AADDeviceID = if ($device.AADDeviceID) { $device.AADDeviceID } else { $null }
                         AADTenantID = if ($device.AADTenantID) { $device.AADTenantID } else { $null }
@@ -4775,41 +4803,43 @@ function Get-CombinedDeviceResourcesViaAdminService {
                         userDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
                     }
 
-                    Add-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSID -Properties @{
+                    Upsert-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSID -Properties @{
                         collectionSource = @("AdminService-ClientDevices")
                     }
 
                     if ($adLastLogonUserObject.SID) {
-                        Add-Node -Id $adLastLogonUserObject.SID -Kinds @("User", "Base") -PSObject $adLastLogonUserObject -Properties @{
+                        Upsert-Node -Id $adLastLogonUserObject.SID -Kinds @("User", "Base") -PSObject $adLastLogonUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
-                        Add-Edge -Start $device.SMSID -Kind "SCCM_HasADLastLogonUser" -End $adLastLogonUserObject.SID -Properties @{
+                        Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasADLastLogonUser" -End $adLastLogonUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
                     }
                     if ($currentLogonUserObject.SID) {
-                        Add-Node -Id $currentLogonUserObject.SID -Kinds @("User", "Base") -PSObject $currentLogonUserObject -Properties @{
+                        Upsert-Node -Id $currentLogonUserObject.SID -Kinds @("User", "Base") -PSObject $currentLogonUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
-                        Add-Edge -Start $device.SMSID -Kind "SCCM_HasCurrentUser" -End $currentLogonUserObject.SID -Properties @{
+                        Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasCurrentUser" -End $currentLogonUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
                     }
                     if ($currentManagementPointObject.SID) {
-                        Add-Node -Id $currentManagementPointObject.SID -Kinds @("Computer", "Base", "SCCM_Infra") -PSObject $currentManagementPointObject -Properties @{
+                        Upsert-Node -Id $currentManagementPointObject.SID -Kinds @("Computer", "Base") -PSObject $currentManagementPointObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            SCCMInfra = $true
                         }
                     }
                     if ($lastReportedMPServerObject.SID) {
-                        Add-Node -Id $lastReportedMPServerObject.SID -Kinds @("Computer", "Base", "SCCM_Infra") -PSObject $lastReportedMPServerObject -Properties @{
+                        Upsert-Node -Id $lastReportedMPServerObject.SID -Kinds @("Computer", "Base") -PSObject $lastReportedMPServerObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            SCCMInfra = $true
                         }
                     }
                     if ($primaryUserObject.SID) {
-                        Add-Node -Id $primaryUserObject.SID -Kinds @("User", "Base") -PSObject $primaryUserObject -Properties @{
+                        Upsert-Node -Id $primaryUserObject.SID -Kinds @("User", "Base") -PSObject $primaryUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
-                        Add-Edge -Start $device.SMSID -Kind "SCCM_HasPrimaryUser" -End $primaryUserObject.SID -Properties @{
+                        Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasPrimaryUser" -End $primaryUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
                         }
                     }
@@ -4876,21 +4906,21 @@ function Get-SmsRSystemViaAdminService {
                     # Add or update Computer node if domain SID is not null
                     if ($thisClientDomainObject.SID) {
                         # Add or update Computer node
-                        Add-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
+                        Upsert-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
                             collectionSource = @("AdminService-SMS_R_System")
                             SCCMResourceIDs = @("$($device.ResourceID)@$SiteCode")
                             SCCMClientDeviceIdentifier = $device.SMSUniqueIdentifier
-                            SCCMSiteSystemRoles = if ($siteSystemRoles.Count -gt 0) { $siteSystemRoles } else { @() }
+                            #SCCMSiteSystemRoles = if ($siteSystemRoles.Count -gt 0) { $siteSystemRoles } else { @() }
                         }
 
                         # Add Group nodes
                         foreach ($group in $device.SecurityGroupName) {
                             $thisGroupDomainObject = Resolve-PrincipalInDomain -Name $group -Domain $script:Domain
                             if ($thisGroupDomainObject.SID) {
-                                Add-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
+                                Upsert-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
                                     collectionSource = @("AdminService-SMS_R_System")
                                 }
-                                Add-Edge -Start $thisClientDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
+                                Upsert-Edge -Start $thisClientDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
                                     collectionSource = @("AdminService-SMS_R_System")
                                 }
                                 $totalGroupsProcessed++
@@ -4904,12 +4934,12 @@ function Get-SmsRSystemViaAdminService {
                     if ($device.Client -and -not $device.Obsolete) {
 
                         # Update the existing SCCM_ClientDevice node with the domain SID
-                        Add-Node -Id $device.SMSUniqueIdentifier -Kinds @("SCCM_ClientDevice") -Properties @{
+                        Upsert-Node -Id $device.SMSUniqueIdentifier -Kinds @("SCCM_ClientDevice") -Properties @{
                             collectionSource = @("AdminService-SMS_R_System")
                             ADDomainSID = if ($device.SID) { $device.SID } else { $null }
                         }
                         # There should already be an edge but just in case, add it again
-                        Add-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSUniqueIdentifier -Properties @{
+                        Upsert-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSUniqueIdentifier -Properties @{
                             collectionSource = @("AdminService-SMS_R_System")
                         }
                     }
@@ -4970,7 +5000,7 @@ function Get-SmsRUserViaAdminService {
                     # Create User node if domain SID is not null
                     if ($thisUserDomainObject.SID) {
         
-                        Add-Node -Id $thisUserDomainObject.SID -Kinds @("User", "Base") -PSObject $thisUserDomainObject -Properties @{
+                        Upsert-Node -Id $thisUserDomainObject.SID -Kinds @("User", "Base") -PSObject $thisUserDomainObject -Properties @{
                             collectionSource = @("AdminService-SMS_R_User")
                             SCCMResourceIDs = @("$($user.ResourceID)@$SiteCode")
                         }
@@ -4979,11 +5009,11 @@ function Get-SmsRUserViaAdminService {
                         foreach ($group in $user.SecurityGroupName) {
                             $thisGroupDomainObject = Resolve-PrincipalInDomain -Name $group -Domain $script:Domain
                             if ($thisGroupDomainObject.SID) {
-                                Add-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
+                                Upsert-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
                                     collectionSource = @("AdminService-SMS_R_User")
                                     SCCMResourceIDs = @("$($user.ResourceID)@$SiteCode")
                                 }
-                                Add-Edge -Start $thisUserDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
+                                Upsert-Edge -Start $thisUserDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
                                     collectionSource = @("AdminService-SMS_R_User")
                                 }
                                 $totalGroupsProcessed++
@@ -5045,7 +5075,7 @@ function Get-CollectionsViaAdminService {
             foreach ($collection in $collectionResponseContent.value) {
                  
                  # Create collection node
-                 Add-Node -Id "$($collection.CollectionID)@$SiteCode" -Kinds @("SCCM_Collection", "SCCM_Infra") -Properties @{
+                 Upsert-Node -Id "$($collection.CollectionID)@$SiteCode" -Kinds @("SCCM_Collection") -Properties @{
                      collectionSource = @("AdminService-SMS_Collection")
                      collectionType = $collection.CollectionType
                      collectionVariablesCount = $collection.CollectionVariablesCount
@@ -5060,7 +5090,7 @@ function Get-CollectionsViaAdminService {
                      sourceSiteCode = $SiteCode
                  }
 
-                 Add-Edge -Start $SiteCode -Kind "SCCM_Contains" -End "$($collection.CollectionID)@$SiteCode" -Properties @{
+                 Upsert-Edge -Start $SiteCode -Kind "SCCM_Contains" -End "$($collection.CollectionID)@$SiteCode" -Properties @{
                      collectionSource = @("AdminService-SMS_Collection")
                  }
 
@@ -5086,7 +5116,7 @@ function Get-CollectionMembersViaAdminService {
     )
 
     try {
-        Write-LogMessage "Collecting collection members via SMS_FullCollectionMembership from $Target for site $SiteCode" -Level "Info"
+        Write-LogMessage Info "Collecting collection members via SMS_FullCollectionMembership from $Target for site $SiteCode"
         # Query SMS_FullCollectionMembership as per design document
         $select = "`$select=CollectionID,ResourceID,SiteCode"
         $batchSize = 1000
@@ -5120,9 +5150,10 @@ function Get-CollectionMembersViaAdminService {
             foreach ($collection in $membersByCollection) {
 
                 # Update collection node with members
-                Add-Node -Id "$($collection.Name)@$SiteCode" -Kinds @("SCCM_Collection", "SCCM_Infra") -Properties @{
+                Upsert-Node -Id "$($collection.Name)@$SiteCode" -Kinds @("SCCM_Collection") -Properties @{
                     collectionSource = @("AdminService-SMS_FullCollectionMembership")
                     members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$SiteCode" }
+                    SCCMInfra = $true
                     sourceSiteCode = $SiteCode
                 }
 
@@ -5141,7 +5172,7 @@ function Get-CollectionMembersViaAdminService {
                     }
 
                     if ($memberNode) {
-                        Add-Edge -Start "$($collection.Name)@$SiteCode" -Kind "SCCM_HasMember" -End $memberNode.Id -Propertries @{
+                        Upsert-Edge -Start "$($collection.Name)@$SiteCode" -Kind "SCCM_HasMember" -End $memberNode.Id -Properties @{
                             collectionSource = @("AdminService-SMS_FullCollectionMembership")
                         }
                     } elseif ($member.ResourceID -eq '2046820352') {
@@ -5205,7 +5236,7 @@ function Get-SecurityRolesViaAdminService {
             
             foreach ($role in $roleResponseContent.value) {
                         
-                Add-Node -Id "$($role.RoleID)@$SiteCode" -Kinds @("SCCM_SecurityRole", "SCCM_Infra") -Properties @{
+                Upsert-Node -Id "$($role.RoleID)@$SiteCode" -Kinds @("SCCM_SecurityRole") -Properties @{
                     collectionSource = @("AdminService-SMS_Role")
                     copiedFromID = if ($role.CopiedFromID) { $role.CopiedFromID } else { $null }
                     createdBy = if ($role.CreatedBy) { $role.CreatedBy } else { $null }
@@ -5220,12 +5251,13 @@ function Get-SecurityRolesViaAdminService {
                     roleID = if ($role.RoleID) { $role.RoleID } else { $null }
                     roleName = if ($role.RoleName) { $role.RoleName } else { $null }
                     roleDescription = if ($role.RoleDescription) { $role.RoleDescription } else { $null }
+                    SCCMInfra = $true
                     sourceSiteCode = $SiteCode
                 }
 
                 # Add edges from every site in the hierarchy to every security role since they are replicated
                 foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }) {
-                    Add-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($role.RoleID)@$SiteCode" -Properties @{
+                    Upsert-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($role.RoleID)@$SiteCode" -Properties @{
                         collectionSource = @("AdminService-SMS_Role")
                     }
                 }
@@ -5280,7 +5312,7 @@ function Get-AdminUsersViaAdminService {
             
             foreach ($admin in $adminResponseContent.value) {
 
-                Add-Node -Id "$($admin.LogonName)@$SiteCode" -Kinds @("SCCM_AdminUser", "SCCM_Infra") -Properties @{
+                Upsert-Node -Id "$($admin.LogonName)@$SiteCode" -Kinds @("SCCM_AdminUser") -Properties @{
                     collectionSource = @("AdminService-SMS_Admin")
                     adminID = if ($admin.AdminID) { $admin.AdminID } else { $null }
                     adminSid = if ($admin.AdminSid) { $admin.AdminSid } else { $null }
@@ -5292,12 +5324,13 @@ function Get-AdminUsersViaAdminService {
                     lastModifiedDate = if ($admin.LastModifiedDate) { $admin.LastModifiedDate } else { $null }
                     name = if ($admin.LogonName) { $admin.LogonName } else { $null }
                     roleIDs = if ($admin.Roles) { $admin.Roles } else { $null }
+                    SCCMInfra = $true
                     sourceSiteCode = if ($admin.SourceSite) { $admin.SourceSite } else { $null }
                 }
 
                 # Add edges from every site in the hierarchy to every security role since they are replicated
                 foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }) {
-                    Add-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($admin.LogonName)@$SiteCode" -Properties @{
+                    Upsert-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($admin.LogonName)@$SiteCode" -Properties @{
                         collectionSource = @("AdminService-SMS_Admin")
                     }
                 }
@@ -5307,18 +5340,20 @@ function Get-AdminUsersViaAdminService {
                     if ($adminDomainObject) {
                         # Check if user or group
                         if ($adminDomainObject.Type -eq "User") {
-                            $kinds = @("User", "Base", "SCCM_Infra")
+                            $kinds = @("User", "Base")
                         } else {
-                            $kinds = @("Group", "Base", "SCCM_Infra")
+                            $kinds = @("Group", "Base")
                         }
                         # Create or update domain object node
-                        Add-Node -Id $adminDomainObject.SID -Kinds $kinds -PSObject $adminDomainObject -Properties @{
+                        Upsert-Node -Id $adminDomainObject.SID -Kinds $kinds -PSObject $adminDomainObject -Properties @{
                             collectionSource = @("AdminService-SMS_Admin")
+                            SCCMInfra = $true
                         }
 
                         # Create SCCM_IsMappedTo edge
-                        Add-Edge -Start $adminDomainObject.SID -Kind "SCCM_IsMappedTo" -End "$($admin.LogonName)@$SiteCode" -Properties @{
+                        Upsert-Edge -Start $adminDomainObject.SID -Kind "SCCM_IsMappedTo" -End "$($admin.LogonName)@$SiteCode" -Properties @{
                             collectionSource = @("AdminService-SMS_Admin")
+                            SCCMInfra = $true
                         }
                     } else {
                         Write-LogMessage Warning "No domain object found for admin user $($admin.LogonName)@$SiteCode"
@@ -5333,7 +5368,7 @@ function Get-AdminUsersViaAdminService {
                     foreach ($collectionName in $collectionNames) {
                         $collection = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Collection" -and $_.properties.name -eq "$collectionName" -and $_.properties.sourceSiteCode -eq $SiteCode }
                         if ($collection) {
-                            Add-Edge -Start "$($admin.LogonName)@$SiteCode" -Kind "SCCM_IsAssigned" -End $collection.Id -Properties @{
+                            Upsert-Edge -Start "$($admin.LogonName)@$SiteCode" -Kind "SCCM_IsAssigned" -End $collection.Id -Properties @{
                                 collectionSource = @("AdminService-SMS_Admin")
                             }
                         } else {
@@ -5348,7 +5383,7 @@ function Get-AdminUsersViaAdminService {
                     foreach ($roleID in $roleIDs) {
                         $role = $script:Nodes | Where-Object { $_.Id -eq "$roleID@$SiteCode" }
                         if ($role) {
-                            Add-Edge -Start "$($admin.LogonName)@$SiteCode" -Kind "SCCM_IsAssigned" -End $role.Id -Properties @{
+                            Upsert-Edge -Start "$($admin.LogonName)@$SiteCode" -Kind "SCCM_IsAssigned" -End $role.Id -Properties @{
                                 collectionSource = @("AdminService-SMS_Admin")
                             }
                         } else {
@@ -5416,6 +5451,8 @@ function Get-SiteSystemRolesViaAdminService {
                 # For each system with at least one site system role
                 foreach ($group in $groupedSystems) {
 
+                    # Get site code from response to account for secondary sites
+                    $siteCode = $group.Group[0].SiteCode
                     $systemName = $group.Group[0].NetworkOSPath.Replace('\', '')
 
                     # Resolve computer object first in case it's a site database running as LocalSystem or NetworkService
@@ -5425,8 +5462,8 @@ function Get-SiteSystemRolesViaAdminService {
                     $roleNames = @()
                     foreach ($role in $group.Group) {
                         if ($role.RoleName) {
-                            if (-not $roleNames.Contains("$($role.RoleName)@$SiteCode")) {
-                                $roleNames += "$($role.RoleName)@$SiteCode"
+                            if (-not $roleNames.Contains("$($role.RoleName)@$siteCode")) {
+                                $roleNames += "$($role.RoleName)@$siteCode"
                             }
                         }
 
@@ -5438,30 +5475,31 @@ function Get-SiteSystemRolesViaAdminService {
                                 $kinds = @()
                                 if ($serviceAccountObject) {
                                     if ($serviceAccountObject.Type -eq "User") {
-                                        $kinds = @("User", "Base", "SCCM_Infra")
+                                        $kinds = @("User", "Base")
                                     } else {
-                                        $kinds = @("Computer", "Base", "SCCM_Infra")
+                                        $kinds = @("Computer", "Base")
                                     }                    
                                 } else {
                                     Write-LogMessage Verbose "No domain object found for $serviceAccount, the site database is running as a local account"
                                     $serviceAccountObject = $computerObject
-                                    $kinds = @("Computer", "Base", "SCCM_Infra")
+                                    $kinds = @("Computer", "Base")
                                 }
-                                Add-Node -Id $serviceAccountObject.SID -Kinds $kinds -PSObject $serviceAccountObject -Properties @{
+                                Upsert-Node -Id $serviceAccountObject.SID -Kinds $kinds -PSObject $serviceAccountObject -Properties @{
                                     collectionSource = @("AdminService-SMS_SCI_SysResUse")
+                                    SCCMInfra = $true
                                 }
 
                                 # Create edge from service account to computer if not the same
                                 if ($serviceAccountObject.SID -ne $computerObject.SID) {
-                                    Add-Edge -Start $serviceAccountObject.SID -Kind "HasSession" -End $computerObject.SID -Properties @{
+                                    Upsert-Edge -Start $serviceAccountObject.SID -Kind "HasSession" -End $computerObject.SID -Properties @{
                                         collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                     }
-                                    Add-Edge -Start $computerObject.SID -Kind "MSSQL_GetAdminTGS" -End $serviceAccountObject.SID -Properties @{
+                                    Upsert-Edge -Start $computerObject.SID -Kind "MSSQL_GetAdminTGS" -End $serviceAccountObject.SID -Properties @{
                                         collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                     }
                                     # Add MSSQL_GetTGS edges from service account to every server login
                                     foreach ($login in $script:Nodes | Where-Object { $_.kinds -contains "MSSQL_Login" -and $_.properties.SCCMSite -eq $SiteCode }) {
-                                        Add-Edge -Start $serviceAccountObject.SID -Kind "MSSQL_GetTGS" -End $login.Id -Properties @{
+                                        Upsert-Edge -Start $serviceAccountObject.SID -Kind "MSSQL_GetTGS" -End $login.Id -Properties @{
                                             collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                         }
                                     }
@@ -5472,8 +5510,9 @@ function Get-SiteSystemRolesViaAdminService {
 
                     # Create or update Computer node
                     if ($computerObject) {
-                        Add-Node -Id $computerObject.SID -Kinds @("Computer", "Base", "SCCM_Infra") -PSObject $computerObject -Properties @{
+                        Upsert-Node -Id $computerObject.SID -Kinds @("Computer", "Base") -PSObject $computerObject -Properties @{
                             collectionSource = @("AdminService-SMS_SCI_SysResUse")
+                            SCCMInfra = $true
                             SCCMSiteSystemRoles = $roleNames
                         }
                     } else {
@@ -6107,8 +6146,9 @@ function Invoke-HTTPCollection {
                                                 Write-LogMessage Success "Found site code for $mpFQDN`: $siteCode"
 
                                                 # Create or update SCCM_Site node
-                                                Add-Node -Id $siteCode -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+                                                Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                                                     collectionSource = @("HTTP-MPKEYINFORMATION")
+                                                    SCCMInfra = $true
                                                     siteCode = $siteCode
                                                 }                                                   
                                             }
@@ -6120,7 +6160,7 @@ function Invoke-HTTPCollection {
 
                                 # Add site system role to Computer node properties
                                 if ($managementPoint.ADObject) {
-                                    Add-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
+                                    Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                         collectionSource = @("HTTP-MPKEYINFORMATION")
                                         SCCMSiteSystemRoles = @("SMS Management Point$(if ($siteCode) { "@$siteCode" })")
                                     }
@@ -6145,7 +6185,7 @@ function Invoke-HTTPCollection {
 
                                                     # Add site system role to Computer node properties
                                                     if ($managementPoint.ADObject) {
-                                                        Add-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
+                                                        Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                                             collectionSource = @("HTTP-MPKEYINFORMATION")
                                                             SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                                                         }
@@ -6207,7 +6247,7 @@ function Invoke-HTTPCollection {
 
                             # Add site system role to Computer node properties
                             if ($distributionPoint.ADObject) {
-                                Add-Node -Id $distributionPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $distributionPoint.ADObject -Properties @{
+                                Upsert-Node -Id $distributionPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $distributionPoint.ADObject -Properties @{
                                     collectionSource = @("HTTP-SMS_DP_SMSPKG$")
                                     SCCMSiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                                 }
@@ -6298,7 +6338,7 @@ function Get-ManagementPointCertIssuer {
             # Attach role to the computer node
             $device = Add-DeviceToTargets -DeviceName $target -Source "HTTP-sitesigncert"
             if ($device -and $device.ADObject -and $device.ADObject.SID) {
-                Add-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
+                Upsert-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
                     collectionSource = @("HTTP-sitesigncert")
                     SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@${($CollectionTarget.SiteCode)}" })")
                 }
@@ -6505,8 +6545,9 @@ public const int NERR_ServerNotStarted = 2114;
             # Create SCCM_Site if it doesn't exist already
             if ($isDP -or $isSiteServer) {
                 if ($siteCode) {
-                    Add-Node -Id $siteCode -Kinds @("SCCM_Site", "SCCM_Infra") -Properties @{
+                    Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                         collectionSource = $collectionSource
+                        SCCMInfra = $true
                         siteCode = $siteCode
                     }
                 } else {
@@ -6522,7 +6563,7 @@ public const int NERR_ServerNotStarted = 2114;
                     $roles += "SMS Distribution Point$(if ($siteCode) { "@$siteCode"})"
                 }
 
-                Add-Node -Id $targetDict.Value.ADObject.SID -Kinds @("Computer", "Base") -PSObject $targetDict.Value.ADObject -Properties @{
+                Upsert-Node -Id $targetDict.Value.ADObject.SID -Kinds @("Computer", "Base") -PSObject $targetDict.Value.ADObject -Properties @{
                     collectionSource = $collectionSource
                     SCCMHostsContentLibrary = $hostsContentLib
                     SCCMIsPXESupportEnabled = $isPXEEnabled
@@ -7421,10 +7462,10 @@ function New-StreamingBloodHoundWriter {
     # Removing until deletion issue is fixed
 
     $writerObj.Writer.WriteLine('  "$schema": "https://raw.githubusercontent.com/MichaelGrafnetter/EntraAuthPolicyHound/refs/heads/main/bloodhound-opengraph.schema.json",')
+    $writerObj.Writer.WriteLine('  "metadata": {')
+    $writerObj.Writer.WriteLine('    "source_kind": "SCCM_Base"')
+    $writerObj.Writer.WriteLine('  },')
     $writerObj.Writer.WriteLine('  "graph": {')
-    $writerObj.Writer.WriteLine('    "metadata": {')
-    $writerObj.Writer.WriteLine('      "source_kind": "SCCM_Base"')
-    $writerObj.Writer.WriteLine('    },')
     $writerObj.Writer.WriteLine('    "nodes": [')
     $writerObj.Writer.Flush()
     
@@ -8021,17 +8062,17 @@ try {
     if (Get-Module -ListAvailable -Name ActiveDirectory) {
         try {
             Import-Module ActiveDirectory -ErrorAction SilentlyContinue
-            Write-LogMessage Success "ActiveDirectory module loaded"
+            Write-LogMessage Success "Using ActiveDirectory module for name resolution"
         } catch {
             Write-LogMessage Error "Failed to load ActiveDirectory module: $_"
             return
         }
     } else {
-        Write-LogMessage Warning "ActiveDirectory module not found, using .NET DirectoryServices"
+        Write-LogMessage Verbose "ActiveDirectory module not found"
         try {
             Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction Stop
             Add-Type -AssemblyName System.DirectoryServices -ErrorAction Stop
-            Write-LogMessage Success "DirectoryServices fallback initialized"
+            Write-LogMessage Success "Using .NET DirectoryServices for name resolution"
             $script:UseNetFallback = $true
         } catch {
             Write-LogMessage Error "Failed to load .NET DirectoryServices assemblies: $_"
@@ -8041,7 +8082,7 @@ try {
 
     if (-not $script:Domain) {
         try {
-            Write-LogMessage Warning "No domain provided and could not find `$env:USERDNSDOMAIN, trying computer's domain"
+            Write-LogMessage Verbose "No domain provided and could not find `$env:USERDNSDOMAIN, trying computer's domain"
             $script:Domain = (Get-CimInstance Win32_ComputerSystem).Domain
             Write-LogMessage Info "Using computer's domain: $script:Domain"
         } catch {
@@ -8051,7 +8092,7 @@ try {
     } 
     else {
         if (-not $script:DomainController) {
-            Write-LogMessage Warning "No domain controller provided, trying to find one"
+            Write-LogMessage Verbose "No domain controller provided, trying to find one"
             try {
                 if (Get-Command -Name Get-ADDomainController -ErrorAction SilentlyContinue) {
                     $dc = Get-ADDomainController -Discover -Domain $script:Domain -ErrorAction SilentlyContinue
@@ -8063,14 +8104,14 @@ try {
                     $script:DomainController = $gotDomain.FindDomainController().Name
                 }
             } catch {
-                Write-LogMessage Warning "Failed to find domain controller: $_"
+                Write-LogMessage Error "Failed to find domain controller: $_"
                 return
             }
             if (-not $script:DomainController) {
                 Write-LogMessage Error "Failed to find domain controller"
                 return
             }
-            Write-LogMessage Info "Using discovered domain controller: $script:DomainController"
+            Write-LogMessage Success "Found domain controller: $script:DomainController"
         } else {
             Write-LogMessage Info "Using specified domain controller: $script:DomainController"
         }
