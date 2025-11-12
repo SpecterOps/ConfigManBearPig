@@ -25,7 +25,11 @@ param(
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
-    [string]$SmsProvider = "ps1-sms.mayyhem.com"
+    [string]$SmsProvider = "cas-pss.mayyhem.com",
+
+    # Enable detailed debug output for troubleshooting test failures
+    [Parameter(Mandatory=$false)]
+    [switch]$ShowDebug = $true
 )
 
 #region Logging Functions
@@ -1077,7 +1081,7 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "domainadmin@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
         Target = @{
@@ -1112,7 +1116,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "domainadmin@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
     },
@@ -1160,13 +1164,13 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "domainadmin@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                id = "PS1-DEV$"
+                id = "PS1-DEV"
             }
         }
     },
@@ -1180,7 +1184,7 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                name = "PS1-DEV$@PS1"
+                name = "PS1-DEV@PS1"
             }
         }
         Target = @{
@@ -1207,7 +1211,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                name = "PS1-DEV$@PS1"
+                name = "PS1-DEV@PS1"
             }
         }
     },
@@ -1222,7 +1226,7 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                name = "PS1-DEV$@PS1"
+                name = "PS1-DEV@PS1"
             }
         }
         Target = @{
@@ -1249,7 +1253,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                name = "PS1-DEV$@PS1"
+                name = "PS1-DEV@PS1"
             }
         }
     },
@@ -1263,7 +1267,7 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                name = "PS1-DEV$@PS1"
+                name = "PS1-DEV@PS1"
             }
         }
         Target = @{
@@ -1285,7 +1289,7 @@ $script:ExpectedEdges = @(
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "domainadmin@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
         Target = @{
@@ -1313,7 +1317,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "domainadmin@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
     },
@@ -1428,7 +1432,7 @@ function Test-EdgePattern {
     
     # Check source node matches expected pattern
     if ($ExpectedEdge.Source) {
-        if (-not (Test-NodePattern -Node $sourceNode -Expected $ExpectedEdge.Source)) {
+        if (-not (Test-NodePattern -Node $sourceNode -Expected $ExpectedEdge.Source -ShowDebug:$ShowDebug)) {
             if ($ShowDebug) {
                 Dump-EdgeProperties -Edge $Edge
                 Write-TestLog "    Source node doesn't match pattern" -Level Warning
@@ -1439,7 +1443,7 @@ function Test-EdgePattern {
     
     # Check target node matches expected pattern
     if ($ExpectedEdge.Target) {
-        if (-not (Test-NodePattern -Node $targetNode -Expected $ExpectedEdge.Target)) {
+        if (-not (Test-NodePattern -Node $targetNode -Expected $ExpectedEdge.Target -ShowDebug:$ShowDebug)) {
             if ($ShowDebug) {
                 Dump-EdgeProperties -Edge $Edge
                 Write-TestLog "    Target node doesn't match pattern" -Level Warning
@@ -1471,7 +1475,8 @@ function Test-EdgePattern {
 function Test-NodePattern {
     param(
         [PSObject]$Node,
-        [hashtable]$Expected
+        [hashtable]$Expected,
+        [switch]$ShowDebug
     )
 
     # Print all node properties for debugging
@@ -1490,8 +1495,10 @@ function Test-NodePattern {
         foreach ($expectedKind in $Expected.Kinds) {
             if ($expectedKind -eq "Base") { continue }  # Base is always present
             if ($Node.kinds -notcontains $expectedKind) {
-                Dump-NodeProperties -Node $Node
-                Write-TestLog "    Node missing kind '$expectedKind' (has: $($Node.kinds -join ', '))" -Level Warning
+                if ($ShowDebug) {
+                    Dump-NodeProperties -Node $Node
+                    Write-TestLog "    Node missing kind '$expectedKind' (has: $($Node.kinds -join ', '))" -Level Warning
+                }
                 return $false
             }
         }
@@ -1511,8 +1518,10 @@ function Test-NodePattern {
             }
             
             if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
-                Dump-NodeProperties -Node $Node
-                Write-TestLog "    Property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Warning
+                if ($ShowDebug) {
+                    Dump-NodeProperties -Node $Node
+                    Write-TestLog "    Property '$prop' doesn't match (expected: $expectedValue, actual: $actualValue)" -Level Warning
+                }
                 return $false
             }
         }
@@ -1639,7 +1648,7 @@ function Get-OutputFromZip {
         # Ask to clean up ZIP file
         #Write-TestLog "Do you want to delete the zip file with the collection results? (y/N)" -Level Warning
         #$response = Read-Host
-        $response = 'Y'  # Auto-confirm for cleanup
+        $response = 'N'  # Auto-confirm for cleanup
         if ($response -eq 'Y' -or $response -eq 'y') {
             Remove-Item $zipFile.FullName -Force
             Write-TestLog "Cleaned up ZIP file: $($zipFile.Name)" -Level Info
@@ -1659,7 +1668,8 @@ function Get-OutputFromZip {
 
 function Test-Edges {
     param(
-        [PSObject]$Output
+        [PSObject]$Output,
+        [switch]$ShowDebug
     )
 
     Write-TestLog "`nTesting Edges..." -Level Test
@@ -1717,7 +1727,7 @@ function Test-Edges {
             continue
         }
 
-        # Find matching edges
+        # Find matching edges (no debug output during normal matching)
         $matchingEdges = @()
         foreach ($edge in $edges) {
             if (Test-EdgePattern -Edge $edge -Nodes $nodes -ExpectedEdge $testCase) {
@@ -1751,30 +1761,117 @@ function Test-Edges {
         } else {
             # This is a positive test - edge SHOULD exist
             if ($found) {
-                Write-TestLog "$($testCase.Kind): $($testCase.Description) - PASS" -Level Success
-                Write-TestLog "  Found $($matchingEdges.Count) matching edge(s)" -Level Success
-                
-                # List matching edges in requested format
-                Write-TestLog "  Matching edges:" -Level Info
-                foreach ($edge in $matchingEdges) {
-                    Write-TestLog "    ($($edge.start.value)) -[$($edge.kind)]-> ($($edge.end.value))" -Level Verbose
+                # Check if expected count is specified and validate it
+                if ($testCase.Count -and $matchingEdges.Count -ne $testCase.Count) {
+                    Write-TestLog "$($testCase.Kind): $($testCase.Description) - FAIL (wrong count)" -Level Error
+                    Write-TestLog "  Expected $($testCase.Count) matching edge(s) but found $($matchingEdges.Count)" -Level Error
+                    
+                    # List matching edges in requested format
+                    Write-TestLog "  Matching edges:" -Level Error
+                    foreach ($edge in $matchingEdges) {
+                        Write-TestLog "    ($($edge.start.value)) -[$($edge.kind)]-> ($($edge.end.value))" -Level Error
+                    }
+                    $testResults.Failed += $testCase
+                } else {
+                    Write-TestLog "$($testCase.Kind): $($testCase.Description) - PASS" -Level Success
+                    Write-TestLog "  Found $($matchingEdges.Count) matching edge(s)" -Level Success
+                    
+                    # List matching edges in requested format
+                    Write-TestLog "  Matching edges:" -Level Info
+                    foreach ($edge in $matchingEdges) {
+                        Write-TestLog "    ($($edge.start.value)) -[$($edge.kind)]-> ($($edge.end.value))" -Level Info
+                    }
+                    $testResults.Passed += $testCase
                 }
-                $testResults.Passed += $testCase
             } else {
                 Write-TestLog "$($testCase.Kind): $($testCase.Description) - FAIL (not found)" -Level Error
                 
-                # Show what we were looking for
+                # Show what we were looking for in a concise format
+                $sourcePattern = ""
+                $targetPattern = ""
+                
                 if ($testCase.Source.Properties) {
-                    Write-TestLog "  Expected source with:" -Level Error
+                    $sourceProps = @()
                     foreach ($prop in $testCase.Source.Properties.Keys) {
-                        Write-TestLog "    $prop = $($testCase.Source.Properties[$prop])" -Level Error
+                        $sourceProps += "$prop=$($testCase.Source.Properties[$prop])"
                     }
+                    $sourcePattern = "Source: {$($sourceProps -join ', ')}"
                 }
+                
                 if ($testCase.Target.Properties) {
-                    Write-TestLog "  Expected target with:" -Level Error
+                    $targetProps = @()
                     foreach ($prop in $testCase.Target.Properties.Keys) {
-                        Write-TestLog "    $prop = $($testCase.Target.Properties[$prop])" -Level Error
+                        $targetProps += "$prop=$($testCase.Target.Properties[$prop])"
                     }
+                    $targetPattern = "Target: {$($targetProps -join ', ')}"
+                }
+                
+                if ($sourcePattern -or $targetPattern) {
+                    $patterns = @($sourcePattern, $targetPattern) | Where-Object { $_ }
+                    Write-TestLog "  Expected: $($patterns -join ' -> ')" -Level Error
+                }
+                
+                # Analyze why the test failed and provide specific guidance
+                $sameKindEdges = $edges | Where-Object { $_.kind -eq $testCase.Kind }
+                if ($sameKindEdges.Count -gt 0) {
+                    Write-TestLog "  Analysis: Found $($sameKindEdges.Count) $($testCase.Kind) edge(s) but none matched the pattern" -Level Warning
+                    
+                    # Analyze the mismatch reasons for better diagnostics
+                    $mismatchReasons = @()
+                    $checkedNodes = @{}
+                    
+                    foreach ($edge in ($sameKindEdges | Select-Object -First 3)) {
+                        $sourceNode = $nodes | Where-Object { $_.id -eq $edge.start.value } | Select-Object -First 1
+                        $targetNode = $nodes | Where-Object { $_.id -eq $edge.end.value } | Select-Object -First 1
+                        
+                        # Check source node mismatch
+                        if ($testCase.Source -and $sourceNode -and -not $checkedNodes[$sourceNode.id]) {
+                            $checkedNodes[$sourceNode.id] = $true
+                            if ($testCase.Source.Properties) {
+                                foreach ($prop in $testCase.Source.Properties.Keys) {
+                                    $expectedValue = $testCase.Source.Properties[$prop]
+                                    $actualValue = if ($sourceNode.properties.$prop) { $sourceNode.properties.$prop } else { $sourceNode.$prop }
+                                    if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
+                                        $mismatchReasons += "Source node $($sourceNode.id): $prop = '$actualValue' (expected '$expectedValue')"
+                                    }
+                                }
+                            }
+                        }
+                        
+                        # Check target node mismatch
+                        if ($testCase.Target -and $targetNode -and -not $checkedNodes[$targetNode.id]) {
+                            $checkedNodes[$targetNode.id] = $true
+                            if ($testCase.Target.Properties) {
+                                foreach ($prop in $testCase.Target.Properties.Keys) {
+                                    $expectedValue = $testCase.Target.Properties[$prop]
+                                    $actualValue = if ($targetNode.properties.$prop) { $targetNode.properties.$prop } else { $targetNode.$prop }
+                                    if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
+                                        $mismatchReasons += "Target node $($targetNode.id): $prop = '$actualValue' (expected '$expectedValue')"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    # Show specific mismatch reasons
+                    if ($mismatchReasons.Count -gt 0) {
+                        Write-TestLog "  Common issues found:" -Level Info
+                        foreach ($reason in ($mismatchReasons | Select-Object -Unique | Select-Object -First 5)) {
+                            Write-TestLog "    - $reason" -Level Info
+                        }
+                    }
+                    
+                    # Show a few examples of what exists (limit to 2 for readability)
+                    Write-TestLog "  Existing $($testCase.Kind) edges:" -Level Info
+                    foreach ($example in ($sameKindEdges | Select-Object -First 2)) {
+                        Write-TestLog "    ($($example.start.value)) -[$($example.kind)]-> ($($example.end.value))" -Level Info
+                    }
+                    if ($sameKindEdges.Count -gt 2) {
+                        Write-TestLog "    ... and $($sameKindEdges.Count - 2) more" -Level Info
+                    }
+                } else {
+                    Write-TestLog "  Analysis: No $($testCase.Kind) edges found in the data" -Level Warning
+                    Write-TestLog "  Suggestion: Verify that the enumeration script is collecting this edge type" -Level Info
                 }
                 
                 $testResults.Failed += $testCase
@@ -1858,7 +1955,7 @@ try {
             Write-TestLog "No output found from enumeration" -Level Error
             return $null
         }
-        $testResults = Test-Edges -Output $output
+        $testResults = Test-Edges -Output $output -ShowDebug:$ShowDebug
         Get-EdgeCoverage
         # Display coverage table
         Write-TestLog "Edge Type Coverage Summary:" -Level Info

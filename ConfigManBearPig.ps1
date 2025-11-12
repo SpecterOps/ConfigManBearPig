@@ -23,6 +23,10 @@ System Requirements:
     - Active Directory domain context with line of sight to a domain controller
     - Various permissions based on collection methods used
 
+Limitations:
+    - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
+    - If the same site code exists more than once in the environment, the nodes and edges for those sites will be merged, causing false positives in the graph.
+
 .PARAMETER Help
 Display usage information
 
@@ -1485,12 +1489,12 @@ function Upsert-Node {
             # Create parent-child edges per rules:
             # - Central <-> Primary (both directions)
             # - Primary -> Secondary (one direction)
-            $parentCandidates = $script:Nodes | Where-Object {
+            $parentCandidates = @($script:Nodes | Where-Object {
                 $_.kinds -contains "SCCM_Site" -and (
                     $_.id -eq $parentSiteCode -or
                     $_.properties.siteCode -eq $parentSiteCode
                 )
-            }
+            })
             if ($parentCandidates -and $parentCandidates.Count -gt 0) {
                 $parent = $parentCandidates[0]
                 $parentType = $parent.properties.siteType
@@ -1506,6 +1510,55 @@ function Upsert-Node {
                 elseif ($parentType -eq "Primary Site" -and $siteType -eq "Secondary Site") {
                     $existsP2C = $script:Edges | Where-Object { $_.start -eq $parent.id -and $_.end -eq $Id -and $_.kind -eq "SCCM_SameAdminsAs" }
                     if (-not $existsP2C) { Upsert-Edge -Start $parent.id -Kind "SCCM_SameAdminsAs" -End $Id }
+                }
+            }
+        }
+    }
+
+    if ($Kinds -contains "SCCM_AdminUser") {
+        # Create SCCM_AssignAdminPermissions edges from SCCM_AdminUser to all SCCM_Site nodes in the same hierarchy as the admin user
+        $adminSiteCode = $finalProperties["sourceSiteCode"]
+        if ($adminSiteCode) {
+            $sccmSites = @()
+            $adminSiteNode = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and ($_.id -eq $adminSiteCode -or $_.properties.siteCode -eq $adminSiteCode) } | Select-Object -First 1
+            if ($adminSiteNode) {
+                $sccmSites += $adminSiteNode
+            }
+            # Also get other child primary sites under the same CAS
+            if ($adminSiteNode -and $adminSiteNode.properties.siteType -eq "Central Administration Site") {
+                $childPrimarySites = @($script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.properties.parentSiteCode -eq $adminSiteNode.id -and $_.properties.siteType -eq "Primary Site" })
+                if ($childPrimarySites -and $childPrimarySites.Count -gt 0) {
+                    # Add the ID for each child primary site
+                    foreach ($childPrimarySite in $childPrimarySites) {
+                        $sccmSites += $childPrimarySite.Id
+                    }
+                }
+            } else {
+                # If not CAS, check for CAS above this site
+                $parentSiteCode = $adminSiteNode.properties.parentSiteCode
+                if ($parentSiteCode -and $parentSiteCode -ne "" -and $parentSiteCode -ne "None") {
+                    $casSites = @($script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and ($_.id -eq $parentSiteCode -or $_.properties.siteCode -eq $parentSiteCode) -and $_.properties.siteType -eq "Central Administration Site" })
+                    if ($casSites -and $casSites.Count -eq 1) {
+                        $casSite = $casSites[0]
+                        $sccmSites += $casSite.Id
+                        # Also get sibling primary sites under the same CAS
+                        $siblingPrimarySites = @($script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.properties.parentSiteCode -eq $parentSiteCode -and $_.properties.siteType -eq "Primary Site" })
+                        if ($siblingPrimarySites -and $siblingPrimarySites.Count -gt 0) {
+                            # Add the ID for each sibling primary site
+                            foreach ($siblingPrimarySite in $siblingPrimarySites) {
+                                if ($siblingPrimarySite.Id -ne $adminSiteNode.Id) {
+                                    $sccmSites += $siblingPrimarySite.Id
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if ($sccmSites -and $sccmSites.Count -gt 0) {
+                foreach ($sccmSite in $sccmSites) {
+                    Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $sccmSite.Id -Properties @{
+                        collectionSource = $finalProperties["collectionSource"]
+                    }
                 }
             }
         }
@@ -4795,7 +4848,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
                         name = "$($device.Name)@$($device.SiteCode)"
                         primaryUser = $device.PrimaryUser
                         primaryUserSID = if ($primaryUserObject.SID) { $primaryUserObject.SID } else { $null }
-                        resourceID = if ($device.ResourceID) { $device.ResourceID } else { $null }
+                        resourceID = if ($device.ResourceID) { "$($device.ResourceID)@$($device.SiteCode)" } else { $null }
                         siteCode = if ($device.SiteCode) { $device.SiteCode } else { $null }
                         SMSID = if ($device.SMSID) { $device.SMSID } else { $null }
                         sourceSiteCode = $SiteCode
@@ -5149,10 +5202,13 @@ function Get-CollectionMembersViaAdminService {
             
             foreach ($collection in $membersByCollection) {
 
+                $collectionId = "$($collection.Name)@$SiteCode"
+
                 # Update collection node with members
-                Upsert-Node -Id "$($collection.Name)@$SiteCode" -Kinds @("SCCM_Collection") -Properties @{
+                Upsert-Node -Id $collectionId -Kinds @("SCCM_Collection") -Properties @{
                     collectionSource = @("AdminService-SMS_FullCollectionMembership")
-                    members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$SiteCode" }
+                    # Use member site code from response
+                    members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$($_.SiteCode)" }
                     SCCMInfra = $true
                     sourceSiteCode = $SiteCode
                 }
@@ -5160,9 +5216,9 @@ function Get-CollectionMembersViaAdminService {
                 # Create edges for each member
                 foreach ($member in $collection.Group) {
                     # First get the node for the member
-                    $memberUser = $script:Nodes | Where-Object { $_.kinds -contains "User" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$SiteCode" }
-                    $memberGroup = $script:Nodes | Where-Object { $_.kinds -contains "Group" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$SiteCode" }
-                    $memberDevice = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_ClientDevice" -and $_.properties.resourceID -eq $member.ResourceID }
+                    $memberUser = $script:Nodes | Where-Object { $_.kinds -contains "User" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$($member.SiteCode)" }
+                    $memberGroup = $script:Nodes | Where-Object { $_.kinds -contains "Group" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$($member.SiteCode)" }
+                    $memberDevice = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_ClientDevice" -and $_.properties.resourceID -eq "$($member.ResourceID)@$($member.SiteCode)" }
                     if ($memberUser) {
                         $memberNode = $memberUser
                     } elseif ($memberGroup) {
@@ -5172,7 +5228,7 @@ function Get-CollectionMembersViaAdminService {
                     }
 
                     if ($memberNode) {
-                        Upsert-Edge -Start "$($collection.Name)@$SiteCode" -Kind "SCCM_HasMember" -End $memberNode.Id -Properties @{
+                        Upsert-Edge -Start $collectionId -Kind "SCCM_HasMember" -End $memberNode.Id -Properties @{
                             collectionSource = @("AdminService-SMS_FullCollectionMembership")
                         }
                     } elseif ($member.ResourceID -eq '2046820352') {
@@ -5378,8 +5434,9 @@ function Get-AdminUsersViaAdminService {
                 }
 
                 # Create SCCM_IsAssigned edges to security roles this admin user is assigned
-                if ($admin.RoleIDs) {
-                    $roleIDs = $admin.RoleIDs -split ", "
+                if ($admin.Roles -and $admin.Roles.Count -gt 0) {
+                    $roleIDs = $admin.Roles -split ", "
+
                     foreach ($roleID in $roleIDs) {
                         $role = $script:Nodes | Where-Object { $_.Id -eq "$roleID@$SiteCode" }
                         if ($role) {
@@ -5390,6 +5447,19 @@ function Get-AdminUsersViaAdminService {
                             Write-LogMessage Warning "No role node found for $roleID"
                         }
                     }
+                } else {
+                    # Fallback to RoleNames if RoleIDs is empty (it often is)
+                    $roleNames = $admin.RoleNames -split ", "
+                        foreach ($roleName in $roleNames) {
+                            $role = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_SecurityRole" -and $_.properties.roleName -eq "$roleName" -and $_.properties.sourceSiteCode -eq $SiteCode }
+                            if ($role) {
+                                    Upsert-Edge -Start "$($admin.LogonName)@$SiteCode" -Kind "SCCM_IsAssigned" -End $role.Id -Properties @{
+                                        collectionSource = @("AdminService-SMS_Admin")
+                                    }
+                            } else {
+                                    Write-LogMessage Warning "No role node found for $roleName"
+                            }
+                        }
                 }
                 $totalProcessed++
             }
