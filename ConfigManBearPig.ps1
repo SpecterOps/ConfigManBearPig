@@ -8,13 +8,13 @@ Author: Chris Thompson (@_Mayyhem) at SpecterOps
 Purpose:
     Collects BloodHound OpenGraph compatible SCCM data following these ordered steps:
     1.  LDAP (identify sites, site servers, fallback status points, and management points in System Management container)
-    2.  DHCP (identify PXE-enabled distribution points)
+    2.  *DHCP (identify PXE-enabled distribution points)
     3.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
     4.  DNS (identify management points published to DNS)
     5.  Remote Registry (identify site servers, site databases, and current users on targets)
     6.  MSSQL (check database servers for Extended Protection for Authentication)
     7.  AdminService (collect information from SMS Providers with privileges to query site information)
-    8.  WMI (if AdminService collection fails)
+    8.  *WMI (if AdminService collection fails)
     9.  HTTP (identify management points and distribution points via exposed web services)
     10. SMB (identify site servers and management points via file shares)
       
@@ -25,7 +25,18 @@ System Requirements:
 
 Limitations:
     - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
-    - If the same site code exists more than once in the environment, the nodes and edges for those sites will be merged, causing false positives in the graph.
+    - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
+
+In Progress / To Do:
+    - DHCP collection (unauthenticated network access)
+    - WMI collection (privileged, fallback if AdminService is not reachable)
+    - Remove dependency on EasyHook for EPA enumeration
+    - CoerceAndRelayNTLMtoSMB collection
+    - Edge traversability
+    - Entity panels
+    - Should TAKEOVER-4 be added (not always traversable)?
+    - Clean up unused post-processing and ingest functions
+    - Test with SQL on non-standard port
 
 .PARAMETER Help
 Display usage information
@@ -1415,9 +1426,14 @@ function Upsert-Node {
 
                     # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site server and a MSSQL_HasLogin edge to the site database login
                     if ($finalProperties["SCCMSiteSystemRoles"] -contains "SMS Provider@$($primarySite.Id)") {
-                        Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $siteCode -Properties @{
-                            collectionSource = $finalProperties["collectionSource"]
+                        # Get all sites in this hierarchy
+                        $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $primarySite.Id -ExcludeSecondarySites)
+                        foreach ($siteInHierarchy in $sitesInHierarchy) {
+                            Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
+                                collectionSource = $finalProperties["collectionSource"]
+                            }
                         }
+
                         $siteDatabaseComputerNodes = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.SCCMSiteSystemRoles -contains "SMS Site Database@$($primarySite.Id)" }
                         if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
                             # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
@@ -1437,6 +1453,61 @@ function Upsert-Node {
                         Process-CoerceAndRelayToAdminService -SiteCode $primarySite.Id -CollectionSource $finalProperties["collectionSource"]
                     }
 
+                    # If an SMS Site Server or site database server is being added, create MSSQL nodes and edges for the primary site
+                    if ($finalProperties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server)@$($primarySite.Id)") {
+                        Write-LogMessage Verbose "Detected SMS Site Server or site database server for site $($primarySite.Id), creating MSSQL nodes and edges"
+
+                        $siteServerComputerNodes = @($script:Nodes | Where-Object { 
+                            $_.kinds -eq "Computer" -and 
+                            $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySite.Id)" 
+                        })
+                        
+                        # Find the SQL Server Computer node for this site
+                        $sqlServerComputerNodes = @($script:Nodes | Where-Object { 
+                            $_.kinds -eq "Computer" -and 
+                            $_.properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$($primarySite.Id)" 
+                        })
+                        
+                        if ($sqlServerComputerNodes) {
+                            foreach ($sqlServerComputerNode in $sqlServerComputerNodes) {
+
+                                # Get the SQL Server domain object from the Computer node ID (which is the SID)
+                                $sqlServerDomainObject = Resolve-PrincipalInDomain -Name $sqlServerComputerNode.Id -Domain $script:Domain
+                                
+                                if ($sqlServerDomainObject) {
+                                    Write-LogMessage Verbose "Found SQL Server domain object for site $($primarySite.Id): $($sqlServerDomainObject.name)"
+
+                                    foreach ($siteServerComputerNode in $siteServerComputerNodes) {
+
+                                        # Get the site server domain object (current node being added)
+                                        $siteServerDomainObject = Resolve-PrincipalInDomain -Name $siteServerComputerNode.Id -Domain $script:Domain
+
+                                        if ($siteServerDomainObject) {
+                                            Write-LogMessage Verbose "Found site server domain object for site $($primarySite.Id): $($siteServerDomainObject.name)"
+
+                                            try {
+                                                Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $primarySite.Id `
+                                                    -sqlServerDomainObject $sqlServerDomainObject `
+                                                    -SiteServerDomainObject $siteServerDomainObject `
+                                                    -CollectionSource $finalProperties["collectionSource"]
+                                                
+                                                Write-LogMessage Success "Created MSSQL nodes and edges for primary site $($primarySite.Id)"
+                                            } catch {
+                                                Write-LogMessage Error "Failed to create MSSQL nodes and edges for site $($primarySite.Id): $_"
+                                            }
+                                        } else {
+                                            Write-LogMessage Warning "Could not resolve site server computer node to domain object for site $($primarySite.Id)"
+                                        }
+                                    }
+                                } else {
+                                    Write-LogMessage Warning "Could not resolve SQL Server Computer node to domain object for site $($primarySite.Id)"
+                                }
+                            }
+                        } else {
+                            Write-LogMessage Warning "Could not find SQL Server Computer node for site $($primarySite.Id)"
+                        }
+                    }
+
                     # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
                     if ($finalProperties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server|Provider|Management Point)@$($primarySite.Id)") {
                         Process-CoerceAndRelayToMSSQL -SiteCode $primarySite.Id -CollectionSource $finalProperties["collectionSource"]
@@ -1453,14 +1524,18 @@ function Upsert-Node {
             # Create MSSQL_HasLogin edges from site server and SMS Provider Computer nodes to site database MSSQL_Login nodes
             $siteServerComputerNode = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.samAccountName -eq $($Id.Split('@')[0]) -and $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$siteCode" }
             if ($siteServerComputerNode) {
-                Upsert-Edge -Start $Id -Kind "MSSQL_HasLogin" -End $siteServerComputerNode.Id -Properties @{
+                Upsert-Edge -Start $siteServerComputerNode.Id -Kind "MSSQL_HasLogin" -End $Id -Properties @{
                     collectionSource = $finalProperties["collectionSource"]
                 }
             }
             $smsProviderComputerNode = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.properties.samAccountName -eq $($Id.Split('@')[0]) -and $_.properties.SCCMSiteSystemRoles -contains "SMS Provider@$siteCode" }
             if ($smsProviderComputerNode) {
-                Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $smsProviderComputerNode.Id -Properties @{
-                    collectionSource = $finalProperties["collectionSource"]
+                # Get all primary sites in this hierarchy
+                $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $primarySite.Id -ExcludeSecondarySites)
+                foreach ($siteInHierarchy in $sitesInHierarchy) {
+                    Upsert-Edge -Start $smsProviderComputerNode.Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
+                        collectionSource = $finalProperties["collectionSource"]
+                    }
                 }
             }
 
@@ -1475,8 +1550,12 @@ function Upsert-Node {
         $smsProviderComputerNodes = $script:Nodes | Where-Object { $_.kinds -eq "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Provider@$Id" }
         if ($smsProviderComputerNodes -and $smsProviderComputerNodes.Count -gt 0) {
             foreach ($smsProviderComputerNode in $smsProviderComputerNodes) {
-                Upsert-Edge -Start $smsProviderComputerNode.Id -Kind "SCCM_AssignAllPermissions" -End $Id -Properties @{
-                    collectionSource = $finalProperties["collectionSource"]
+                # Get all primary sites in this hierarchy
+                $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $Id -ExcludeSecondarySites)
+                foreach ($siteInHierarchy in $sitesInHierarchy) {
+                    Upsert-Edge -Start $smsProviderComputerNode.Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
+                        collectionSource = $finalProperties["collectionSource"]
+                    }
                 }
             }
         }
@@ -1513,6 +1592,40 @@ function Upsert-Node {
                 }
             }
         }
+
+        # Update hierarchy identifiers (root site codes) after creating SCCM_SameAdminsAs edges
+        try {
+            # Find all sites in this hierarchy using the new edges
+            $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $Id)
+            
+            if ($sitesInHierarchy -and $sitesInHierarchy.Count -gt 0) {
+                # Identify the root site for this hierarchy
+                $rootSite = Get-HierarchyRoot -SiteCode $Id
+                $rootSiteCode = if ($rootSite) {
+                    $rootSite.id
+                } else { 
+                    Write-Warning "Could not determine root site code for hierarchy containing site $Id; using current site as root"
+                    $Id
+                }
+                
+                # Update rootSiteCode for all sites in this hierarchy
+                foreach ($siteInHierarchy in $sitesInHierarchy) {
+                    if (-not $siteInHierarchy.properties.ContainsKey("rootSiteCode") -or $siteInHierarchy.properties.rootSiteCode -ne $rootSiteCode) {
+                        $siteInHierarchy.properties.rootSiteCode = $rootSiteCode
+                        $siteCode = $siteInHierarchy.id
+                        Write-LogMessage Verbose "Updated rootSiteCode to '$rootSiteCode' for site $siteCode"
+                    }
+                }
+                
+                # Update global object identifiers to use root site code
+                Update-GlobalObjectIdentifiers -RootSiteCode $rootSiteCode
+                
+                Write-LogMessage Verbose "Hierarchy with root site '$rootSiteCode' now contains $($sitesInHierarchy.Count) sites"
+            }
+        } catch {
+            Write-LogMessage Warning "Failed to update root site code for site $Id`: $_"
+        }
+        
     }
 
     if ($Kinds -contains "SCCM_AdminUser") {
@@ -1522,7 +1635,7 @@ function Upsert-Node {
             $sccmSites = @()
             $adminSiteNode = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and ($_.id -eq $adminSiteCode -or $_.properties.siteCode -eq $adminSiteCode) } | Select-Object -First 1
             if ($adminSiteNode) {
-                $sccmSites += $adminSiteNode
+                $sccmSites += $adminSiteNode.Id
             }
             # Also get other child primary sites under the same CAS
             if ($adminSiteNode -and $adminSiteNode.properties.siteType -eq "Central Administration Site") {
@@ -1556,8 +1669,57 @@ function Upsert-Node {
             }
             if ($sccmSites -and $sccmSites.Count -gt 0) {
                 foreach ($sccmSite in $sccmSites) {
-                    Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $sccmSite.Id -Properties @{
+                    Upsert-Edge -Start $Id -Kind "SCCM_AssignAllPermissions" -End $sccmSite -Properties @{
                         collectionSource = $finalProperties["collectionSource"]
+                    }
+                }
+            }
+        }
+    }
+    
+    # Update global object identifiers when creating global objects
+    if ($Kinds -contains "SCCM_Collection" -or $Kinds -contains "SCCM_AdminUser" -or $Kinds -contains "SCCM_SecurityRole") {
+        # Find the source site and get its root site code
+        $sourceSiteCode = $finalProperties["sourceSiteCode"]
+        if ($sourceSiteCode) {
+            $sourceSiteNode = $script:Nodes | Where-Object { 
+                $_.kinds -contains "SCCM_Site" -and (
+                    $_.id -eq $sourceSiteCode -or 
+                    $_.properties.siteCode -eq $sourceSiteCode
+                )
+            } | Select-Object -First 1
+            
+            if ($sourceSiteNode -and $sourceSiteNode.properties.rootSiteCode) {
+                $rootSiteCode = $sourceSiteNode.properties.rootSiteCode
+                
+                # Check if this object's ID needs updating to use root site code
+                if ($Id -match '^(.+)@([A-Z0-9]{3})$') {
+                    $objectBase = $matches[1]
+                    $currentSiteCode = $matches[2]
+                    
+                    if ($currentSiteCode -ne $rootSiteCode) {
+                        $newId = "$objectBase@$rootSiteCode"
+                        Write-LogMessage Verbose "Updating global object identifier during creation: $Id -> $newId"
+                        
+                        # Update the node that was just created/updated
+                        $currentNode = $script:Nodes | Where-Object { $_.id -eq $Id }
+                        if ($currentNode) {
+                            $currentNode.id = $newId
+                            
+                            # Update any edges that might reference this node
+                            $edgesToUpdate = @($script:Edges | Where-Object { 
+                                $_.start.value -eq $Id -or $_.end.value -eq $Id 
+                            })
+                            
+                            foreach ($edge in $edgesToUpdate) {
+                                if ($edge.start.value -eq $Id) {
+                                    $edge.start.value = $newId
+                                }
+                                if ($edge.end.value -eq $Id) {
+                                    $edge.end.value = $newId
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1591,19 +1753,83 @@ function Upsert-Edge {
         return
     }
 
-    # Deduplicate: skip if identical edge already exists
-    $duplicate = $script:Edges | Where-Object { $_.start.value -eq $Start -and $_.kind -eq $Kind -and $_.end.value -eq $End }
-    if ($duplicate) {
-        Write-LogMessage Verbose ("Skipping duplicate edge {0} -[{1}]-> {2}" -f $Start, $Kind, $End)
-        return
-    }
-
-    # Filter out null properties
+    # Check if edge already exists and merge properties if it does
+    $existingEdge = $script:Edges | Where-Object { $_.start.value -eq $Start -and $_.kind -eq $Kind -and $_.end.value -eq $End }
+    
+    # Filter out null properties first
     $cleanProperties = @{}
     foreach ($key in $Properties.Keys) {
         if ($null -ne $Properties[$key]) {
             $cleanProperties[$key] = $Properties[$key]
         }
+    }
+    
+    if ($existingEdge) {
+        $existingProps = if ($existingEdge.properties) { $existingEdge.properties } else { @{} }
+        
+        # Check if properties are different - if so, merge them
+        $hasNewProperties = $false
+        $addedProperties = @()
+        $updatedProperties = @()
+        
+        # Merge new properties into existing edge
+        foreach ($key in $cleanProperties.Keys) {
+            if ($existingProps.ContainsKey($key)) {
+                $oldValue = $existingProps[$key]
+                $newValue = $cleanProperties[$key]
+                
+                # Special handling for arrays - merge them
+                if ($oldValue -is [Array] -and $newValue -is [Array]) {
+                    # Combine and deduplicate arrays
+                    $mergedArray = @(($oldValue + $newValue) | Where-Object { $_ -ne $null } | Select-Object -Unique)
+                    $existingProps[$key] = $mergedArray
+                    
+                    # Update logging to show merge
+                    $addedItems = $newValue | Where-Object { $_ -notin $oldValue }
+                    if ($addedItems.Count -gt 0) {
+                        $updatedProperties += "$key`: Added [$($addedItems -join ', ')] to existing [$($oldValue -join ', ')]"
+                        $hasNewProperties = $true
+                    }
+                } else {
+                    # Non-array properties - check if different and replace
+                    if ($oldValue -ne $newValue) {
+                        $updatedProperties += "$key`: '$oldValue' -> '$newValue'"
+                        $hasNewProperties = $true
+                    }
+                    $existingProps[$key] = $newValue
+                }
+            } else {
+                # New property being added
+                $valueStr = if ($cleanProperties[$key] -is [Array]) { 
+                    "[$($cleanProperties[$key] -join ', ')]" 
+                } else { 
+                    "'$($cleanProperties[$key])'" 
+                }
+                $addedProperties += "$key`: $valueStr"
+                $existingProps[$key] = $cleanProperties[$key]
+                $hasNewProperties = $true
+            }
+        }
+        
+        if ($hasNewProperties) {
+            # Update existing edge properties
+            $existingEdge.properties = $existingProps
+            
+            # Create verbose message showing what was added/updated
+            $changes = @()
+            if ($addedProperties.Count -gt 0) {
+                $changes += "`n    Added:`n        $($addedProperties -join "`n        ")"
+            }
+            if ($updatedProperties.Count -gt 0) {
+                $changes += "`n    Updated:`n        $($updatedProperties -join "`n        ")"
+            }
+            
+            Write-LogMessage Verbose "Found existing edge $Start -[$Kind]-> $End, merged properties:$changes"
+        } else {
+            Write-LogMessage Verbose "Found existing edge $Start -[$Kind]-> $End with identical properties, no changes made"
+        }
+        
+        return
     }
 
     # Create new edge
@@ -1660,14 +1886,14 @@ function Add-HostNodeAndEdges{
             return
         }
         $hostGuid = [System.Guid]::NewGuid().ToString()
-        $hostId = "$($matchingNode.Properties.DNSHostName)_${hostGuid}"
+        $hostId = $matchingNode.Properties.DNSHostName
         
         $computerSid = if ($matchingNode.kinds -contains "Computer") { $matchingNode.id } else { $NodeId }
         $clientDeviceId = if ($matchingNode.kinds -contains "SCCM_ClientDevice") { $matchingNode.id } else { $NodeId }
 
         # Create Host node
         Upsert-Node -Id $hostId -Kinds @("Host") -Properties @{
-            name = "Host_$($matchingNode.Properties.DNSHostName)"
+            name = $matchingNode.Properties.DNSHostName
             computer = $computerSid
             SCCMClientDevice = $clientDeviceId
         }
@@ -1685,6 +1911,379 @@ function Add-HostNodeAndEdges{
         }
         
         Write-LogMessage Verbose "Created $computerSid <-[SameHostAs]-> $hostId <-[SameHostAs]-> $clientDeviceId nodes and edges"
+    }
+}
+
+#region SCCM Hierarchy Functions
+
+function Update-GlobalObjectIdentifiers {
+    <#
+    .SYNOPSIS
+    Updates identifiers for globally configured SCCM objects to use root site code.
+    
+    .DESCRIPTION
+    Updates SCCM_Collection, SCCM_AdminUser, and SCCM_SecurityRole node identifiers
+    to use the root site code instead of the current site code, since these objects
+    are configured at the hierarchy level.
+    
+    .PARAMETER RootSiteCode
+    The root site code to use as the new suffix
+    
+    .EXAMPLE
+    Update-GlobalObjectIdentifiers -RootSiteCode "CAS"
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RootSiteCode
+    )
+    
+    $globalObjectKinds = @("SCCM_Collection", "SCCM_AdminUser", "SCCM_SecurityRole")
+    
+    foreach ($kind in $globalObjectKinds) {
+        $globalObjects = @($script:Nodes | Where-Object { $_.kinds -contains $kind })
+        
+        foreach ($obj in $globalObjects) {
+            # Check if the ID ends with a site code (format: ObjectId@SiteCode)
+            if ($obj.id -match '^(.+)@([A-Z0-9]{3})$') {
+                $objectBase = $matches[1]
+                $currentSiteCode = $matches[2]
+                $newId = "$objectBase@$RootSiteCode"
+                
+                # Only update if the site code is different
+                if ($currentSiteCode -ne $RootSiteCode) {
+                    Write-LogMessage Verbose "Updating $kind identifier: $($obj.id) -> $newId"
+                    
+                    # Update the node ID
+                    $oldId = $obj.id
+                    $obj.id = $newId
+                    
+                    # Update the key in the global tracking if it exists
+                    if ($script:Nodes -contains $obj) {
+                        # The object reference is already updated, no need to change the array
+                    }
+                    
+                    # Update any edges that reference this node
+                    $edgesToUpdate = @($script:Edges | Where-Object { 
+                        $_.start.value -eq $oldId -or $_.end.value -eq $oldId 
+                    })
+                    
+                    foreach ($edge in $edgesToUpdate) {
+                        if ($edge.start.value -eq $oldId) {
+                            $edge.start.value = $newId
+                        }
+                        if ($edge.end.value -eq $oldId) {
+                            $edge.end.value = $newId
+                        }
+                    }
+                    
+                    Write-LogMessage Verbose "Updated $($edgesToUpdate.Count) edges referencing $kind $oldId"
+                }
+            }
+        }
+    }
+}
+
+function Get-SitesInHierarchy {
+    <#
+    .SYNOPSIS
+    Retrieves all SCCM sites that belong to the same hierarchy as the specified site.
+    
+    .DESCRIPTION
+    Traverses SCCM_SameAdminsAs edges to find all sites connected to the specified site,
+    forming a complete hierarchy group. Returns all sites in the same hierarchy.
+    
+    .PARAMETER SiteCode
+    The site code to start the hierarchy traversal from
+    
+    .PARAMETER SiteId  
+    The site node ID to start the hierarchy traversal from
+    
+    .PARAMETER ExcludeSecondarySites
+    When specified, excludes secondary sites from the results
+    
+    .EXAMPLE
+    Get-SitesInHierarchy -SiteCode "PS1"
+    
+    .EXAMPLE
+    Get-SitesInHierarchy -SiteCode "PS1" -ExcludeSecondarySites
+    #>
+    param(
+        [Parameter(ParameterSetName="BySiteCode")]
+        [string]$SiteCode,
+        
+        [Parameter(ParameterSetName="BySiteId")]
+        [string]$SiteId,
+        
+        [switch]$ExcludeSecondarySites
+    )
+    
+    # Find the starting site node
+    $startSite = $null
+    if ($SiteCode) {
+        $startSite = $script:Nodes | Where-Object { 
+            $_.kinds -contains "SCCM_Site" -and (
+                $_.id -eq $SiteCode -or 
+                $_.properties.siteCode -eq $SiteCode
+            )
+        } | Select-Object -First 1
+    } elseif ($SiteId) {
+        $startSite = $script:Nodes | Where-Object { 
+            $_.kinds -contains "SCCM_Site" -and $_.id -eq $SiteId 
+        } | Select-Object -First 1
+    }
+    
+    if (-not $startSite) {
+        Write-LogMessage Warning "Site not found: $(if($SiteCode) { $SiteCode } else { $SiteId })"
+        return @()
+    }
+    
+    # Use BFS to traverse all connected sites via SCCM_SameAdminsAs edges
+    $visited = @{}
+    $queue = New-Object System.Collections.Queue
+    $sitesInHierarchy = @()
+    
+    $queue.Enqueue($startSite.id)
+    $visited[$startSite.id] = $true
+    
+    while ($queue.Count -gt 0) {
+        $currentSiteId = $queue.Dequeue()
+        $currentSite = $script:Nodes | Where-Object { $_.id -eq $currentSiteId } | Select-Object -First 1
+        
+        if ($currentSite) {
+            $sitesInHierarchy += $currentSite
+            
+            # Find all SCCM_SameAdminsAs edges from or to this site
+            $sameAdminsEdges = $script:Edges | Where-Object {
+                $_.kind -eq "SCCM_SameAdminsAs" -and (
+                    $_.start.value -eq $currentSiteId -or 
+                    $_.end.value -eq $currentSiteId
+                )
+            }
+            
+            foreach ($edge in $sameAdminsEdges) {
+                $connectedSiteId = if ($edge.start.value -eq $currentSiteId) { 
+                    $edge.end.value 
+                } else { 
+                    $edge.start.value 
+                }
+                
+                if (-not $visited.ContainsKey($connectedSiteId)) {
+                    $connectedSite = $script:Nodes | Where-Object { 
+                        $_.id -eq $connectedSiteId -and $_.kinds -contains "SCCM_Site" 
+                    } | Select-Object -First 1
+                    
+                    if ($connectedSite) {
+                        $visited[$connectedSiteId] = $true
+                        $queue.Enqueue($connectedSiteId)
+                    }
+                }
+            }
+        }
+    }
+    
+    # Filter out secondary sites if requested
+    if ($ExcludeSecondarySites) {
+        $sitesInHierarchy = @($sitesInHierarchy | Where-Object { 
+            $_.properties.siteType -ne "Secondary Site" 
+        })
+    }
+    
+    # Force return as array to prevent PowerShell unwrapping single elements
+    return $sitesInHierarchy
+}
+
+function Get-HierarchyRoot {
+    <#
+    .SYNOPSIS
+    Finds the root site (CAS or primary without parent) for a given site's hierarchy.
+    
+    .DESCRIPTION
+    Identifies the topmost site in a hierarchy - either a Central Administration Site (CAS)
+    or a standalone Primary Site that has no parent.
+    
+    .PARAMETER SiteCode
+    The site code to find the root for
+    
+    .PARAMETER SiteId
+    The site node ID to find the root for
+    
+    .EXAMPLE
+    Get-HierarchyRoot -SiteCode "PS1"
+    
+    .EXAMPLE  
+    Get-HierarchyRoot -SiteCode "PS1"
+    #>
+    param(
+        [Parameter(ParameterSetName="BySiteCode")]
+        [string]$SiteCode,
+        
+        [Parameter(ParameterSetName="BySiteId")]
+        [string]$SiteId
+    )
+    
+    $sitesInHierarchy = if ($SiteCode) {
+        Get-SitesInHierarchy -SiteCode $SiteCode
+    } else {
+        Get-SitesInHierarchy -SiteCode $SiteId
+    }
+    
+    if (-not $sitesInHierarchy -or $sitesInHierarchy.Count -eq 0) {
+        return $null
+    }
+    
+    # Look for CAS first
+    $casSites = @($sitesInHierarchy | Where-Object { 
+        $_.properties.siteType -eq "Central Administration Site" 
+    })
+    
+    if ($casSites -and $casSites.Count -gt 0) {
+        return $casSites[0]
+    }
+    
+    # If no CAS, look for primary site with no parent or parent "None"
+    $rootPrimarySites = @($sitesInHierarchy | Where-Object { 
+        $_.properties.siteType -eq "Primary Site" -and (
+            -not $_.properties.parentSiteCode -or 
+            $_.properties.parentSiteCode -eq "" -or 
+            $_.properties.parentSiteCode -eq "None"
+        )
+    })
+    
+    if ($rootPrimarySites -and $rootPrimarySites.Count -gt 0) {
+        return $rootPrimarySites[0]
+    }
+    
+    # Fallback: return the first primary site found
+    $primarySites = @($sitesInHierarchy | Where-Object { 
+        $_.properties.siteType -eq "Primary Site" 
+    })
+    
+    return if ($primarySites -and $primarySites.Count -gt 0) { $primarySites[0] } else { $null }
+}
+
+function Get-AllHierarchies {
+    <#
+    .SYNOPSIS
+    Groups all SCCM sites into their respective hierarchies.
+    
+    .DESCRIPTION
+    Returns a hashtable where each key is a hierarchy identifier (root site code) 
+    and each value is an array of all sites in that hierarchy.
+    
+    .EXAMPLE
+    $hierarchies = Get-AllHierarchies
+    foreach ($rootSiteCode in $hierarchies.Keys) {
+        Write-Host "Hierarchy $rootSiteCode has $($hierarchies[$rootSiteCode].Count) sites"
+    }
+    #>
+    param()
+    
+    $allSccmSites = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }
+    $processedSites = @{}
+    $hierarchies = @{}
+    
+    foreach ($site in $allSccmSites) {
+        if ($processedSites.ContainsKey($site.id)) {
+            continue
+        }
+        
+        # Get all sites in this hierarchy
+        $sitesInHierarchy = Get-SitesInHierarchy -SiteCode $site.id
+        
+        # Find the root site for this hierarchy
+        $rootSite = Get-HierarchyRoot -SiteCode $site.id
+        $rootSiteCode = if ($rootSite) { 
+            $rootSite.properties.siteCode -or $rootSite.id 
+        } else { 
+            $site.properties.siteCode -or $site.id 
+        }
+        
+        # Store the hierarchy
+        $hierarchies[$rootSiteCode] = $sitesInHierarchy
+        
+        # Mark all sites in this hierarchy as processed
+        foreach ($siteInHierarchy in $sitesInHierarchy) {
+            $processedSites[$siteInHierarchy.id] = $true
+        }
+    }
+    
+    return $hierarchies
+}
+
+function Add-RootSiteCodes {
+    <#
+    .SYNOPSIS
+    Adds rootSiteCode properties to all SCCM_Site nodes for easier grouping.
+    
+    .DESCRIPTION
+    Analyzes all SCCM sites and adds a rootSiteCode property to each site node,
+    making it easier to group and filter sites by hierarchy.
+    
+    .EXAMPLE
+    Add-RootSiteCodes
+    #>
+    param()
+    
+    $hierarchies = Get-AllHierarchies
+    
+    foreach ($rootSiteCode in $hierarchies.Keys) {
+        $sitesInHierarchy = $hierarchies[$rootSiteCode]
+        
+        foreach ($site in $sitesInHierarchy) {
+            # Add rootSiteCode property if it doesn't exist
+            if (-not $site.properties.ContainsKey("rootSiteCode")) {
+                $site.properties.rootSiteCode = $rootSiteCode
+                Write-LogMessage Verbose "Added rootSiteCode '$rootSiteCode' to site $($site.properties.siteCode -or $site.id)"
+            }
+        }
+    }
+    
+    Write-LogMessage Success "Added hierarchy identifiers (root site codes) to $($hierarchies.Keys.Count) hierarchies"
+}
+
+function Get-SitesByHierarchy {
+    <#
+    .SYNOPSIS
+    Returns sites grouped by hierarchy, using rootSiteCode properties if available.
+    
+    .DESCRIPTION
+    Groups SCCM sites by their rootSiteCode property. If rootSiteCode properties don't exist,
+    automatically calculates hierarchies using SCCM_SameAdminsAs edges.
+    
+    .EXAMPLE
+    $hierarchies = Get-SitesByHierarchy
+    foreach ($rootSiteCode in $hierarchies.Keys) {
+        Write-Host "=== Hierarchy: $rootSiteCode ==="
+        foreach ($site in $hierarchies[$rootSiteCode]) {
+            Write-Host "  Site: $($site.properties.siteCode) ($($site.properties.siteType))"
+        }
+    }
+    #>
+    param()
+    
+    $allSccmSites = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }
+    
+    # Check if rootSiteCode properties exist
+    $sitesWithRootSiteCode = $allSccmSites | Where-Object { 
+        $_.properties.ContainsKey("rootSiteCode") -and 
+        $_.properties.rootSiteCode 
+    }
+    
+    if ($sitesWithRootSiteCode.Count -eq $allSccmSites.Count) {
+        # All sites have rootSiteCode - use existing properties
+        $hierarchies = @{}
+        foreach ($site in $allSccmSites) {
+            $rootSiteCode = $site.properties.rootSiteCode
+            if (-not $hierarchies.ContainsKey($rootSiteCode)) {
+                $hierarchies[$rootSiteCode] = @()
+            }
+            $hierarchies[$rootSiteCode] += $site
+        }
+        return $hierarchies
+    } else {
+        # Calculate hierarchies dynamically
+        Write-LogMessage Verbose "Calculating hierarchies dynamically (rootSiteCode properties missing)"
+        return Get-AllHierarchies
     }
 }
 #endregion
@@ -3480,10 +4079,10 @@ function Invoke-RemoteRegistryCollection {
             # Add MSSQL nodes/edges for local SQL instance
             if ($CollectionTarget -and $CollectionTarget.ADObject) {
 
-                Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
-                                              -SqlServerDomainObject $CollectionTarget.ADObject `
-                                              -SiteServerDomainObject $CollectionTarget.ADObject `
-                                              -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+                #Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
+                #                              -SqlServerDomainObject $CollectionTarget.ADObject `
+                #                              -SiteServerDomainObject $CollectionTarget.ADObject `
+                #                              -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
                 
                 # Collect EPA settings from local SQL instance
                 $epaSettings = Get-MssqlEpaSettingsViaRemoteRegistry -SqlServerHostname $CollectionTarget.Hostname -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -3534,12 +4133,12 @@ function Invoke-RemoteRegistryCollection {
                     }
 
                     # Add MSSQL nodes/edges for remote SQL instance
-                    if ($CollectionTarget -and $CollectionTarget.ADObject) {
-                        Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
-                                                    -SqlServerDomainObject $sqlServer.ADObject`
-                                                    -SiteServerDomainObject $CollectionTarget.ADObject `
-                                                    -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
-                    }
+                    #if ($CollectionTarget -and $CollectionTarget.ADObject) {
+                    #    Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
+                    #                                -SqlServerDomainObject $sqlServer.ADObject`
+                    #                                -SiteServerDomainObject $CollectionTarget.ADObject `
+                    #                                -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+                    #}
                     
                     # Collect EPA settings from remote SQL instance
                     $epaSettings = Get-MssqlEpaSettingsViaRemoteRegistry -SqlServerHostname $sqlServerFQDN -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -4114,8 +4713,9 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
             databases = if ($SqlDatabaseName) { @($SqlDatabaseName) } else { @() }
             extendedProtection = if ($EPASettings) { $EPASettings.ExtendedProtection } else { $null }
             forceEncryption = if ($EPASettings) { $EPASettings.ForceEncryption } else { $null }
-            name = "$($SqlServerFQDN)$portSuffix"
-            port = if ($SqlServicePort) { $SqlServicePort } else { 1433 }
+            name = "$($sqlServerDomainObject.dNSHostName)$portSuffix"
+            dnsHostName = $sqlServerDomainObject.dNSHostName
+            SQLServicePort = if ($SqlServicePort) { $SqlServicePort } else { 1433 }
             SCCMInfra = $true
             SCCMSite = $SiteCode
         }
@@ -4265,9 +4865,14 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
             }
         }
         ### (MSSQL_Database) -[SCCM_AssignAllPermissions]-> (SCCM_Site)
-        Upsert-Edge -Start $sqlDatabaseIdentifier -Kind "SCCM_AssignAllPermissions" -End $SiteCode -Properties @{
-            collectionSource = @($CollectionSource)
+        # Get all primary sites in this hierarchy
+        $sitesInHierarchy = Get-SitesInHierarchy -SiteCode $SiteCode -ExcludeSecondarySites
+        foreach ($siteInHierarchy in $sitesInHierarchy) {
+            Upsert-Edge -Start $sqlDatabaseIdentifier -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
+                collectionSource = @($CollectionSource)
+            }
         }
+
     } catch {
         Write-LogMessage Error "Failed to add MSSQL nodes/edges for $SqlServerFQDN in site $SiteCode`: $_"
     }
@@ -4344,7 +4949,7 @@ function Process-CoerceAndRelayToAdminService {
 
             # Can't relay back to the same server
             if ($smsProviderComputerNode.Id -eq $siteServer.Id) {
-                Write-LogMessage Verbose "Skipping coerce and relay to AdminService edge from $($siteServer.dNSHostName) to itself"
+                Write-LogMessage Verbose "Skipping coerce and relay to AdminService edge from $(if ($siteServer.dNSHostName) { $siteServer.dNSHostName } else { $siteServer.Name }) to itself"
                 continue
             }
 
@@ -4360,9 +4965,10 @@ function Process-CoerceAndRelayToAdminService {
             
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToAdminService" -End $SiteCode -Properties @{
                 collectionSource = @($CollectionSource)
-                coercionVictimHostName = $siteServer.Properties.dNSHostName
-                relayTargetHostName = $smsProviderComputerNode.Properties.ADObject.dNSHostName
-                relayTargetPort = $smsProviderComputerNode.Properties.port
+                coercionVictimAndRelayTargetPairs = @("Coerce $($siteServer.Properties.dNSHostName), relay to $($smsProviderComputerNode.Properties.dNSHostName)")
+                #coercionVictimHostName = $siteServer.Properties.dNSHostName
+                #relayTargetHostName = $smsProviderComputerNode.Properties.ADObject.dNSHostName
+                #relayTargetPort = $smsProviderComputerNode.Properties.port
             }
         }
     }
@@ -4382,20 +4988,25 @@ function Process-CoerceAndRelayToMSSQL {
     }
 
     # Get all site servers for the specified site code
-    $siteServers = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Site Server@$SiteCode" }
+    $siteServers = @($script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Site Server@$SiteCode" })
     
     # Get all SMS Providers for the specified site code
-    $smsProviders = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Provider@$SiteCode" }
+    $smsProviders = @($script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Provider@$SiteCode" })
 
     # Get all management points for the specified site code
-    $managementPoints = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Management Point@$SiteCode" }
+    $managementPoints = @($script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Management Point@$SiteCode" })
 
     # Combine all potential targets (robust against null/singleton values)
     $computersWithMssqlLogins = @()
     if ($siteServers)      { $computersWithMssqlLogins += @($siteServers) }
     if ($smsProviders)     { $computersWithMssqlLogins += @($smsProviders) }
     if ($managementPoints) { $computersWithMssqlLogins += @($managementPoints) }
-    $computersWithMssqlLogins = $computersWithMssqlLogins | Select-Object -Unique
+    # Ensure uniqueness by node Id rather than object equality. Select-Object -Unique
+    # was collapsing distinct nodes because their underlying object equality/ToString
+    # made them appear identical. Sort-Object -Unique on Id preserves one instance per Id.
+    if ($computersWithMssqlLogins) {
+        $computersWithMssqlLogins = $computersWithMssqlLogins | Sort-Object -Property Id -Unique
+    }
     if ($computersWithMssqlLogins.Count -eq 0) {
         Write-LogMessage Verbose "No site servers, SMS providers, or management points found for site code $SiteCode to coerce and relay to MSSQL"
         return
@@ -4446,8 +5057,8 @@ function Process-CoerceAndRelayToMSSQL {
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToMSSQL" -End $mssqlLogin.Id -Properties @{
                 collectionSource = @($CollectionSource)
                 coercionVictimHostName = $computerWithMssqlLogin.Properties.dNSHostName
-                relayTargetHostName = $mssqlServerNode.Properties.ADObject.dNSHostName
-                relayTargetPort = $mssqlServerNode.Properties.port
+                relayTargetHostName = $mssqlServerNode.Properties.dNSHostName
+                relayTargetPort = $mssqlServerNode.Properties.SQLServicePort
             }
         }
     }
@@ -4617,12 +5228,6 @@ function Get-SitesViaAdminService {
         }
     
         foreach ($site in $siteResponseContent.value) {
-
-            # Skip creation of nodes for secondary sites
-            if ($site.Type -eq 1) {
-                Write-LogMessage Verbose "Skipping node creation for secondary site $($site.SiteCode)"
-                continue
-            }
 
             # Try to get siteGUID from SMS_SCI_SiteDefinition
             $siteDefQuery = "SMS_SCI_SiteDefinition?`$filter=SiteCode eq '$($site.siteCode)'&`$select=ParentSiteCode,SiteCode,SiteName,SiteServerDomain,SiteServerName,SiteType,SQLDatabaseName,SQLServerName,Props"
@@ -4856,7 +5461,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
                         userDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
                     }
 
-                    Upsert-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSID -Properties @{
+                    Upsert-Edge -Start $device.SiteCode -Kind "SCCM_HasClient" -End $device.SMSID -Properties @{
                         collectionSource = @("AdminService-ClientDevices")
                     }
 
@@ -4949,11 +5554,6 @@ function Get-SmsRSystemViaAdminService {
             if ($smsRSystemResponseContent -and $smsRSystemResponseContent.value) {
                 foreach ($device in $smsRSystemResponseContent.value) {
 
-                    $siteSystemRoles = @()
-                    $siteSystemRoles += foreach ($role in $device.SystemRoles) {
-                        "$role@$SiteCode"
-                    }
-
                     $thisClientDomainObject = Resolve-PrincipalInDomain -Name $device.Name -Domain $script:Domain
 
                     # Add or update Computer node if domain SID is not null
@@ -4963,7 +5563,6 @@ function Get-SmsRSystemViaAdminService {
                             collectionSource = @("AdminService-SMS_R_System")
                             SCCMResourceIDs = @("$($device.ResourceID)@$SiteCode")
                             SCCMClientDeviceIdentifier = $device.SMSUniqueIdentifier
-                            #SCCMSiteSystemRoles = if ($siteSystemRoles.Count -gt 0) { $siteSystemRoles } else { @() }
                         }
 
                         # Add Group nodes
@@ -4992,7 +5591,7 @@ function Get-SmsRSystemViaAdminService {
                             ADDomainSID = if ($device.SID) { $device.SID } else { $null }
                         }
                         # There should already be an edge but just in case, add it again
-                        Upsert-Edge -Start $SiteCode -Kind "SCCM_HasClient" -End $device.SMSUniqueIdentifier -Properties @{
+                        Upsert-Edge -Start $device.SiteCode -Kind "SCCM_HasClient" -End $device.SMSUniqueIdentifier -Properties @{
                             collectionSource = @("AdminService-SMS_R_System")
                         }
                     }
@@ -5143,10 +5742,14 @@ function Get-CollectionsViaAdminService {
                      sourceSiteCode = $SiteCode
                  }
 
-                 Upsert-Edge -Start $SiteCode -Kind "SCCM_Contains" -End "$($collection.CollectionID)@$SiteCode" -Properties @{
-                     collectionSource = @("AdminService-SMS_Collection")
+                 # Get all primary sites in the hierarchy
+                 $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $SiteCode -ExcludeSecondarySites)
+                 foreach ($siteInHierarchy in $sitesInHierarchy) {
+                     # Create edge from each site to the collection
+                     Upsert-Edge -Start $siteInHierarchy.id -Kind "SCCM_Contains" -End "$($collection.CollectionID)@$SiteCode" -Properties @{
+                         collectionSource = @("AdminService-SMS_Collection")
+                     }
                  }
-
                  $totalProcessed++
             }
 
@@ -5312,7 +5915,7 @@ function Get-SecurityRolesViaAdminService {
                 }
 
                 # Add edges from every site in the hierarchy to every security role since they are replicated
-                foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }) {
+                foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.properties.siteType -ne "Secondary Site" }) {
                     Upsert-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($role.RoleID)@$SiteCode" -Properties @{
                         collectionSource = @("AdminService-SMS_Role")
                     }
@@ -5381,11 +5984,11 @@ function Get-AdminUsersViaAdminService {
                     name = if ($admin.LogonName) { $admin.LogonName } else { $null }
                     roleIDs = if ($admin.Roles) { $admin.Roles } else { $null }
                     SCCMInfra = $true
-                    sourceSiteCode = if ($admin.SourceSite) { $admin.SourceSite } else { $null }
+                    sourceSiteCode = if ($admin.SourceSite) { $admin.SourceSite } else { $SiteCode }
                 }
 
                 # Add edges from every site in the hierarchy to every security role since they are replicated
-                foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }) {
+                foreach ($site in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.properties.siteType -ne "Secondary Site" }) {
                     Upsert-Edge -Start $site.Id -Kind "SCCM_Contains" -End "$($admin.LogonName)@$SiteCode" -Properties @{
                         collectionSource = @("AdminService-SMS_Admin")
                     }
@@ -5561,10 +6164,17 @@ function Get-SiteSystemRolesViaAdminService {
 
                                 # Create edge from service account to computer if not the same
                                 if ($serviceAccountObject.SID -ne $computerObject.SID) {
+
                                     Upsert-Edge -Start $serviceAccountObject.SID -Kind "HasSession" -End $computerObject.SID -Properties @{
                                         collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                     }
-                                    Upsert-Edge -Start $computerObject.SID -Kind "MSSQL_GetAdminTGS" -End $serviceAccountObject.SID -Properties @{
+
+                                    # To do: remove hardcoded port 1433 if possible
+                                    Upsert-Edge -Start $serviceAccountObject.SID -Kind "MSSQL_ServiceAccountFor" -End "$($computerObject.SID):1433" -Properties @{
+                                        collectionSource = @("AdminService-SMS_SCI_SysResUse")
+                                    }
+
+                                    Upsert-Edge -Start $serviceAccountObject.SID -Kind "MSSQL_GetAdminTGS" -End "$($computerObject.SID):1433" -Properties @{
                                         collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                     }
                                     # Add MSSQL_GetTGS edges from service account to every server login
@@ -7240,6 +7850,9 @@ function Start-IngestAndPostProcessing {
     Process-CollectionsIngest        # Creates nodes only  
     Process-AdminUsersIngest         # Creates SCCM_IsMappedTo, SCCM_IsAssigned
     Process-SiteSystemRolesIngest    # Creates additional AdminTo edges
+    
+    # HIERARCHY ASSIGNMENT PHASE - Add root site identifiers to site nodes
+    Add-RootSiteCodes
     
     if (-not $SkipPostProcessing) {
         # POST-PROCESSING PHASE - Create edges that depend on other edges

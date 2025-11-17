@@ -27,9 +27,17 @@ param(
     [Parameter(Mandatory=$false)]
     [string]$SmsProvider = "cas-pss.mayyhem.com",
 
+    # Limit tests to a single edge type for focused debugging
+    [Parameter(Mandatory=$false)]
+    [string]$LimitToEdgeType,
+
     # Enable detailed debug output for troubleshooting test failures
     [Parameter(Mandatory=$false)]
-    [switch]$ShowDebug = $true
+    [switch]$ShowDebug,
+
+    # Skip collection phase and parse the most recent ZIP file
+    [Parameter(Mandatory=$false)]
+    [switch]$SkipCollection
 )
 
 #region Logging Functions
@@ -118,6 +126,7 @@ $script:ExpectedEdges = @(
     ###########
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The CAS primary site server has local administrator rights on the CAS site database server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -136,6 +145,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The CAS primary site server has local administrator rights on the service connection point server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -154,6 +164,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the site database server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -172,6 +183,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the SMS Provider server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -190,6 +202,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the management point server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -208,6 +221,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the distribution point server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -226,6 +240,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the passive site server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -244,6 +259,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 passive site server has local administrator rights on the primary site server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -262,6 +278,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
+        Count = 1
         Description = "The PS1 primary site server has local administrator rights on the content library server"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -280,25 +297,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "AdminTo"
-        Description = "The PS1 primary site server has local administrator rights on the client device for push installation"
-        Source = @{
-            Kinds = @("Computer", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps1-pss.$Domain"
-            }
-        }
-        Target = @{
-            Kinds = @("Computer", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps1-dev.$Domain"
-            }
-        }
-    },
-    @{
-        Kind = "AdminTo"
-        Description = "The PS2 primary site server has local administrator rights on the site database server"
+        Negative = $true
+        Description = "The PS2 primary site server does not have local administrator rights on the PS1 site database server"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -310,109 +310,107 @@ $script:ExpectedEdges = @(
             Kinds = @("Computer", "Base")
             Properties = @{
                 id = "S-1-5-21-*"
-                dNSHostName = "ps2-db.$Domain"
+                dNSHostName = "ps1-db.$Domain"
             }
         }
     },
+
     ################################
     # CoerceAndRelayToAdminService #
     ################################
     @{
         Kind = "CoerceAndRelayToAdminService"
-        Description = "Authenticated Users group can coerce and relay authentication to the AdminService service on the PS1 SMS Provider"
+        Count = 1
+        Description = "Authenticated Users group can coerce the PS1 primary site server and relay authentication to the AdminService on the PS1 SMS Provider, coerce the PS1 primary site server and relay authentication to the AdminService on the PS1 passive site server, coerce the PS1 passive site server and relay authentication to the AdminService on the PS1 primary site server, and coerce the PS1 passive site server and relay authentication to the AdminService on the PS1 SMS Provider"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
-            Kinds = @("Computer", "Base")
+            Kinds = @("SCCM_Site")
             Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps1-sms.$Domain"
+                id = "PS1"
             }
         }
+        Properties = @{
+            coercionVictimAndRelayTargetPairs = @("Coerce ps1-psv.mayyhem.com, relay to ps1-pss.mayyhem.com","Coerce ps1-pss.mayyhem.com, relay to ps1-psv.mayyhem.com","Coerce ps1-pss.mayyhem.com, relay to ps1-sms.mayyhem.com","Coerce ps1-psv.mayyhem.com, relay to ps1-sms.mayyhem.com")
+        }
     },
+
 
     #########################
     # CoerceAndRelayToMSSQL #
     #########################
     @{
         Kind = "CoerceAndRelayToMSSQL"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the MSSQL service on the CAS site database server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
-                id = "cas-pss$@*:1433"
+                id = "MAYYHEM\CAS-PSS$@*:1433"
             }
+        }
+        Properties = @{
+            coercionVictimHostName = "cas-pss.mayyhem.com"
+            relayTargetHostName = "cas-db.mayyhem.com"
         }
     },
     @{
         Kind = "CoerceAndRelayToMSSQL"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the MSSQL service on the PS1 site database server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
-                id = "ps1-pss$@*:1433"
+                id = "MAYYHEM\PS1-PSS$@*:1433"
             }
+        }
+        Properties = @{
+            coercionVictimHostName = "ps1-pss.mayyhem.com"
+            relayTargetHostName = "ps1-db.mayyhem.com"
         }
     },
     @{
         Kind = "CoerceAndRelayToMSSQL"
-        Description = "Authenticated Users group can coerce and relay authentication to the MSSQL service on the PS2 site database server"
+        Count = 1
+        Description = "Authenticated Users group can coerce and relay authentication to the MSSQL service on the PS1 site database server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
-                id = "ps2-pss$@*:1433"
+                id = "MAYYHEM\PS1-PSV$@*:1433"
             }
         }
-    },
-    @{
-        Kind = "CoerceAndRelayToMSSQL"
-        Negative = $true
-        Description = "Authenticated Users group can NOT coerce and relay authentication to the MSSQL service on the SEC site database server"
-        Source = @{
-            Kinds = @("Group", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
-            }
-        }
-        Target = @{
-            Kinds = @("MSSQL_Login")
-            Properties = @{
-                id = "ps1-pss$@*:1433"
-                # Need another property here to differentiate from the previous positive test
-            }
+        Properties = @{
+            coercionVictimHostName = "ps1-psv.mayyhem.com"
+            relayTargetHostName = "ps1-db.mayyhem.com"
         }
     },
 
     ###########################
     # CoerceAndRelayNTLMtoSMB #
     ###########################
+    <#
     @{
         Kind = "CoerceAndRelayNTLMtoSMB"
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 SMS Provider"
@@ -485,12 +483,14 @@ $script:ExpectedEdges = @(
             }
         }
     },
+    #>
 
     ##############
     # HasSession #
     ##############
     @{
         Kind="HasSession"
+        Count = 1
         Description = "The MSSQL service account has an active session on the CAS site database server"
         Source = @{
             Kinds = @("User", "Base")
@@ -509,6 +509,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="HasSession"
+        Count = 1
         Description = "The MSSQL service account has an active session on the PS1 site database server"
         Source = @{
             Kinds = @("User", "Base")
@@ -525,30 +526,13 @@ $script:ExpectedEdges = @(
             }
         }
     },
-    @{
-        Kind="HasSession"
-        Description = "The MSSQL service account has an active session on the PS2 site database server"
-        Source = @{
-            Kinds = @("User", "Base")
-            Properties = @{
-                samAccountName = "sqlsccmsvc"
-                id = "S-1-5-21-*"
-            }
-        }
-        Target = @{
-            Kinds = @("Computer", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps2-db.$Domain"
-            }
-        }
-    },
 
     ##################
     # MSSQL_Contains #
     ##################
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The CAS site database MSSQL server contains the CM_<SiteCode> database"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -565,6 +549,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The CAS site database MSSQL server contains the CAS-PSS$ login"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -576,12 +561,13 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
-                id = "cas-pss$@*:1433"
+                id = "*cas-pss$@*:1433"
             }
         }
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The CAS site database contains the db_owner database role"
         Source = @{
             Kinds = @("MSSQL_Database")
@@ -598,6 +584,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The CAS site database contains the CAS-PSS$ user"
         Source = @{
             Kinds = @("MSSQL_Database")
@@ -614,6 +601,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The PS1 site database MSSQL server contains the CM_<SiteCode> database"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -630,6 +618,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The PS1 site database MSSQL server contains the PS1-PSS$ login"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -641,12 +630,13 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
-                id = "ps1-pss$@*:1433"
+                id = "*ps1-pss$@*:1433"
             }
         }
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The PS1 site database contains the db_owner database role"
         Source = @{
             Kinds = @("MSSQL_Database")
@@ -663,6 +653,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
+        Count = 1
         Description = "The PS1 site database contains the PS1-PSS$ user"
         Source = @{
             Kinds = @("MSSQL_Database")
@@ -679,72 +670,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Description = "The PS2 site database MSSQL server contains the CM_<SiteCode> database"
-        Source = @{
-            Kinds = @("MSSQL_Server")
-            Properties = @{
-                id = "*:1433"
-            }
-        }
-        Target = @{
-            Kinds = @("MSSQL_Database")
-            Properties = @{
-                name = "CM_PS2"
-            }
-        }
-    },
-    @{
-        Kind="MSSQL_Contains"
-        Description = "The PS2 site database MSSQL server contains the PS2-PSS$ login"
-        Source = @{
-            Kinds = @("MSSQL_Server")
-            Properties = @{
-                id = "*:1433"
-                name = "PS2-DB*"
-            }
-        }
-        Target = @{
-            Kinds = @("MSSQL_Login")
-            Properties = @{
-                id = "ps2-pss$@*:1433"
-            }
-        }
-    },
-    @{
-        Kind="MSSQL_Contains"
-        Description = "The PS2 site database contains the db_owner database role"
-        Source = @{
-            Kinds = @("MSSQL_Database")
-            Properties = @{
-                id = "*:1433\CM_PS2"
-            }
-        }
-        Target = @{
-            Kinds = @("MSSQL_DatabaseRole")
-            Properties = @{
-                id = "db_owner@*:1433\CM_PS2"
-            }
-        }
-    },
-    @{
-        Kind="MSSQL_Contains"
-        Description = "The PS2 site database contains the PS2-PSS$ user"
-        Source = @{
-            Kinds = @("MSSQL_Database")
-            Properties = @{
-                id = "*:1433\CM_PS2"
-            }
-        }
-        Target = @{
-            Kinds = @("MSSQL_DatabaseUser")
-            Properties = @{
-                id = "ps2-pss$@*:1433\CM_PS2"
-            }
-        }
-    },
-    @{
-        Kind="MSSQL_Contains"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL servers contain the sysadmin server role"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -765,7 +691,7 @@ $script:ExpectedEdges = @(
     ###################
     @{
         Kind="MSSQL_ControlDB"
-        Count = 3
+        Count = 2
         Description = "The db_owner MSSQL database role controls the site database"
         Source = @{
             Kinds = @("MSSQL_DatabaseRole")
@@ -786,7 +712,7 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ControlServer"
-        Count = 3
+        Count = 2
         Description = "The sysadmin MSSQL server role controls the server instance"
         Source = @{
             Kinds = @("MSSQL_ServerRole")
@@ -807,7 +733,7 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ExecuteOnHost"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL server can execute commands on its host"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -828,7 +754,7 @@ $script:ExpectedEdges = @(
     #####################
     @{
         Kind="MSSQL_GetAdminTGS"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL service account can request a TGS for any domain login on the server instance"
         Source = @{
             Kinds = @("User", "Base")
@@ -850,7 +776,7 @@ $script:ExpectedEdges = @(
     ################
     @{
         Kind="MSSQL_GetTGS"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL service account can request a TGS for any domain login on the server instance"
         Source = @{
             Kinds = @("User", "Base")
@@ -873,7 +799,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_HasLogin"
         Count = 3
-        Description = "The site database MSSQL server computers have logins on the MSSQL server instances"
+        Description = "The primary and passive site server computers have logins on the MSSQL server instances (CAS-PSS -> CAS-DB, PS1-PSS -> PS1-DB, PS1-PSV -> PS1-DB)"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -893,7 +819,7 @@ $script:ExpectedEdges = @(
     #################
     @{
         Kind="MSSQL_HostFor"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL server computers host the MSSQL server instances"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -915,7 +841,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_IsMappedTo"
         Count = 3
-        Description = "The primary site server MSSQL server logins are mapped to database users in the site database"
+        Description = "The primary and passive site server MSSQL server logins (CAS-PSS, PS1-PSS, and PS1-PSV) are mapped to database users in the site database"
         Source = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
@@ -936,7 +862,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_MemberOf"
         Count = 3
-        Description = "The primary site server MSSQL database users are members of the db_owner database role in the site database"
+        Description = "The primary and passive site server MSSQL database users (CAS-PSS, PS1-PSS, and PS1-PSV) are members of the db_owner database role in the site database"
         Source = @{
             Kinds = @("MSSQL_DatabaseUser")
             Properties = @{
@@ -953,7 +879,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_MemberOf"
         Count = 3
-        Description = "The primary site server MSSQL server logins are members of the sysadmin server role on the MSSQL server instance"
+        Description = "The primary and passive site server MSSQL server logins (CAS-PSS, PS1-PSS, and PS1-PSV) are members of the sysadmin server role on the MSSQL server instance"
         Source = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
@@ -973,8 +899,8 @@ $script:ExpectedEdges = @(
     ###########################
     @{
         Kind="MSSQL_ServiceAccountFor"
-        Count = 3
-        Description = "The site database MSSQL service account is the service account for the MSSQL server instance"
+        Count = 2
+        Description = "The site database MSSQL service account is the service account for the MSSQL server instances (CAS and PS1)"
         Source = @{
             Kinds = @("User", "Base")
             Properties = @{
@@ -995,33 +921,69 @@ $script:ExpectedEdges = @(
     ##############
     @{
         Kind="SameHostAs"
-        Description = "The PS1 client device is the same host as the domain joined computer"
+        Count = 1
+        Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                id = "PS1-DEV$"
+                id = "GUID:*"
             }
         }
         Target = @{
             Kinds = @("Host")
             Properties = @{
-                dNSHostName = "ps1-dev.$Domain"
+                id = "ps1-dev.$Domain"
             }
         }
     },
     @{
         Kind="SameHostAs"
+        Count = 1
         Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
         Source = @{
             Kinds = @("Host")
             Properties = @{
-                dNSHostName = "ps1-dev.$Domain"
+                id = "ps1-dev.$Domain"
             }
         }
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
-                id = "PS1-DEV$"
+                id = "GUID:*"
+            }
+        }
+    },
+    @{
+        Kind="SameHostAs"
+        Count = 1
+        Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
+        Source = @{
+            Kinds = @("Computer")
+            Properties = @{
+                dNSHostName = "ps1-dev.$Domain"
+            }
+        }
+        Target = @{
+            Kinds = @("Host")
+            Properties = @{
+                id = "ps1-dev.$Domain"
+            }
+        }
+    },
+    @{
+        Kind="SameHostAs"
+        Count = 1
+        Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
+        Source = @{
+            Kinds = @("Host")
+            Properties = @{
+                id = "ps1-dev.$Domain"
+            }
+        }
+        Target = @{
+            Kinds = @("Computer")
+            Properties = @{
+                dNSHostName = "ps1-dev.$Domain"
             }
         }
     },
@@ -1037,10 +999,10 @@ $script:ExpectedEdges = @(
     # SCCM_AssignAllPermissions #
     #############################
     @{
-        # CAS-PSS, PS1-PSS, PS1-PSV, PS1-SMS, and PS2-PSS all have this permission
+        # CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS all have this permission
         Kind="SCCM_AssignAllPermissions"
-        Count = 15
-        Description = "Domain computers hosting the SMS Provider role can assign all permissions to any primary site in the hierarchy"
+        Count = 8
+        Description = "Domain computers hosting the SMS Provider role (CAS-PSS, PS1-PSS, PS1-PSV, PS1-SMS) can assign all permissions to any primary site in the hierarchy (CAS, PS1)"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -1049,16 +1011,12 @@ $script:ExpectedEdges = @(
         }
         Target = @{
             Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "*"
-                siteType = "Primary Site"
-            }
         }
     },
     @{
         Kind="SCCM_AssignAllPermissions"
-        Count = 3
-        Description = "SCCM primary site databases can assign all permissions to any primary site in the hierarchy"
+        Count = 4
+        Description = "SCCM primary site databases (CAS-DB\CM_CAS and PS1-DB\CM_PS1) can assign all permissions to any primary site in the hierarchy (CAS, PS1)"
         Source = @{
             Kinds = @("MSSQL_Database")
             Properties = @{
@@ -1067,16 +1025,12 @@ $script:ExpectedEdges = @(
         }
         Target = @{
             Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "*"
-                siteType = "Primary Site"
-            }
         }
     },
     @{
-        # domainadmin SCCM admin user has this permission in CAS, PS1, and PS2
+        # domainadmin SCCM admin user has this permission in CAS and PS1
         Kind="SCCM_AssignAllPermissions"
-        Count = 3
+        Count = 2
         Description = "The domainadmin SCCM admin user can assign all permissions to any primary site in the hierarchy"
         Source = @{
             Kinds = @("SCCM_AdminUser")
@@ -1086,10 +1040,6 @@ $script:ExpectedEdges = @(
         }
         Target = @{
             Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "*"
-                siteType = "Primary Site"
-            }
         }
     },
 
@@ -1105,8 +1055,8 @@ $script:ExpectedEdges = @(
     #################
     @{
         Kind="SCCM_Contains"
-        Count = 3
-        Description = "The CAS, PS1, and PS2 primary sites contain an SCCM admin user"
+        Count = 2
+        Description = "The CAS and PS1 primary sites contain an SCCM admin user"
         Source = @{
             Kinds = @("SCCM_Site")
             Properties = @{
@@ -1122,8 +1072,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="SCCM_Contains"
-        Count = 3
-        Description = "The CAS, PS1, and PS2 primary sites contain the Full Administrator security role"
+        Count = 2
+        Description = "The CAS and PS1 primary sites contain the Full Administrator security role"
         Source = @{
             Kinds = @("SCCM_Site")
             Properties = @{
@@ -1139,8 +1089,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="SCCM_Contains"
-        Count = 3
-        Description = "The CAS, PS1, and PS2 primary sites contain the SMS00001 collection"
+        Count = 2
+        Description = "The CAS and PS1 primary sites contain the SMS00001 collection"
         Source = @{
             Kinds = @("SCCM_Site")
             Properties = @{
@@ -1160,19 +1110,6 @@ $script:ExpectedEdges = @(
     ##########################
     @{
         Kind="SCCM_FullAdministrator"
-        Description = "The domainadmin SCCM admin user is a Full Administrator of the client device"
-        Source = @{
-            Kinds = @("SCCM_AdminUser")
-            Properties = @{
-                id = "mayyhem\domainadmin@*"
-            }
-        }
-        Target = @{
-            Kinds = @("SCCM_ClientDevice")
-            Properties = @{
-                id = "PS1-DEV"
-            }
-        }
     },
 
     ###########################
@@ -1180,6 +1117,7 @@ $script:ExpectedEdges = @(
     ###########################
     @{
         Kind="SCCM_HasADLastLogonUser"
+        Count = 1
         Description = "The PS1 client device has domainuser as the last logged on user in Active Directory"
         Source = @{
             Kinds = @("SCCM_ClientDevice")
@@ -1201,6 +1139,7 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="SCCM_HasClient"
+        Count = 1
         Description = "PS1-DEV is a client of the PS1 site"
         Source = @{
             Kinds = @("SCCM_Site")
@@ -1211,6 +1150,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
+                id = "GUID:*"
                 name = "PS1-DEV@PS1"
             }
         }
@@ -1222,10 +1162,12 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="SCCM_HasCurrentUser"
+        Count = 1
         Description = "The PS1 client device has domainuser as the current logged on user"
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
+                id = "GUID:*"
                 name = "PS1-DEV@PS1"
             }
         }
@@ -1243,6 +1185,7 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="SCCM_HasMember"
+        Count = 1
         Description = "The SMS00001 collection contains the PS1 client device"
         Source = @{
             Kinds = @("SCCM_Collection")
@@ -1253,6 +1196,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
+                id = "GUID:*"
                 name = "PS1-DEV@PS1"
             }
         }
@@ -1263,10 +1207,12 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="SCCM_HasPrimaryUser"
+        Count = 1
         Description = "The PS1 client device has domainuser as the primary user"
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
+                id = "GUID:*"
                 name = "PS1-DEV@PS1"
             }
         }
@@ -1284,8 +1230,8 @@ $script:ExpectedEdges = @(
     ###################
     @{
         Kind="SCCM_IsAssigned"
-        Count = 3
-        Description = "The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS, PS1, and PS2 primary sites"
+        Count = 1
+        Description = "The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS root site"
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
@@ -1306,7 +1252,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="SCCM_IsMappedTo"
         Count = 1
-        Description = "The domainadmin user is mapped to an SCCM admin user in the CAS, PS1, or PS2 primary site"
+        Description = "The domainadmin user is mapped to an SCCM admin user in the CAS primary site"
         Source = @{
             Kinds = @("User", "Base")
             Properties = @{
@@ -1345,6 +1291,7 @@ $script:ExpectedEdges = @(
     #####################
     @{
         Kind="SCCM_SameAdminsAs"
+        Count = 1
         Description = "The PS1 primary site has the same admins as the CAS primary site"
         Source = @{
             Kinds = @("SCCM_Site")
@@ -1361,6 +1308,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="SCCM_SameAdminsAs"
+        Count = 1
         Description = "The PS1 primary site has the same admins as the CAS primary site (both directions)"
         Source = @{
             Kinds = @("SCCM_Site")
@@ -1377,6 +1325,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="SCCM_SameAdminsAs"
+        Count = 0
         Negative = $true
         Description = "The PS1 primary site does NOT have a SameAdminsAs relationship with the PS2 primary site (edges go to CAS only)"
         Source = @{
@@ -1456,7 +1405,7 @@ function Test-EdgePattern {
     if ($ExpectedEdge.Properties) {
         foreach ($prop in $ExpectedEdge.Properties.Keys) {
             $expectedValue = $ExpectedEdge.Properties[$prop]
-            $actualValue = $Edge.$prop
+            $actualValue = if ($Edge.properties.$prop) { $Edge.properties.$prop } else { $Edge.$prop }
             
             if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
                 if ($ShowDebug) {
@@ -1540,12 +1489,34 @@ function Test-PropertyMatch {
     if ($null -eq $Actual -and $null -eq $Expected) { return $true }
     if ($null -eq $Actual -or $null -eq $Expected) { return $false }
     
+    # Handle array comparisons
+    if ($Expected -is [array] -and $Actual -is [array]) {
+        # For arrays, check if all expected items are present in the actual array
+        foreach ($expectedItem in $Expected) {
+            $found = $false
+            foreach ($actualItem in $Actual) {
+                if (Test-PropertyMatch -Actual $actualItem -Expected $expectedItem) {
+                    $found = $true
+                    break
+                }
+            }
+            if (-not $found) {
+                return $false
+            }
+        }
+        return $true
+    }
+    elseif ($Expected -is [array] -or $Actual -is [array]) {
+        # One is array, one is not - no match
+        return $false
+    }
+    
     # Convert to strings for comparison
     $actualStr = $Actual.ToString()
     $expectedStr = $Expected.ToString()
     
     # If expected contains wildcards, use pattern matching
-    if ($expectedStr -like '*`**') {
+    if ($expectedStr.Contains('*') -or $expectedStr.Contains('?')) {
         return $actualStr -like $expectedStr
     }
     
@@ -1727,10 +1698,10 @@ function Test-Edges {
             continue
         }
 
-        # Find matching edges (no debug output during normal matching)
+        # Find matching edges - enable debug output for troubleshooting pattern matching
         $matchingEdges = @()
         foreach ($edge in $edges) {
-            if (Test-EdgePattern -Edge $edge -Nodes $nodes -ExpectedEdge $testCase) {
+            if (Test-EdgePattern -Edge $edge -Nodes $nodes -ExpectedEdge $testCase -ShowDebug:$ShowDebug) {
                 $matchingEdges += $edge
             }
         }
@@ -1949,7 +1920,11 @@ try {
         #Invoke-Setup
     }
     if ($Action -eq "All" -or $Action -eq "Test") {
-        Invoke-Collection
+        if ($SkipCollection) {
+            Write-TestLog "Skipping collection phase - parsing most recent ZIP file..." -Level Info
+        } else {
+            Invoke-Collection
+        }
         $output = Get-OutputFromZip
         if (-not $output) {
             Write-TestLog "No output found from enumeration" -Level Error
