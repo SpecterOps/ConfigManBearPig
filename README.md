@@ -24,6 +24,9 @@ Please hit me up on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem), T
 Collects BloodHound OpenGraph compatible data and creates a zip in the current directory
   - Example: `sccm-bloodhound-20251020-115610.zip`
 
+# Limitations
+The three character site code is used ase the unique identifier for sites. These are required (for Microsoft support but not systematically-enforced) to be unique per Active Directory forest, but currently the AD forest is not part of the unique identifier. This means that if you use the same site code twice in the organization, the two site nodes will be merged and the data will be corrupt. If this becomes a problem, we can consider adding the forest root to the site identifier.
+
 # SCCM Nodes Reference
 ## New Node Classes
 
@@ -55,6 +58,10 @@ Collects BloodHound OpenGraph compatible data and creates a zip in the current d
 ### SCCM_Collection Node
 
 ### SCCM_SecurityRole Node
+| Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
+|----------|------------|
+| **Name/Label** | |
+| **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
 
 ### SCCM_Site Node
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
