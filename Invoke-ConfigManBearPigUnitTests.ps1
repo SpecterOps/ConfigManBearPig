@@ -86,6 +86,7 @@ $script:EdgeTypes = @(
     "MSSQL_MemberOf",
     "MSSQL_ServiceAccountFor",
     "SameHostAs",
+    "SCCM_AdminsReplicatedTo",
     "SCCM_ApplicationAdministrator",
     "SCCM_AssignAllPermissions",
     "SCCM_AssignSpecificPermissions",
@@ -97,8 +98,7 @@ $script:EdgeTypes = @(
     "SCCM_HasMember",
     "SCCM_HasPrimaryUser",
     "SCCM_IsAssigned",
-    "SCCM_IsMappedTo",
-    "SCCM_SameAdminsAs"
+    "SCCM_IsMappedTo"
 )
 
 $script:NodeTypes = @(
@@ -988,13 +988,6 @@ $script:ExpectedEdges = @(
         }
     },
 
-    #################################
-    # SCCM_ApplicationAdministrator #
-    #################################
-    @{
-        Kind="SCCM_ApplicationAdministrator"
-    },
-
     #############################
     # SCCM_AssignAllPermissions #
     #############################
@@ -1110,6 +1103,20 @@ $script:ExpectedEdges = @(
     ##########################
     @{
         Kind="SCCM_FullAdministrator"
+        Count = 13
+        Description = "The domainuser SCCM admin user has the Full Administrator security role over all client devices in the hierarchy"
+        Source = @{
+            Kinds = @("SCCM_AdminUser")
+            Properties = @{
+                id = "mayyhem\domainuser@*"
+            }
+        }
+        Target = @{
+            Kinds = @("SCCM_ClientDevice")
+            Properties = @{
+                id = "GUID:*"
+            }
+        }
     },
 
     ###########################
@@ -1286,11 +1293,11 @@ $script:ExpectedEdges = @(
         }
     },
 
-    #####################
-    # SCCM_SameAdminsAs #
-    #####################
+    ###########################
+    # SCCM_AdminsReplicatedTo #
+    ###########################
     @{
-        Kind="SCCM_SameAdminsAs"
+        Kind="SCCM_AdminsReplicatedTo"
         Count = 1
         Description = "The PS1 primary site has the same admins as the CAS primary site"
         Source = @{
@@ -1307,7 +1314,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind="SCCM_SameAdminsAs"
+        Kind="SCCM_AdminsReplicatedTo"
         Count = 1
         Description = "The PS1 primary site has the same admins as the CAS primary site (both directions)"
         Source = @{
@@ -1324,20 +1331,19 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind="SCCM_SameAdminsAs"
-        Count = 0
+        Kind="SCCM_AdminsReplicatedTo"
         Negative = $true
-        Description = "The PS1 primary site does NOT have a SameAdminsAs relationship with the PS2 primary site (edges go to CAS only)"
+        Description = "Admin users in secondary sites are NOT replicated to primary sites (no replication from SEC to PS1 or CAS)"
         Source = @{
             Kinds = @("SCCM_Site")
             Properties = @{
-                id = "PS1"
+                id = "SEC"
             }
         }
         Target = @{
             Kinds = @("SCCM_Site")
             Properties = @{
-                id = "PS2"
+                id = "*"
             }
         }
     }
@@ -1930,7 +1936,56 @@ try {
             Write-TestLog "No output found from enumeration" -Level Error
             return $null
         }
+
         $testResults = Test-Edges -Output $output -ShowDebug:$ShowDebug
+
+        # Additional node-level sanity check: SCCM_ClientDevice.memberOf normalization
+        try {
+            $nodes = $output.graph.nodes
+
+            # Identify hierarchy root site code (CAS in this lab) from SCCM_Site nodes
+            $siteNodes = $nodes | Where-Object { $_.kinds -contains "SCCM_Site" }
+            $rootSite = $siteNodes | Where-Object { $_.id -eq "CAS" } | Select-Object -First 1
+            if (-not $rootSite) {
+                Write-TestLog "ClientDevice memberOf normalization check: could not find CAS root site node; skipping check" -Level Warning
+            }
+            else {
+                $rootSiteCode = $rootSite.id  # e.g. "CAS"
+
+                # Find SCCM client devices that have memberOf entries
+                $clientDevices = $nodes | Where-Object { $_.kinds -contains "SCCM_ClientDevice" }
+
+                foreach ($device in $clientDevices) {
+                    $memberOf = $device.properties.memberOf
+                    if (-not $memberOf) {
+                        continue
+                    }
+
+                    $badEntries = @()
+                    foreach ($entry in $memberOf) {
+                        if ($entry -match '^(.+)@([A-Z0-9]{3})$') {
+                            $siteCode = $Matches[2]
+                            if ($siteCode -ne $rootSiteCode) {
+                                $badEntries += $entry
+                            }
+                        }
+                    }
+
+                    if ($badEntries.Count -gt 0) {
+                        Write-TestLog "ClientDevice memberOf normalization check - FAIL" -Level Error
+                        Write-TestLog "  Device ID: $($device.id)" -Level Error
+                        Write-TestLog "  Found non-root memberOf entries: $($badEntries -join ', ')" -Level Error
+                    }
+                    else {
+                        Write-TestLog "ClientDevice memberOf normalization check - PASS for device $($device.id)" -Level Success
+                    }
+                }
+            }
+        }
+        catch {
+            Write-TestLog "Error during client device normalization check: $_" -Level Error
+        }
+
         Get-EdgeCoverage
         # Display coverage table
         Write-TestLog "Edge Type Coverage Summary:" -Level Info
