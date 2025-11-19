@@ -16,7 +16,7 @@ Purpose:
     7.  AdminService (collect information from SMS Providers with privileges to query site information)
     8.  *WMI (if AdminService collection fails)
     9.  HTTP (identify management points and distribution points via exposed web services)
-    10. SMB (identify site servers and management points via file shares)
+    10. SMB (identify site servers and distribution points via file shares)
       
 System Requirements:
     - PowerShell 4.0 or higher
@@ -2771,6 +2771,7 @@ function Invoke-LDAPCollection {
                 if ($mpTarget.ADObject) {
                     Upsert-Node -Id $mpTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mpTarget.ADObject -Properties @{
                         collectionSource = @("LDAP-mSSMSManagementPoint")
+                        name = $mpTarget.ADObject.samAccountName
                         SCCMSiteSystemRoles = @("SMS Management Point@$mpSiteCode")
                     }
                 }
@@ -2888,6 +2889,7 @@ function Invoke-LDAPCollection {
                         if ($fspTarget.ADObject) {
                             Upsert-Node -Id $fspTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $fspTarget.ADObject -Properties @{
                                 collectionSource = @("LDAP-mSSMSManagementPoint")
+                                name = $fspTarget.ADObject.samAccountName
                                 SCCMSiteSystemRoles = @("SMS Fallback Status Point@$siteCode")
                             }
                         }
@@ -2938,6 +2940,7 @@ function Invoke-LDAPCollection {
             if ($system.ObjectSid) {
                 Upsert-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
                     collectionSource = @("LDAP-CmRcService")
+                    name = $system.samAccountName
                     SCCMHasClientRemoteControlSPN = $true
                 }
             }
@@ -3021,6 +3024,7 @@ function Invoke-LDAPCollection {
                         
                         Upsert-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
                             collectionSource = @("LDAP-$($server.ObjectClass)")
+                            name = $collectionTarget.ADObject.samAccountName
                             networkBootServer = $true
                         }
                     }
@@ -3096,6 +3100,7 @@ function Invoke-LDAPCollection {
                 if ($collectionTarget.ADObject) {
                     Upsert-Node -Id $collectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $collectionTarget.ADObject -Properties @{
                         collectionSource = @("LDAP-NamePattern")
+                        name = $collectionTarget.ADObject.samAccountName
                     }
                 
                 }
@@ -3139,6 +3144,7 @@ function Invoke-LDAPCollection {
                             "Computer" {                                
                                 Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
+                                    name = $adObject.samAccountName
                                 }
                                 
                                 # Add to collection targets for subsequent collection phases
@@ -3152,12 +3158,14 @@ function Invoke-LDAPCollection {
                             "User" {
                                 Upsert-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
+                                    name = $adObject.samAccountName
                                 }
                             }
                             
                             "Group" {                              
                                 Upsert-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
                                     collectionSource = @("LDAP-GenericAllSystemManagement")
+                                    name = $adObject.samAccountName
                                 }
                             }
                             
@@ -3208,6 +3216,7 @@ function Invoke-LDAPCollection {
                                     "Computer" {
                                         Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
+                                            name = $adObject.samAccountName
                                         }
                                         
                                         # Add to collection targets for subsequent collection phases
@@ -3221,12 +3230,14 @@ function Invoke-LDAPCollection {
                                     "User" {
                                         Upsert-Node -Id $adObject.SID -Kinds @("User", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
+                                            name = $adObject.samAccountName
                                         }
                                     }
                                     
                                     "Group" {
                                         Upsert-Node -Id $adObject.SID -Kinds @("Group", "Base") -PSObject $adObject -Properties @{
                                             collectionSource = @("LDAP-GenericAllSystemManagement")
+                                            name = $adObject.samAccountName
                                         }
                                     }
                                 }
@@ -3405,6 +3416,7 @@ function Invoke-DHCPCollection {
                     if ($tftpIp) { $tftpReachable = (Test-TftpReachable -TftpHost $tftpIp -File $bootValue) }
                     Upsert-Node -Id $t.ADObject.SID -Kinds @("Computer","Base") -PSObject $t.ADObject -Properties @{
                         collectionSource = @("DHCP-PXE")
+                        name = $t.ADObject.samAccountName
                         networkBootServer = $true
                         isPXEServer = $true
                         pxeVendorClass = $vendor
@@ -3490,6 +3502,7 @@ function Invoke-DHCPCollection {
                 Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer","Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("DHCP-Discover")
                     isDHCPServer = $true
+                    name = $target.ADObject.samAccountName
                 }
             }
 
@@ -3513,6 +3526,7 @@ function Invoke-DHCPCollection {
                         }
                         Upsert-Node -Id $p.ADObject.SID -Kinds @("Computer","Base") -PSObject $p.ADObject -Properties @{
                             collectionSource = @("DHCP-Discover")
+                            name = $p.ADObject.samAccountName
                             networkBootServer = $true
                             isPXEServer = $true
                             pxeVendorClass = $vendor
@@ -3602,6 +3616,7 @@ function Invoke-LocalCollection {
                 if ($mp.ADObject) {
                     Upsert-Node -Id $mp.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mp.ADObject -Properties @{
                         collectionSource = @("Local-SMS_LookupMP")
+                        name = $mp.ADObject.samAccountName
                         SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                     }
                 }
@@ -3663,6 +3678,7 @@ function Invoke-LocalCollection {
             # Also create/update the Computer node for the system running the collector
             Upsert-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
                 collectionSource = @("Local-CCM_Client")
+                name = $localTarget.ADObject.samAccountName
             }
         }
         
@@ -4057,6 +4073,7 @@ function Invoke-DNSCollection {
             if ($adObject) {
                 Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                     collectionSource = @("DNS")
+                    name = $adObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                 }
             } else {
@@ -4218,6 +4235,7 @@ function Invoke-RemoteRegistryCollection {
                         if ($componentServer.ADObject) {
                             Upsert-Node -Id $componentServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $componentServer.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
+                                name = $componentServer.ADObject.samAccountName
                                 SCCMSiteSystemRoles = @("SMS Component Server@$siteCode")
                             }
                         }
@@ -4226,6 +4244,7 @@ function Invoke-RemoteRegistryCollection {
                         if ($siteCode -and $CollectionTarget.ADObject) {
                             Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
+                                name = $CollectionTarget.ADObject.samAccountName
                                 SCCMSiteSystemRoles = @("SMS Site Server@$siteCode")
                             }
                         }
@@ -4276,6 +4295,7 @@ function Invoke-RemoteRegistryCollection {
             if ($target.ADObject) {
                 Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("RemoteRegistry-MultisiteComponentServers")
+                    name = $target.ADObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode", "SMS Site Server@$siteCode")
                 }
             }
@@ -4297,6 +4317,7 @@ function Invoke-RemoteRegistryCollection {
                     Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
+                        name = $CollectionTarget.ADObject.samAccountName
                         restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
                     }
 
@@ -4333,6 +4354,7 @@ function Invoke-RemoteRegistryCollection {
                 if ($sqlServer -and $sqlServer.ADObject) {
                     Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
+                        name = $sqlServer.ADObject.samAccountName
                         SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode")
                     }
 
@@ -4352,6 +4374,7 @@ function Invoke-RemoteRegistryCollection {
                         Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                             collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                             disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
+                            name = $sqlServer.ADObject.samAccountName
                             restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
                         }
 
@@ -4426,6 +4449,7 @@ function Invoke-RemoteRegistryCollection {
                     # Create User node for current user
                     Upsert-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
                         collectionSource = @("RemoteRegistry-CurrentUser")
+                        name = $userADObject.samAccountName
                     }
 
                     # Create Computer -[HasSession]-> User edge
@@ -5488,6 +5512,7 @@ function Get-SitesViaAdminService {
                 Write-LogMessage Success "Found site server for site $($site.SiteCode): $($site.ServerName)"
                 Upsert-Node -Id $siteServerDomainObject.SID -Kinds @("Computer", "Base") -PSObject $siteServerDomainObject -Properties @{
                     collectionSource = @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
+                    name = $siteServerDomainObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS Site Server@$($site.SiteCode)")
                     SCCMInfra = $true
                 }
@@ -5508,6 +5533,7 @@ function Get-SitesViaAdminService {
                 # Create or update Computer node for SQL Server
                 Upsert-Node -Id $sqlServerDomainObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServerDomainObject -Properties @{
                     collectionSource = @("AdminService-SMS_SCI_SiteDefinition")
+                    name = $sqlServerDomainObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS SQL Server@$($site.SiteCode)")
                     SCCMInfra = $true
                 }
@@ -5631,6 +5657,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
                     if ($thisClientDomainObject.SID) {
                         Upsert-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $thisClientDomainObject.samAccountName
                             SCCMResourceIDs = @("$($device.ResourceID)@$SiteCode")
                             SCCMClientDeviceIdentifier = $device.SMSUniqueIdentifier
                         }
@@ -5680,6 +5707,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
                     if ($adLastLogonUserObject.SID) {
                         Upsert-Node -Id $adLastLogonUserObject.SID -Kinds @("User", "Base") -PSObject $adLastLogonUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $adLastLogonUserObject.samAccountName
                         }
                         Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasADLastLogonUser" -End $adLastLogonUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
@@ -5688,6 +5716,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
                     if ($currentLogonUserObject.SID) {
                         Upsert-Node -Id $currentLogonUserObject.SID -Kinds @("User", "Base") -PSObject $currentLogonUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $currentLogonUserObject.samAccountName
                         }
                         Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasCurrentUser" -End $currentLogonUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
@@ -5696,18 +5725,21 @@ function Get-CombinedDeviceResourcesViaAdminService {
                     if ($currentManagementPointObject.SID) {
                         Upsert-Node -Id $currentManagementPointObject.SID -Kinds @("Computer", "Base") -PSObject $currentManagementPointObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $currentManagementPointObject.samAccountName
                             SCCMInfra = $true
                         }
                     }
                     if ($lastReportedMPServerObject.SID) {
                         Upsert-Node -Id $lastReportedMPServerObject.SID -Kinds @("Computer", "Base") -PSObject $lastReportedMPServerObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $lastReportedMPServerObject.samAccountName
                             SCCMInfra = $true
                         }
                     }
                     if ($primaryUserObject.SID) {
                         Upsert-Node -Id $primaryUserObject.SID -Kinds @("User", "Base") -PSObject $primaryUserObject -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
+                            name = $primaryUserObject.samAccountName
                         }
                         Upsert-Edge -Start $device.SMSID -Kind "SCCM_HasPrimaryUser" -End $primaryUserObject.SID -Properties @{
                             collectionSource = @("AdminService-ClientDevices")
@@ -5773,6 +5805,7 @@ function Get-SmsRSystemViaAdminService {
                         # Add or update Computer node
                         Upsert-Node -Id $thisClientDomainObject.SID -Kinds @("Computer", "Base") -PSObject $thisClientDomainObject -Properties @{
                             collectionSource = @("AdminService-SMS_R_System")
+                            name = $thisClientDomainObject.samAccountName
                             SCCMResourceIDs = @("$($device.ResourceID)@$SiteCode")
                             SCCMClientDeviceIdentifier = $device.SMSUniqueIdentifier
                         }
@@ -5783,6 +5816,7 @@ function Get-SmsRSystemViaAdminService {
                             if ($thisGroupDomainObject.SID) {
                                 Upsert-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
                                     collectionSource = @("AdminService-SMS_R_System")
+                                    name = $thisGroupDomainObject.samAccountName
                                 }
                                 Upsert-Edge -Start $thisClientDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
                                     collectionSource = @("AdminService-SMS_R_System")
@@ -5866,6 +5900,7 @@ function Get-SmsRUserViaAdminService {
         
                         Upsert-Node -Id $thisUserDomainObject.SID -Kinds @("User", "Base") -PSObject $thisUserDomainObject -Properties @{
                             collectionSource = @("AdminService-SMS_R_User")
+                            name = $thisUserDomainObject.samAccountName
                             SCCMResourceIDs = @("$($user.ResourceID)@$SiteCode")
                         }
 
@@ -5875,6 +5910,7 @@ function Get-SmsRUserViaAdminService {
                             if ($thisGroupDomainObject.SID) {
                                 Upsert-Node -Id $thisGroupDomainObject.SID -Kinds @("Group", "Base") -PSObject $thisGroupDomainObject -Properties @{
                                     collectionSource = @("AdminService-SMS_R_User")
+                                    name = $thisGroupDomainObject.samAccountName
                                     SCCMResourceIDs = @("$($user.ResourceID)@$SiteCode")
                                 }
                                 Upsert-Edge -Start $thisUserDomainObject.SID -Kind "MemberOf" -End $thisGroupDomainObject.SID -Properties @{
@@ -6024,7 +6060,6 @@ function Get-CollectionMembersViaAdminService {
                     collectionSource = @("AdminService-SMS_FullCollectionMembership")
                     # Use member site code from response
                     members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$($_.SiteCode)" }
-                    SCCMInfra = $true
                     sourceSiteCode = $SiteCode
                 }
 
@@ -6451,6 +6486,7 @@ function Get-SiteSystemRolesViaAdminService {
                     if ($computerObject) {
                         Upsert-Node -Id $computerObject.SID -Kinds @("Computer", "Base") -PSObject $computerObject -Properties @{
                             collectionSource = @("AdminService-SMS_SCI_SysResUse")
+                            name = $computerObject.samAccountName
                             SCCMInfra = $true
                             SCCMSiteSystemRoles = $roleNames
                         }
@@ -7101,6 +7137,7 @@ function Invoke-HTTPCollection {
                                 if ($managementPoint.ADObject) {
                                     Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                         collectionSource = @("HTTP-MPKEYINFORMATION")
+                                        name = $managementPoint.ADObject.samAccountName
                                         SCCMSiteSystemRoles = @("SMS Management Point$(if ($siteCode) { "@$siteCode" })")
                                     }
                                 }
@@ -7126,6 +7163,7 @@ function Invoke-HTTPCollection {
                                                     if ($managementPoint.ADObject) {
                                                         Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                                             collectionSource = @("HTTP-MPKEYINFORMATION")
+                                                            name = $managementPoint.ADObject.samAccountName
                                                             SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                                                         }
                                                     }
@@ -7188,6 +7226,7 @@ function Invoke-HTTPCollection {
                             if ($distributionPoint.ADObject) {
                                 Upsert-Node -Id $distributionPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $distributionPoint.ADObject -Properties @{
                                     collectionSource = @("HTTP-SMS_DP_SMSPKG$")
+                                    name = $distributionPoint.ADObject.samAccountName
                                     SCCMSiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                                 }
                             }
@@ -7279,6 +7318,7 @@ function Get-ManagementPointCertIssuer {
             if ($device -and $device.ADObject -and $device.ADObject.SID) {
                 Upsert-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
                     collectionSource = @("HTTP-sitesigncert")
+                    name = $device.ADObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@${($CollectionTarget.SiteCode)}" })")
                 }
             }
@@ -7504,6 +7544,7 @@ public const int NERR_ServerNotStarted = 2114;
 
                 Upsert-Node -Id $targetDict.Value.ADObject.SID -Kinds @("Computer", "Base") -PSObject $targetDict.Value.ADObject -Properties @{
                     collectionSource = $collectionSource
+                    name = $targetDict.Value.ADObject.samAccountName
                     SCCMHostsContentLibrary = $hostsContentLib
                     SCCMIsPXESupportEnabled = $isPXEEnabled
                     SCCMSiteSystemRoles = $roles
