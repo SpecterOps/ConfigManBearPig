@@ -87,6 +87,7 @@ $script:EdgeTypes = @(
     "MSSQL_ServiceAccountFor",
     "SameHostAs",
     "SCCM_AdminsReplicatedTo",
+    "SCCM_AllPermissions",
     "SCCM_ApplicationAdministrator",
     "SCCM_AssignAllPermissions",
     "SCCM_AssignSpecificPermissions",
@@ -595,7 +596,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("MSSQL_DatabaseUser")
             Properties = @{
-                id = "cas-pss$@*:1433\CM_CAS"
+                id = "*cas-pss$@*:1433\CM_CAS"
             }
         }
     },
@@ -664,7 +665,7 @@ $script:ExpectedEdges = @(
         Target = @{
             Kinds = @("MSSQL_DatabaseUser")
             Properties = @{
-                id = "ps1-pss$@*:1433\CM_PS1"
+                id = "*ps1-pss$@*:1433\CM_PS1"
             }
         }
     },
@@ -776,8 +777,8 @@ $script:ExpectedEdges = @(
     ################
     @{
         Kind="MSSQL_GetTGS"
-        Count = 2
-        Description = "The site database MSSQL service account can request a TGS for any domain login on the server instance"
+        Count = 4
+        Description = "The site database MSSQL service account can request a TGS for any domain login on the server instance (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS)"
         Source = @{
             Kinds = @("User", "Base")
             Properties = @{
@@ -798,8 +799,8 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="MSSQL_HasLogin"
-        Count = 3
-        Description = "The primary and passive site server computers have logins on the MSSQL server instances (CAS-PSS -> CAS-DB, PS1-PSS -> PS1-DB, PS1-PSV -> PS1-DB)"
+        Count = 4
+        Description = "The primary and passive site server and SMS Provider computers have logins on the MSSQL server instances (CAS-PSS -> CAS-DB, PS1-PSS -> PS1-DB, PS1-PSV -> PS1-DB)"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -840,8 +841,8 @@ $script:ExpectedEdges = @(
     ####################
     @{
         Kind="MSSQL_IsMappedTo"
-        Count = 3
-        Description = "The primary and passive site server MSSQL server logins (CAS-PSS, PS1-PSS, and PS1-PSV) are mapped to database users in the site database"
+        Count = 4
+        Description = "The primary and passive site server and SMS Provider MSSQL server logins (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are mapped to database users in the site database"
         Source = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
@@ -861,8 +862,8 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="MSSQL_MemberOf"
-        Count = 3
-        Description = "The primary and passive site server MSSQL database users (CAS-PSS, PS1-PSS, and PS1-PSV) are members of the db_owner database role in the site database"
+        Count = 4
+        Description = "The primary and passive site server and SMS Provider MSSQL database users (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are members of the db_owner database role in the site database"
         Source = @{
             Kinds = @("MSSQL_DatabaseUser")
             Properties = @{
@@ -878,8 +879,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_MemberOf"
-        Count = 3
-        Description = "The primary and passive site server MSSQL server logins (CAS-PSS, PS1-PSS, and PS1-PSV) are members of the sysadmin server role on the MSSQL server instance"
+        Count = 4
+        Description = "The primary and passive site server and SMS Provider MSSQL server logins (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are members of the sysadmin server role on the MSSQL server instance"
         Source = @{
             Kinds = @("MSSQL_Login")
             Properties = @{
@@ -930,9 +931,10 @@ $script:ExpectedEdges = @(
             }
         }
         Target = @{
-            Kinds = @("Host")
+            Kinds = @("Computer")
             Properties = @{
-                id = "ps1-dev.$Domain"
+                id = "S-1-5-21-*"
+                dNSHostName = "ps1-dev.$Domain"
             }
         }
     },
@@ -941,9 +943,10 @@ $script:ExpectedEdges = @(
         Count = 1
         Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
         Source = @{
-            Kinds = @("Host")
+            Kinds = @("Computer")
             Properties = @{
-                id = "ps1-dev.$Domain"
+                id = "S-1-5-21-*"
+                dNSHostName = "ps1-dev.$Domain"
             }
         }
         Target = @{
@@ -953,40 +956,82 @@ $script:ExpectedEdges = @(
             }
         }
     },
+
+    ###########################
+    # SCCM_AdminsReplicatedTo #
+    ###########################
     @{
-        Kind="SameHostAs"
+        Kind="SCCM_AdminsReplicatedTo"
         Count = 1
-        Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
+        Description = "The PS1 primary site has the same admins as the CAS primary site"
         Source = @{
-            Kinds = @("Computer")
+            Kinds = @("SCCM_Site")
             Properties = @{
-                dNSHostName = "ps1-dev.$Domain"
+                id = "PS1"
             }
         }
         Target = @{
-            Kinds = @("Host")
+            Kinds = @("SCCM_Site")
             Properties = @{
-                id = "ps1-dev.$Domain"
+                id = "CAS"
             }
         }
     },
     @{
-        Kind="SameHostAs"
+        Kind="SCCM_AdminsReplicatedTo"
         Count = 1
-        Description = "The PS1 client device is the same host as the domain joined computer (bi-directional)"
+        Description = "The PS1 primary site has the same admins as the CAS primary site (both directions)"
         Source = @{
-            Kinds = @("Host")
+            Kinds = @("SCCM_Site")
             Properties = @{
-                id = "ps1-dev.$Domain"
+                id = "CAS"
             }
         }
         Target = @{
-            Kinds = @("Computer")
+            Kinds = @("SCCM_Site")
             Properties = @{
-                dNSHostName = "ps1-dev.$Domain"
+                id = "PS1"
             }
         }
     },
+    @{
+        Kind="SCCM_AdminsReplicatedTo"
+        Negative = $true
+        Description = "Admin users in secondary sites are NOT replicated to primary sites (no replication from SEC to PS1 or CAS)"
+        Source = @{
+            Kinds = @("SCCM_Site")
+            Properties = @{
+                id = "SEC"
+            }
+        }
+        Target = @{
+            Kinds = @("SCCM_Site")
+            Properties = @{
+                id = "*"
+            }
+        }
+    }
+
+    #######################
+    # SCCM_AllPermissions #
+    #######################
+    @{
+        # SCCM admin user has all permissions in CAS and PS1
+        Kind="SCCM_AllPermissions"
+        Count = 2
+        Description = "The Full Administrator with all collections has all permissions to all primary sites in the hierarchy"
+        Source = @{
+            Kinds = @("SCCM_AdminUser")
+            Properties = @{
+                id = "mayyhem\domainadmin@*"
+            }
+        }
+        Target = @{
+            Kinds = @("SCCM_Site")
+        }
+    },
+
+
 
     #############################
     # SCCM_AssignAllPermissions #
@@ -1008,27 +1053,12 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="SCCM_AssignAllPermissions"
-        Count = 4
-        Description = "SCCM primary site databases (CAS-DB\CM_CAS and PS1-DB\CM_PS1) can assign all permissions to any primary site in the hierarchy (CAS, PS1)"
+        Count = 2
+        Description = "SCCM primary site databases (CAS-DB\CM_CAS and PS1-DB\CM_PS1) can assign all permissions to their primary site in the hierarchy (CAS, PS1)"
         Source = @{
             Kinds = @("MSSQL_Database")
             Properties = @{
                 id = "*:1433\CM_*"
-            }
-        }
-        Target = @{
-            Kinds = @("SCCM_Site")
-        }
-    },
-    @{
-        # domainadmin SCCM admin user has this permission in CAS and PS1
-        Kind="SCCM_AssignAllPermissions"
-        Count = 2
-        Description = "The domainadmin SCCM admin user can assign all permissions to any primary site in the hierarchy"
-        Source = @{
-            Kinds = @("SCCM_AdminUser")
-            Properties = @{
-                id = "mayyhem\domainadmin@*"
             }
         }
         Target = @{
@@ -1289,61 +1319,6 @@ $script:ExpectedEdges = @(
             Kinds = @("SCCM_AdminUser")
             Properties = @{
                 id = "domainuser@*"
-            }
-        }
-    },
-
-    ###########################
-    # SCCM_AdminsReplicatedTo #
-    ###########################
-    @{
-        Kind="SCCM_AdminsReplicatedTo"
-        Count = 1
-        Description = "The PS1 primary site has the same admins as the CAS primary site"
-        Source = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "PS1"
-            }
-        }
-        Target = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "CAS"
-            }
-        }
-    },
-    @{
-        Kind="SCCM_AdminsReplicatedTo"
-        Count = 1
-        Description = "The PS1 primary site has the same admins as the CAS primary site (both directions)"
-        Source = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "CAS"
-            }
-        }
-        Target = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "PS1"
-            }
-        }
-    },
-    @{
-        Kind="SCCM_AdminsReplicatedTo"
-        Negative = $true
-        Description = "Admin users in secondary sites are NOT replicated to primary sites (no replication from SEC to PS1 or CAS)"
-        Source = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "SEC"
-            }
-        }
-        Target = @{
-            Kinds = @("SCCM_Site")
-            Properties = @{
-                id = "*"
             }
         }
     }
