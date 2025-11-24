@@ -29,6 +29,7 @@ Limitations:
     - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
 
 In Progress / To Do:
+    - Unprivileged unit testing
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
     - Remove dependency on EasyHook for EPA enumeration
@@ -2764,12 +2765,12 @@ function Invoke-LDAPCollection {
         $mSSMSManagementPoints = @()
         
         if ($script:ADModuleAvailable) {
-            $mSSMSManagementPoints = Get-ADObject -LDAPFilter "(ObjectClass=mSSMSManagementPoint)" -SearchBase $systemManagementDN -Properties mSSMSMPName, mSSMSSiteCode, mSSMSCapabilities -ErrorAction SilentlyContinue
+            $mSSMSManagementPoints = Get-ADObject -LDAPFilter "(objectClass=mSSMSManagementPoint)" -SearchBase $systemManagementDN -Properties mSSMSMPName, mSSMSSiteCode, mSSMSCapabilities -ErrorAction SilentlyContinue
         } else {
             try {
                 $searcher = New-Object System.DirectoryServices.DirectorySearcher
                 $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$systemManagementDN")
-                $searcher.Filter = "(ObjectClass=mSSMSManagementPoint)"
+                $searcher.Filter = "(objectClass=mSSMSManagementPoint)"
                 $searcher.PropertiesToLoad.AddRange(@("mSSMSMPName", "mSSMSSiteCode", "mSSMSCapabilities"))
                 
                 $results = $searcher.FindAll()
@@ -3737,7 +3738,7 @@ function Invoke-LocalCollection {
                             foreach ($match in $uncMatches) {
                                 foreach ($matchGroup in $match.Matches) {
                                     $uncPath = $matchGroup.Value.Trim()
-                                    Write-LogMessage Debug "  Found UNC path: $uncPath"
+                                    Write-LogMessage Verbose "  Found UNC path: $uncPath"
                                     
                                     # Extract hostname from UNC path
                                     if ($uncPath -match "^\\\\([^\\]+)") {
@@ -4201,12 +4202,13 @@ function Invoke-RemoteRegistryCollection {
             Write-LogMessage Verbose "No result from Triggers registry query on $target"
         }
         
+        $siteNode = $null
         if ($siteCode) {
             # Only display if site code not already in nodes
             if (-not ($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $siteCode })) {
                 Write-LogMessage Success "Found site code: $siteCode"
             }
-            $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+            $siteNode = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = @("RemoteRegistry")
                 siteCode = $siteCode
             }
@@ -4320,8 +4322,9 @@ function Invoke-RemoteRegistryCollection {
             Write-LogMessage Info "Site database is local to the site server: $target"
 
             # Add site system roles to Computer node
+            $siteServerComputerNode = $null
             if ($target.ADObject) {
-                $null = Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
+                $siteServerComputerNode = Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                     name = $target.ADObject.samAccountName
                     SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode", "SMS Site Server@$siteCode")
@@ -4329,12 +4332,8 @@ function Invoke-RemoteRegistryCollection {
             }
 
             # Add MSSQL nodes/edges for local SQL instance
-            if ($CollectionTarget -and $CollectionTarget.ADObject) {
-
-                Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
-                                              -SqlServerDomainObject $CollectionTarget.ADObject `
-                                              -SiteServerDomainObject $CollectionTarget.ADObject `
-                                              -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+            if ($siteNode -and $siteServerComputerNode) {
+                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $siteServerComputerNode -CollectionSource "RemoteRegistry-MultisiteComponentServers"
 
                 # Collect EPA settings from local SQL instance
                 $epaSettings = Get-MssqlEpaSettingsViaRemoteRegistry -SqlServerHostname $CollectionTarget.Hostname -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -4379,19 +4378,17 @@ function Invoke-RemoteRegistryCollection {
                 }
 
                 # Add site system roles to Computer node
+                $sqlServerComputerNode = $null
                 if ($sqlServer -and $sqlServer.ADObject) {
-                    $null = Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
+                    $sqlServerComputerNode = Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         name = $sqlServer.ADObject.samAccountName
                         SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode")
                     }
 
                     # Add MSSQL nodes/edges for remote SQL instance
-                    if ($CollectionTarget -and $CollectionTarget.ADObject) {
-                        Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $siteCode `
-                                                    -SqlServerDomainObject $sqlServer.ADObject`
-                                                    -SiteServerDomainObject $CollectionTarget.ADObject `
-                                                    -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+                    if ($siteNode -and $sqlServerComputerNode) {
+                        Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $sqlServerComputerNode -CollectionSource "RemoteRegistry-MultisiteComponentServers"
                     }
                     
                     # Collect EPA settings from remote SQL instance

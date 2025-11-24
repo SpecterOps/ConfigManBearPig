@@ -21,11 +21,11 @@ param(
 
     # Collection method to use (default: AdminService)
     [Parameter(Mandatory=$false)]
-    [string]$CollectionMethods = "AdminService",
+    [string]$CollectionMethods = "LDAP,RemoteRegistry",
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
-    [string]$SmsProvider = "cas-pss.mayyhem.com",
+    [string]$SmsProvider,# = "cas-pss.mayyhem.com",
 
     # Limit tests to a single edge type for focused debugging
     [Parameter(Mandatory=$false)]
