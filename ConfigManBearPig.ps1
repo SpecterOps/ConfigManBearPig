@@ -31,9 +31,8 @@ Limitations:
 
 In Progress / To Do:
     - Unprivileged unit testing
+    - Option to treat remote control SPN as client device
     - Make verbose/debug logs dependent on PowerShell preference variables
-    - DHCP collection (unauthenticated network access)
-    - WMI collection (privileged, fallback if AdminService is not reachable)
     - CoerceAndRelayNTLMtoSMB collection
     - Edge traversability
     - Entity panels
@@ -41,7 +40,9 @@ In Progress / To Do:
     - Clean up unused post-processing and ingest functions
     - Test with SQL on non-standard port
     - Remove hardcoded port 1433 from AdminService collection
-    - CMPivot collection
+    - DHCP collection (unauthenticated network access)
+    - WMI collection (privileged, fallback if AdminService is not reachable)
+    - CMPivot collection (privileged)
 
 
 .PARAMETER Help
@@ -1055,6 +1056,7 @@ function Invoke-HttpRequest {
         $result = [PSCustomObject]@{
             StatusCode = [int]$response.StatusCode
             Content = $content
+            IsConnectionFailure = $false
         }
         
         $reader.Close()
@@ -1065,14 +1067,32 @@ function Invoke-HttpRequest {
         
     } catch [System.Net.WebException] {
         $webResponse = $_.Exception.Response
+        $status = $_.Exception.Status
+        # If we received an HTTP response (e.g., 401/404), it's not a connection failure
         if ($webResponse) {
             $statusCode = [int]$webResponse.StatusCode
             return [PSCustomObject]@{
                 StatusCode = $statusCode
                 Content = $null
+                IsConnectionFailure = $false
             }
         }
-        throw
+        # Classify known connection-level failures where no response is available
+        $isConnFail = $false
+        if ($status -in @([System.Net.WebExceptionStatus]::ConnectFailure,
+                          [System.Net.WebExceptionStatus]::NameResolutionFailure,
+                          [System.Net.WebExceptionStatus]::Timeout,
+                          [System.Net.WebExceptionStatus]::SendFailure,
+                          [System.Net.WebExceptionStatus]::ReceiveFailure,
+                          [System.Net.WebExceptionStatus]::TrustFailure,
+                          [System.Net.WebExceptionStatus]::SecureChannelFailure)) {
+            $isConnFail = $true
+        }
+        return [PSCustomObject]@{
+            StatusCode = $null
+            Content = $null
+            IsConnectionFailure = $isConnFail
+        }
     }
 }
 
@@ -1304,11 +1324,11 @@ function Upsert-Node {
         [PSObject]$PSObject = $null
     )
 
-     # Start with provided properties
+    # Start with provided properties
     $inputProperties = if ($Properties) { $Properties.Clone() } else { @{} }
-    
+
     # If PSObject is provided, add its properties automatically
-    if ($PSObject) {        
+    if ($PSObject) {
         # Add all non-null object properties except SID, which is already the Id
         $PSObject.PSObject.Properties | ForEach-Object {
             if ($null -ne $_.Value `
@@ -1316,8 +1336,15 @@ function Upsert-Node {
                 -and $_.Name -ne "ObjectSid" `
                 -and $_.Name -ne "ObjectIdentifier" `
                 -and -not $inputProperties.ContainsKey($_.Name)) {
-                    $inputProperties[$_.Name] = $_.Value
+                $inputProperties[$_.Name] = $_.Value
             }
+        }
+    }
+
+    # Ensure all PSObject property values are strings (prevents object serialization issues)
+    foreach ($key in @($inputProperties.Keys)) {
+        if ($null -ne $inputProperties[$key] -and ($inputProperties[$key] -is [PSObject] -or $inputProperties[$key].GetType().Name -eq 'PSCustomObject')) {
+            $inputProperties[$key] = $inputProperties[$key].ToString()
         }
     }
        
@@ -2755,11 +2782,8 @@ function Invoke-LDAPCollection {
                 }
             }
             
-            # Use only site code as ObjectIdentifier for LDAP collection
-            $objectIdentifier = $siteCode
-            
             # Create/update SCCM_Site node
-            $null = Upsert-Node -Id $objectIdentifier -Kinds @("SCCM_Site") -Properties @{
+            $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                 collectionSource = @("LDAP-mSSMSSite")
                 displayName = $null
                 distinguishedName = $mSSMSSiteObj.DistinguishedName
@@ -2895,32 +2919,36 @@ function Invoke-LDAPCollection {
                     
                     Write-LogMessage Verbose "Updated site type for $($mpSiteCode): $siteType"
                 }
-                
+
+                $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+                    collectionSource = @("LDAP-mSSMSManagementPoint")
+                    parentSiteCode = $parentSiteCode
+                    SCCMInfra = $true
+                    siteCode = $siteCode
+                    siteType = $siteType
+                }
+
                 # Create parent CAS site node if it doesn't exist and we found one
                 if ($parentSiteCode -and $parentSiteCode -ne "None") {
-                    $existingParentSite = $script:Nodes | Where-Object { $_.id -eq $parentSiteCode }
-                    if (-not $existingParentSite) {
-                        $null = Upsert-Node -Id $parentSiteCode -Kinds @("SCCM_Site") -Properties @{
-                            collectionSource = @("LDAP-mSSMSManagementPoint")
-                            displayName = $null
-                            distinguishedName = $null
-                            parentSiteCode = "None"
-                            SCCMInfra = $true
-                            siteCode = $parentSiteCode
-                            siteGUID = $null
-                            siteServerDomainSID = $null
-                            siteServerName = $null
-                            siteType = "Central Administration Site"
-                            sourceForest = $sourceForest
-                            SQLDatabaseName = $null
-                            SQLServerName = $null
-                            SQLServerDomainSID = $null
-                            SQLServiceAccountName = $null
-                            SQLServiceAccountDomainSID = $null
-                        }
-                        
-                        Write-LogMessage Success "Found central administration site: $parentSiteCode"
+                    $null = Upsert-Node -Id $parentSiteCode -Kinds @("SCCM_Site") -Properties @{
+                        collectionSource = @("LDAP-mSSMSManagementPoint")
+                        displayName = $null
+                        distinguishedName = $null
+                        parentSiteCode = "None"
+                        SCCMInfra = $true
+                        siteCode = $parentSiteCode
+                        siteGUID = $null
+                        siteServerDomainSID = $null
+                        siteServerName = $null
+                        siteType = "Central Administration Site"
+                        sourceForest = $sourceForest
+                        SQLDatabaseName = $null
+                        SQLServerName = $null
+                        SQLServerDomainSID = $null
+                        SQLServiceAccountName = $null
+                        SQLServiceAccountDomainSID = $null
                     }
+                    Write-LogMessage Success "Found central administration site: $parentSiteCode"
                 }
                 
                 # Parse for fallback status points and create Computer nodes
@@ -4488,7 +4516,7 @@ function Invoke-RemoteRegistryCollection {
                 $userADObject = Resolve-PrincipalInDomain -Name $currentUserSid -Domain $script:Domain
 
                 if ($userADObject) {
-                    Write-LogMessage Success "Found current user: $($userADObject.Name) ($currentUserSid)"
+                    Write-LogMessage Success "Found current user: $($userADObject.SamAccountName) ($currentUserSid)"
                     
                     # Create User node for current user
                     $null = Upsert-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
@@ -5615,7 +5643,7 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
                 SQLServer = $SqlServerFQDN
             }
         } else {
-            Write-LogMessage Warning "Cannot create site server MSSQL login/user nodes without resolving primary site server to AD object"
+            Write-LogMessage Warning "Can't create site server MSSQL login/user nodes without resolving primary site server to AD object"
         }
 
         # We know the built-in sysadmin server role exists on all SQL instances
@@ -5766,13 +5794,11 @@ function Invoke-MSSQLCollection {
                                           -SqlServicePort $Port `
                                           -CollectionSource @("MSSQL-ScanForEPA") `
                                           -EPASettings $epaResult
-            return $true
         } else {
             Write-LogMessage Warning "Failed to collect EPA settings via MSSQL"
         }
     } catch {
         Write-LogMessage Error "MSSQL collection failed for $target`: $_"
-        return $false
     }
 }
 
@@ -5897,7 +5923,7 @@ function Process-CoerceAndRelayToMSSQL {
             # Get the corresponding MSSQL login for the computer
             $mssqlLogin = $script:Nodes | Where-Object { $_.Kinds -contains "MSSQL_Login" -and $_.Id -eq "$computerDomain\$($computerWithMssqlLogin.Properties.SAMAccountName)@$($mssqlServerNode.Id)" }
             if (-not $mssqlLogin) {
-                Write-LogMessage Verbose "No corresponding MSSQL login found for computer $($computerWithMssqlLogin.Id) to create coerce and relay to MSSQL edge"
+                Write-LogMessage Verbose "No corresponding MSSQL login found for computer $($computerWithMssqlLogin.Properties.SAMAccountName) ($($computerWithMssqlLogin.Id)) to create coerce and relay to MSSQL edge"
                 continue
             }
 
@@ -7698,6 +7724,7 @@ function Invoke-HTTPCollection {
         $siteCode = $null
         $isDP = $false
         $isMP = $false
+        $connectionFailed = $false
                     
         # Test Management Point HTTP endpoints (try HTTP first, then HTTPS)
         $protocols = @("http", "https")
@@ -7719,6 +7746,11 @@ function Invoke-HTTPCollection {
                             Write-LogMessage Verbose "Testing management point endpoint: $endpoint"
                             
                             $response = Invoke-HttpRequest $endpoint
+                            if ($response.IsConnectionFailure) {
+                                Write-LogMessage Warning "Unable to connect to $target via $protocol - skipping remaining HTTP checks"
+                                $connectionFailed = $true
+                                break
+                            }
                             
                             if ($response.StatusCode -eq 200 -and $response.Content) {
                                 Write-LogMessage Success "Found management point role on $target"
@@ -7796,11 +7828,16 @@ function Invoke-HTTPCollection {
                                 Write-LogMessage Verbose "    Received $($response.StatusCode)"
                             }
                         } catch {
-                            # Endpoint not accessible, move to next protocol
-                            Write-LogMessage Verbose "Management point endpoint not accessible on $endpoint`: $_"
+                            # Other errors (e.g., parsing issues) - continue trying other endpoints
+                            Write-LogMessage Verbose "Management point endpoint error on $endpoint`: $_"
                             break
                         }
                     }
+                }
+                
+                # Skip remaining checks if connection failed
+                if ($connectionFailed) {
+                    break
                 }
                 
                 # Test Distribution Point HTTP endpoints
@@ -7816,17 +7853,18 @@ function Invoke-HTTPCollection {
                         try {
                             Write-LogMessage Verbose "Testing distribution point endpoint: $endpoint"
                             $response = Invoke-HttpRequest $endpoint
-                        } catch [System.Net.WebException] {
-                            # Check if it's a 401 (auth required) which still indicates DP presence
-                            if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq "Unauthorized") {
-                                $isDP = $true
-                            } else {
-                                Write-LogMessage Verbose "Distribution point endpoint not accessible on $endpoint`: $_"
+                            if ($response.IsConnectionFailure) {
+                                Write-LogMessage Warning "Unable to connect to $target via $protocol - skipping remaining HTTP checks"
+                                $connectionFailed = $true
+                                break
                             }
+                        } catch {
+                            Write-LogMessage Verbose "Distribution point endpoint error on $endpoint`: $_"
                         }
 
                         # Specific response codes indicate presence of distribution point role
                         if ($response) {
+                            # 401 (auth required) and 200 indicate DP presence
                             if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
                                 $isDP = $true
                             } else {
@@ -7851,8 +7889,18 @@ function Invoke-HTTPCollection {
                         }
                     }
                 }
+                
+                # Skip remaining checks if connection failed
+                if ($connectionFailed) {
+                    break
+                }
             } catch {
                 Write-LogMessage Warning "HTTP collection failed for protocol $protocol on $target`: $_"
+            }
+            
+            # Skip trying the next protocol if connection failed
+            if ($connectionFailed) {
+                break
             }
         }
     } catch {
@@ -8052,7 +8100,7 @@ public const int NERR_ServerNotStarted = 2114;
             $collectionSource = @()
             $siteCode = $null
             $smsSite = $shares | Where-Object { $_.Name -eq "SMS_SITE" }
-            $smsSiteCode = $shares | Where-Object { $_.Name -match "^SMS_(\w+)$" }                  
+            $smsStar = $shares | Where-Object { $_.Name -match "^SMS_(\w+)$" }                  
             $smsDP = $shares | Where-Object { $_.Name -eq "SMS_DP$" }
             $reminst = $shares | Where-Object { $_.Name -eq "REMINST" }
             $contentLib = $shares | Where-Object { $_.Name -eq "SCCMContentLib$" }
@@ -8074,16 +8122,16 @@ public const int NERR_ServerNotStarted = 2114;
             }
 
             # Check for SMS_<sitecode>
-            if (-not $isSiteServer -and $smsSiteCode) {
-                $collectionSource += "SMB-SMS_<sitecode>"
-                $isSiteServer = $true
+            if (-not $isSiteServer -and $smsStar) {
+                $collectionSource += "SMB-SMS_*"
 
                 if ($smsSite.Description -match "SMS Site (\w+)") {
+                    $isSiteServer = $true
                     $siteCode = $Matches[1]
+                    Write-LogMessage Success "Found site server for site: $siteCode"
                 } else {
-                    Write-LogMessage Warning "Could not determine site code from SMS_<sitecode> share description"
+                    Write-LogMessage Warning "Could not determine site code from SMS_* share description"
                 }
-                Write-LogMessage Success "Found site server for site: $siteCode"
             }
 
             # Check for REMINST share (indicates PXE support)
@@ -8160,9 +8208,9 @@ public const int NERR_ServerNotStarted = 2114;
                     $roles += "SMS Distribution Point$(if ($siteCode) { "@$siteCode"})"
                 }
 
-                $null = Upsert-Node -Id $targetDict.Value.ADObject.SID -Kinds @("Computer", "Base") -PSObject $targetDict.Value.ADObject -Properties @{
+                $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                     collectionSource = $collectionSource
-                    name = $targetDict.Value.ADObject.samAccountName
+                    name = $CollectionTarget.ADObject.samAccountName
                     SCCMHostsContentLibrary = $hostsContentLib
                     SCCMIsPXESupportEnabled = $isPXEEnabled
                     SCCMSiteSystemRoles = $roles
