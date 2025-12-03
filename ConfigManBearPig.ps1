@@ -27,12 +27,13 @@ Limitations:
     - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
     - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
     - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
+    - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it.
 
 In Progress / To Do:
     - Unprivileged unit testing
+    - Make verbose/debug logs dependent on PowerShell preference variables
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
-    - Remove dependency on EasyHook for EPA enumeration
     - CoerceAndRelayNTLMtoSMB collection
     - Edge traversability
     - Entity panels
@@ -40,6 +41,8 @@ In Progress / To Do:
     - Clean up unused post-processing and ingest functions
     - Test with SQL on non-standard port
     - Remove hardcoded port 1433 from AdminService collection
+    - CMPivot collection
+
 
 .PARAMETER Help
 Display usage information
@@ -231,7 +234,8 @@ function Test-Prerequisites {
 #region Phase Orchestration
 
 # Phases that run ONCE for the whole run (can add targets)
-$script:PhasesOnce    = @('LDAP','DHCP','Local','DNS')
+#$script:PhasesOnce    = @('LDAP','DHCP','Local','DNS')
+$script:PhasesOnce    = @('LDAP','Local','DNS')
 
 # Phases that run PER HOST
 $script:PhasesPerHost = @('RemoteRegistry','MSSQL','AdminService','WMI','HTTP','SMB')
@@ -1277,6 +1281,21 @@ function Remove-TimedOutJob {
 #endregion
 
 #region Node and Edge Functions
+$script:EdgePropertyGenerators = @{
+
+    ############################
+    ##  offensive edge kinds  ##
+    #############################
+
+    "CoerceAndRelayToAdminService" = {
+    #   Source and target node types
+    #       Group                   -> SCCM_Site
+    #   Requirements
+    #       
+
+    }
+}
+
 function Upsert-Node {
     param(
         [string]$Id,
@@ -4685,28 +4704,18 @@ function Get-MssqlEpaSettingsViaTDS {
     }
 
     if ($portIsOpen) {
-        try {
-            # Load EasyHook first
-            $EasyHookPath = Join-Path $PSScriptRoot 'EasyHook.dll'
-            if (-not (Test-Path $EasyHookPath)) {
-                # Try current directory if not in script root
-                $EasyHookPath = Join-Path (Get-Location).Path 'EasyHook.dll'
-            }
-            
-            if (Test-Path $EasyHookPath) {
-                [Reflection.Assembly]::LoadFile($EasyHookPath) | Out-Null
-                Write-LogMessage Info "Loaded EasyHook from: $EasyHookPath"
-   
-                # Add the EPA testing type
-                # This must be run remotely and will not display the correct settings if run locally on the SQL server
-                Add-Type @"
+        try {  
+            # Add the EPA testing type
+            # This must be run remotely and will not display the correct settings if run locally on the SQL server
+            Add-Type @"
 using System;
 using System.Data.SqlClient;
 using System.Runtime.InteropServices;
-using EasyHook;
 
 public class EPATester
 {
+    #region SSPI structs
+
     public struct SecBuffer
     {
         public int cbBuffer;
@@ -4721,7 +4730,11 @@ public class EPATester
         public IntPtr pBuffers;
     }
 
-    [DllImport("secur32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    #endregion
+
+    #region P/Invoke for InitializeSecurityContextW
+
+    [DllImport("secur32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.Winapi)]
     public static extern int InitializeSecurityContextW(
         IntPtr phCredential,
         IntPtr phContext,
@@ -4736,7 +4749,7 @@ public class EPATester
         IntPtr pfContextAttr,
         IntPtr ptsExpiry);
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+    [UnmanagedFunctionPointer(CallingConvention.Winapi, CharSet = CharSet.Unicode, SetLastError = true)]
     public delegate int InitializeSecurityContextW_Delegate(
         IntPtr phCredential,
         IntPtr phContext,
@@ -4751,36 +4764,399 @@ public class EPATester
         IntPtr pfContextAttr,
         IntPtr ptsExpiry);
 
-    public static int InitializeSecurityContextW_SBT_Hook(IntPtr phCredential, IntPtr phContext, IntPtr pszTargetName, uint fContextReq, uint Reserved1,
-        uint TargetDataRep, IntPtr pInput, uint Reserved2, IntPtr phNewContext, IntPtr pOutput, IntPtr pfContextAttr, IntPtr ptsExpiry)
-    {
-        if (pszTargetName != IntPtr.Zero)
-            pszTargetName = Marshal.StringToHGlobalUni("empty");
+    #endregion
 
-        return InitializeSecurityContextW(phCredential, phContext, pszTargetName, fContextReq, Reserved1,
-            TargetDataRep, pInput, Reserved2, phNewContext, pOutput, pfContextAttr, ptsExpiry);
+    #region Native hook infrastructure (kernel32)
+
+    private const uint PAGE_EXECUTE_READWRITE = 0x40;
+    private const uint MEM_COMMIT = 0x1000;
+    private const uint MEM_RESERVE = 0x2000;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+    private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibrary(string lpFileName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool VirtualProtect(
+        IntPtr lpAddress,
+        UIntPtr dwSize,
+        uint flNewProtect,
+        out uint lpflOldProtect);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr VirtualAlloc(
+        IntPtr lpAddress,
+        UIntPtr dwSize,
+        uint flAllocationType,
+        uint flProtect);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FlushInstructionCache(
+        IntPtr hProcess,
+        IntPtr lpBaseAddress,
+        UIntPtr dwSize);
+
+    private const int HOOK_LENGTH_X64 = 12; // mov rax, imm64; jmp rax
+    private const int HOOK_LENGTH_X86 = 5;  // jmp rel32
+
+    private static readonly object HookSync = new object();
+
+    private static IntPtr _iscwTargetPtr = IntPtr.Zero;
+    private static byte[] _iscwOriginalBytes;
+    private static int _iscwPrologueLen;
+    private static IntPtr _iscwTrampolinePtr = IntPtr.Zero;
+    private static InitializeSecurityContextW_Delegate _iscwOriginalDelegate; // unused with unhook-call strategy
+    private static Delegate _currentHookDelegate; // keep hook delegate alive
+    private static bool _hookInstalled;
+    private static IntPtr _emptySpn = IntPtr.Zero; // stable SPN buffer
+
+    private static int HookLength
+    {
+        get { return IntPtr.Size == 8 ? HOOK_LENGTH_X64 : HOOK_LENGTH_X86; }
     }
 
-    public static int InitializeSecurityContextW_CBT_Hook(IntPtr phCredential, IntPtr phContext, IntPtr pszTargetName, uint fContextReq, uint Reserved1,
-        uint TargetDataRep, IntPtr pInput, uint Reserved2, IntPtr phNewContext, IntPtr pOutput, IntPtr pfContextAttr, IntPtr ptsExpiry)
+    // Compute a safe prologue length by summing whole instruction lengths for common x64 prologue patterns
+    private static int GetSafePrologueLength(IntPtr funcPtr, int minLen)
+    {
+        int offset = 0;
+        // Read up to 64 bytes of prologue to be safe
+        byte[] buf = new byte[64];
+        Marshal.Copy(funcPtr, buf, 0, buf.Length);
+
+        while (offset < buf.Length && offset < 32) // limit scanning
+        {
+            byte b = buf[offset];
+            int len = 0;
+
+            // Common single-byte ops
+            if (b == 0x55) { len = 1; } // push rbp
+            else if (b == 0x48 && offset + 2 < buf.Length && buf[offset+1] == 0x89 && buf[offset+2] == 0xE5) { len = 3; } // mov rbp,rsp
+            else if (b == 0x48 && offset + 3 < buf.Length && buf[offset+1] == 0x83 && buf[offset+2] == 0xEC) { len = 4; } // sub rsp, imm8
+            else if (b == 0x48 && offset + 6 < buf.Length && buf[offset+1] == 0x81 && buf[offset+2] == 0xEC) { len = 7; } // sub rsp, imm32
+            else if (b == 0x48 && offset + 2 < buf.Length && buf[offset+1] == 0x8B) { len = 3; } // mov r64, r/m64 (simple)
+            else if (b == 0x48 && offset + 6 < buf.Length && (buf[offset+1] == 0x8D || buf[offset+1] == 0x8B)) { len = 7; } // lea/mov RIP-rel (approx)
+            else if ((b & 0xF0) == 0x50) { len = 1; } // push/pop r64
+            else if (b == 0x40 || b == 0x41 || b == 0x48 || b == 0x49) { // REX prefix: try to parse next simple opcode
+                // Assume next opcode is 0x89/0x8B reg/mem form => 3 bytes minimal
+                len = 1; // count rex, then loop will process next
+            }
+            else if (b == 0xE9) { len = 5; } // jmp rel32
+            else if (b == 0xEB) { len = 2; } // jmp rel8
+            else if (b == 0x90) { len = 1; } // nop
+            else {
+                // Fallback: assume 1 byte to avoid stalling
+                len = 1;
+            }
+
+            offset += len;
+            if (offset >= minLen) break;
+        }
+        if (offset < minLen) offset = minLen; // ensure minimum
+        return offset;
+    }
+
+    private static void EnsureInitializeSecurityContextHookInfrastructure()
+    {
+        if (_iscwTargetPtr != IntPtr.Zero && _iscwTrampolinePtr != IntPtr.Zero && _iscwOriginalDelegate != null)
+            return;
+
+        // Resolve to SspiCli.dll (secur32 often forwards this export)
+        var mod = GetModuleHandle("SspiCli.dll");
+        if (mod == IntPtr.Zero)
+        {
+            mod = LoadLibrary("SspiCli.dll");
+            if (mod == IntPtr.Zero)
+                throw new InvalidOperationException("Unable to load SspiCli.dll");
+        }
+
+        var target = GetProcAddress(mod, "InitializeSecurityContextW");
+        if (target == IntPtr.Zero)
+            throw new InvalidOperationException("Unable to locate InitializeSecurityContextW");
+
+        _iscwTargetPtr = target;
+
+        // Save original bytes (copy whole instructions for safe trampoline)
+        _iscwPrologueLen = GetSafePrologueLength(_iscwTargetPtr, HookLength);
+        _iscwOriginalBytes = new byte[_iscwPrologueLen];
+        Marshal.Copy(_iscwTargetPtr, _iscwOriginalBytes, 0, _iscwPrologueLen);
+
+        // Allocate trampoline (original bytes + jump back)
+        var trampSize = (uint)(_iscwPrologueLen + (IntPtr.Size == 8 ? HOOK_LENGTH_X64 : HOOK_LENGTH_X86));
+        _iscwTrampolinePtr = VirtualAlloc(
+            IntPtr.Zero,
+            (UIntPtr)trampSize,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE);
+
+        if (_iscwTrampolinePtr == IntPtr.Zero)
+            throw new InvalidOperationException("Unable to allocate trampoline memory");
+
+        // Copy original bytes into trampoline
+        Marshal.Copy(_iscwOriginalBytes, 0, _iscwTrampolinePtr, _iscwPrologueLen);
+
+        // Append jump back to original function (after overwritten bytes)
+        var jmpBackSrc = _iscwTrampolinePtr + _iscwPrologueLen;
+        var jmpBackDst = _iscwTargetPtr + _iscwPrologueLen;
+        WriteJump(jmpBackSrc, jmpBackDst);
+
+        // Create delegate that calls the trampoline (this is "original" function)
+        // Trampoline delegate not required with unhook-call strategy
+        _iscwOriginalDelegate = null;
+    }
+
+    private static void InstallInitializeSecurityContextHookInternal(IntPtr hookPtr)
+    {
+        var size = (UIntPtr)HookLength;
+        uint oldProtect;
+        if (!VirtualProtect(_iscwTargetPtr, size, PAGE_EXECUTE_READWRITE, out oldProtect))
+            throw new InvalidOperationException("VirtualProtect failed when installing hook");
+
+        WriteJump(_iscwTargetPtr, hookPtr);
+
+        uint dummy;
+        VirtualProtect(_iscwTargetPtr, size, oldProtect, out dummy);
+        FlushInstructionCache(GetCurrentProcess(), _iscwTargetPtr, size);
+    }
+
+    private static void InstallInitializeSecurityContextHook(InitializeSecurityContextW_Delegate hookDelegate)
+    {
+        lock (HookSync)
+        {
+            EnsureInitializeSecurityContextHookInfrastructure();
+
+            if (_hookInstalled)
+                return;
+
+            _currentHookDelegate = hookDelegate; // keep alive
+
+            var hookPtr = Marshal.GetFunctionPointerForDelegate(hookDelegate);
+            InstallInitializeSecurityContextHookInternal(hookPtr);
+
+            _hookInstalled = true;
+        }
+    }
+
+    private static void UninstallInitializeSecurityContextHookInternal()
+    {
+        var size = (UIntPtr)Math.Max(HookLength, _iscwOriginalBytes != null ? _iscwOriginalBytes.Length : HookLength);
+        uint oldProtect;
+        if (!VirtualProtect(_iscwTargetPtr, size, PAGE_EXECUTE_READWRITE, out oldProtect))
+            throw new InvalidOperationException("VirtualProtect failed when uninstalling hook");
+
+        if (_iscwOriginalBytes != null)
+            Marshal.Copy(_iscwOriginalBytes, 0, _iscwTargetPtr, _iscwOriginalBytes.Length);
+
+        uint dummy;
+        VirtualProtect(_iscwTargetPtr, size, oldProtect, out dummy);
+        FlushInstructionCache(GetCurrentProcess(), _iscwTargetPtr, size);
+    }
+
+    private static void UninstallInitializeSecurityContextHook()
+    {
+        lock (HookSync)
+        {
+            if (!_hookInstalled)
+                return;
+
+            UninstallInitializeSecurityContextHookInternal();
+
+            _hookInstalled = false;
+            _currentHookDelegate = null;
+        }
+    }
+
+    private static void WriteJump(IntPtr src, IntPtr dst)
+    {
+        if (IntPtr.Size == 8)
+        {
+            // x64: mov rax, imm64; jmp rax   (12 bytes)
+            var jmp = new byte[HOOK_LENGTH_X64];
+
+            jmp[0] = 0x48; // REX.W
+            jmp[1] = 0xB8; // mov rax, imm64
+            var addrBytes = BitConverter.GetBytes(dst.ToInt64());
+            Buffer.BlockCopy(addrBytes, 0, jmp, 2, 8);
+            jmp[10] = 0xFF; // jmp rax
+            jmp[11] = 0xE0;
+
+            Marshal.Copy(jmp, 0, src, jmp.Length);
+        }
+        else
+        {
+            // x86: jmp rel32   (5 bytes)
+            var jmp = new byte[HOOK_LENGTH_X86];
+            jmp[0] = 0xE9; // jmp rel32
+            int rel = dst.ToInt32() - src.ToInt32() - HOOK_LENGTH_X86;
+            var relBytes = BitConverter.GetBytes(rel);
+            Buffer.BlockCopy(relBytes, 0, jmp, 1, 4);
+            Marshal.Copy(jmp, 0, src, jmp.Length);
+        }
+    }
+
+    #endregion
+
+    #region Hook implementations
+
+    // Temporarily unhook, call the original function, then rehook.
+    private static int CallOriginalInitializeSecurityContextW(
+        IntPtr phCredential,
+        IntPtr phContext,
+        IntPtr pszTargetName,
+        uint fContextReq,
+        uint Reserved1,
+        uint TargetDataRep,
+        IntPtr pInput,
+        uint Reserved2,
+        IntPtr phNewContext,
+        IntPtr pOutput,
+        IntPtr pfContextAttr,
+        IntPtr ptsExpiry)
+    {
+        // Unhook
+        lock (HookSync)
+        {
+            if (_hookInstalled)
+            {
+                UninstallInitializeSecurityContextHookInternal();
+                _hookInstalled = false;
+            }
+        }
+
+        int ret;
+        try
+        {
+            ret = InitializeSecurityContextW(
+                phCredential,
+                phContext,
+                pszTargetName,
+                fContextReq,
+                Reserved1,
+                TargetDataRep,
+                pInput,
+                Reserved2,
+                phNewContext,
+                pOutput,
+                pfContextAttr,
+                ptsExpiry);
+        }
+        finally
+        {
+            // Rehook
+            if (_currentHookDelegate != null)
+            {
+                var hookPtr = Marshal.GetFunctionPointerForDelegate(_currentHookDelegate);
+                lock (HookSync)
+                {
+                    InstallInitializeSecurityContextHookInternal(hookPtr);
+                    _hookInstalled = true;
+                }
+            }
+        }
+
+        return ret;
+    }
+
+    public static int InitializeSecurityContextW_SBT_Hook(
+        IntPtr phCredential,
+        IntPtr phContext,
+        IntPtr pszTargetName,
+        uint fContextReq,
+        uint Reserved1,
+        uint TargetDataRep,
+        IntPtr pInput,
+        uint Reserved2,
+        IntPtr phNewContext,
+        IntPtr pOutput,
+        IntPtr pfContextAttr,
+        IntPtr ptsExpiry)
+    {
+        // Replace the target SPN with a stable, preallocated buffer
+        if (_emptySpn == IntPtr.Zero)
+        {
+            // allocate once for process lifetime
+            _emptySpn = Marshal.StringToHGlobalUni("empty");
+        }
+        if (pszTargetName != IntPtr.Zero)
+        {
+            pszTargetName = _emptySpn;
+        }
+
+        return CallOriginalInitializeSecurityContextW(
+            phCredential,
+            phContext,
+            pszTargetName,
+            fContextReq,
+            Reserved1,
+            TargetDataRep,
+            pInput,
+            Reserved2,
+            phNewContext,
+            pOutput,
+            pfContextAttr,
+            ptsExpiry);
+    }
+
+    public static int InitializeSecurityContextW_CBT_Hook(
+        IntPtr phCredential,
+        IntPtr phContext,
+        IntPtr pszTargetName,
+        uint fContextReq,
+        uint Reserved1,
+        uint TargetDataRep,
+        IntPtr pInput,
+        uint Reserved2,
+        IntPtr phNewContext,
+        IntPtr pOutput,
+        IntPtr pfContextAttr,
+        IntPtr ptsExpiry)
     {
         if (pInput != IntPtr.Zero)
         {
             var desc = (SecBufferDesc)Marshal.PtrToStructure(pInput, typeof(SecBufferDesc));
-
-            for (uint i = 0; i < desc.cBuffers; i++)
+            if (desc.cBuffers > 0 && desc.pBuffers != IntPtr.Zero)
             {
-                var ptr = new IntPtr(desc.pBuffers.ToInt64() + (i * Marshal.SizeOf(typeof(SecBuffer))));
-                var buf = (SecBuffer)Marshal.PtrToStructure(ptr, typeof(SecBuffer));
+                int secBufSize = Marshal.SizeOf(typeof(SecBuffer));
+                for (uint i = 0; i < desc.cBuffers; i++)
+                {
+                    var ptr = new IntPtr(desc.pBuffers.ToInt64() + (i * secBufSize));
+                    var buf = (SecBuffer)Marshal.PtrToStructure(ptr, typeof(SecBuffer));
 
-                if (buf.BufferType == 0x0e /* SECBUFFER_CHANNEL_BINDINGS */)
-                    Marshal.Copy(new byte[buf.cbBuffer], 0, buf.pvBuffer, buf.cbBuffer);
+                    // SECBUFFER_CHANNEL_BINDINGS = 0x0e
+                    if (buf.BufferType == 0x0e && buf.pvBuffer != IntPtr.Zero && buf.cbBuffer > 0)
+                    {
+                        var zeroes = new byte[buf.cbBuffer];
+                        Marshal.Copy(zeroes, 0, buf.pvBuffer, buf.cbBuffer);
+                    }
+                }
             }
         }
 
-        return InitializeSecurityContextW(phCredential, phContext, pszTargetName, fContextReq, Reserved1,
-            TargetDataRep, pInput, Reserved2, phNewContext, pOutput, pfContextAttr, ptsExpiry);
+        return CallOriginalInitializeSecurityContextW(
+            phCredential,
+            phContext,
+            pszTargetName,
+            fContextReq,
+            Reserved1,
+            TargetDataRep,
+            pInput,
+            Reserved2,
+            phNewContext,
+            pOutput,
+            pfContextAttr,
+            ptsExpiry);
     }
+
+    #endregion
+
+    #region SQL connectivity helpers
 
     public static string TryConnectDb(string host)
     {
@@ -4794,17 +5170,11 @@ public class EPATester
             catch (Exception e)
             {
                 if (e.Message.Contains("Login failed for"))
-                {
                     return "login failed";
-                }
                 else if (e.Message.Contains("The login is from an untrusted domain"))
-                {
                     return "untrusted domain";
-                }
                 else
-                {
                     return e.Message;
-                }
             }
             finally
             {
@@ -4817,17 +5187,17 @@ public class EPATester
 
     public static string TryConnectDb_NoSb(string host)
     {
-        var result = "";
-
         var hookDelegate = new InitializeSecurityContextW_Delegate(InitializeSecurityContextW_SBT_Hook);
-        using (var hook = LocalHook.Create(LocalHook.GetProcAddress("secur32.dll", "InitializeSecurityContextW"),
-            hookDelegate, null))
+        string result;
+
+        InstallInitializeSecurityContextHook(hookDelegate);
+        try
         {
-            hook.ThreadACL.SetInclusiveACL(new int[] { 0 });
-
             result = TryConnectDb(host);
-
-            hook.ThreadACL.SetExclusiveACL(new int[] { 0 });
+        }
+        finally
+        {
+            UninstallInitializeSecurityContextHook();
         }
 
         GC.Collect();
@@ -4838,17 +5208,17 @@ public class EPATester
 
     public static string TryConnectDb_NoCbt(string host)
     {
-        var result = "";
-
         var hookDelegate = new InitializeSecurityContextW_Delegate(InitializeSecurityContextW_CBT_Hook);
-        using (var hook = LocalHook.Create(LocalHook.GetProcAddress("secur32.dll", "InitializeSecurityContextW"),
-            hookDelegate, null))
+        string result;
+
+        InstallInitializeSecurityContextHook(hookDelegate);
+        try
         {
-            hook.ThreadACL.SetInclusiveACL(new int[] { 0 });
-
             result = TryConnectDb(host);
-
-            hook.ThreadACL.SetExclusiveACL(new int[] { 0 });
+        }
+        finally
+        {
+            UninstallInitializeSecurityContextHook();
         }
 
         GC.Collect();
@@ -4857,17 +5227,22 @@ public class EPATester
         return result;
     }
 
+    #endregion
+
+    #region Public EPA test wrapper
+
     public static EPATestResult TestEPA(string serverString)
     {
-        var result = new EPATestResult();
-        
-        result.UnmodifiedConnection = TryConnectDb(serverString);
-        result.NoSBConnection = TryConnectDb_NoSb(serverString);
-        result.NoCBTConnection = TryConnectDb_NoCbt(serverString);
-        
+        var result = new EPATestResult
+        {
+            UnmodifiedConnection = TryConnectDb(serverString),
+            NoSBConnection = TryConnectDb_NoSb(serverString),
+            NoCBTConnection = TryConnectDb_NoCbt(serverString)
+        };
+
         return result;
     }
-    
+
     public class EPATestResult
     {
         public string PortIsOpen { get; set; }
@@ -4876,56 +5251,46 @@ public class EPATester
         public string UnmodifiedConnection { get; set; }
         public string NoSBConnection { get; set; }
         public string NoCBTConnection { get; set; }
-
     }
+    
+    #endregion
 }
 "@ -ReferencedAssemblies @(
     "System.dll",
     "System.Data.dll",
-    "System.Core.dll",
-    $EasyHookPath
+    "System.Runtime.InteropServices.dll"
 ) -ErrorAction Stop
-        
-                # Build connection string for EPA test
-                Write-LogMessage Info "Testing EPA settings for $($ServerString)"
-                
-                # Run the EPA test
-                $epaResult = [EPATester]::TestEPA($ServerString)
-                $epaResult.PortIsOpen = $portIsOpen
-                $epaResult.ForceEncryption = $forceEncryption
-        
-                Write-LogMessage Verbose "  Unmodified connection: $($epaResult.UnmodifiedConnection)"
-                Write-LogMessage Verbose "  No SB connection: $($epaResult.NoSBConnection)"
-                Write-LogMessage Verbose "  No CBT connection: $($epaResult.NoCBTConnection)"
-        
-                # Channel binding token only considered when ForceEncryption is Yes
-                # Service binding checked when ForceEncryption is No and EPA is Allowed/Required, preventing relay
-                if ($epaResult.NoSBConnection -eq "untrusted domain") {
-                    Write-LogMessage Info "  Extended Protection: Allowed/Required (service binding)"
-                    $epaResult.ExtendedProtection = "Allowed/Required"
-        
-                # Channel binding token checked when ForceEncryption is On and EPA is Allowed/Required, preventing relay                
-                } elseif ($epaResult.NoCBTConnection -eq "untrusted domain") {
-                    Write-LogMessage Info "  Extended Protection: Allowed/Required (channel binding)"
-                    $epaResult.ExtendedProtection = "Allowed/Required"
-        
-                # If we didn't get an "untrusted domain" message when dropping service or channel binding info, EPA is not Allowed/Required if the connection didn't fail, whether or not login failed/succeeded
-                } elseif ($epaResult.UnmodifiedConnection -eq "success" -or $epaResult.UnmodifiedConnection -eq "login failed") {
-                    Write-LogMessage Info "  Extended Protection: Off"                
-                    $epaResult.ExtendedProtection = "Off"
-                } else {
-                    Write-LogMessage Warning "There was an unexpected EPA configuration"
-                    $epaResult.ExtendedProtection = "Error detecting settings"
-                }                
+            # Build connection string for EPA test
+            Write-LogMessage Info "Testing EPA settings for $($ServerString)"
+            
+            # Run the EPA test
+            $epaResult = [EPATester]::TestEPA($ServerString)
+            $epaResult.PortIsOpen = $portIsOpen
+            $epaResult.ForceEncryption = $forceEncryption
+    
+            Write-LogMessage Verbose "  Unmodified connection: $($epaResult.UnmodifiedConnection)"
+            Write-LogMessage Verbose "  No SB connection: $($epaResult.NoSBConnection)"
+            Write-LogMessage Verbose "  No CBT connection: $($epaResult.NoCBTConnection)"
+    
+            # Channel binding token only considered when ForceEncryption is Yes
+            # Service binding checked when ForceEncryption is No and EPA is Allowed/Required, preventing relay
+            if ($epaResult.NoSBConnection -eq "untrusted domain") {
+                Write-LogMessage Info "  Extended Protection: Allowed/Required (service binding)"
+                $epaResult.ExtendedProtection = "Allowed/Required"
+    
+            # Channel binding token checked when ForceEncryption is On and EPA is Allowed/Required, preventing relay                
+            } elseif ($epaResult.NoCBTConnection -eq "untrusted domain") {
+                Write-LogMessage Info "  Extended Protection: Allowed/Required (channel binding)"
+                $epaResult.ExtendedProtection = "Allowed/Required"
+    
+            # If we didn't get an "untrusted domain" message when dropping service or channel binding info, EPA is not Allowed/Required if the connection didn't fail, whether or not login failed/succeeded
+            } elseif ($epaResult.UnmodifiedConnection -eq "success" -or $epaResult.UnmodifiedConnection -eq "login failed") {
+                Write-LogMessage Info "  Extended Protection: Off"                
+                $epaResult.ExtendedProtection = "Off"
             } else {
-                Write-LogMessage Warning "EasyHook.dll not found. Please ensure it's in the script directory."
-                # Create a minimal result object when EasyHook.dll is not found
-                $epaResult = New-Object PSObject -Property @{
-                    PortIsOpen = $portIsOpen
-                    ForceEncryption = $forceEncryption
-                    ExtendedProtection = "EasyHook.dll not found"
-                }
-            }        
+                Write-LogMessage Warning "There was an unexpected EPA configuration"
+                $epaResult.ExtendedProtection = "Error detecting settings"
+            }                 
         } catch {
             Write-LogMessage Error "EPA testing failed: $($_.Exception.Message)"
             # Create a minimal result object when an exception occurs
