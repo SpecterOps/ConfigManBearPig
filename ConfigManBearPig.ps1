@@ -31,10 +31,11 @@ Limitations:
 
 In Progress / To Do:
     - Unprivileged unit testing
+    - Figure out a way to unprivileged remote enum SMS Provider site code so CoerceAndRelayToAdminService can be created without specifying site code
+    - Option to treat all site servers as SMS Providers
     - Option to treat remote control SPN as client device
     - Make verbose/debug logs dependent on PowerShell preference variables
     - CoerceAndRelayNTLMtoSMB collection
-    - Edge traversability
     - Entity panels
     - Should TAKEOVER-4 be added (not always traversable)?
     - Clean up unused post-processing and ingest functions
@@ -43,7 +44,6 @@ In Progress / To Do:
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
     - CMPivot collection (privileged)
-
 
 .PARAMETER Help
 Display usage information
@@ -305,8 +305,7 @@ function Ensure-PerHostPhaseStatus {
 
 function Invoke-DiscoveryPipeline {
   param(
-    [string[]]$SelectedPhases,
-    [int]$MaxParallel = 1  # 1 = serial; >1 = parallel (PowerShell 7+)
+    [string[]]$SelectedPhases
   )
 
   # 1) Run ONCE phases in order (only those selected)
@@ -341,30 +340,16 @@ function Invoke-DiscoveryPipeline {
 
       $didWorkThisPass = $true
 
-      # Serial (Windows PowerShell or MaxParallel = 1)
-      if ($MaxParallel -le 1 -or $PSVersionTable.PSEdition -ne 'Core') {
-        foreach ($t in $pending) {
-          try {
-            & $script:PhaseActionsPerHost[$phase] -Target $t
-            $t.PhaseStatus[$phase] = 'Success'
-          } catch {
-            $t.PhaseStatus[$phase] = 'Failed'
-            Write-LogMessage Error "$phase phase failed on $($t.Hostname): $_"
-          }
-        }
-        continue
-      }
-
-      # Parallel (PowerShell 7+)
-      $pending | ForEach-Object -Parallel {
-        param($phaseName, $phaseActions)
+      # Always run per-host phases serially
+      foreach ($t in $pending) {
         try {
-          & $phaseActions[$phaseName] -Target $_
-          $_.PhaseStatus[$phaseName] = 'Success'
+          & $script:PhaseActionsPerHost[$phase] -Target $t
+          $t.PhaseStatus[$phase] = 'Success'
         } catch {
-          $_.PhaseStatus[$phaseName] = 'Failed'
+          $t.PhaseStatus[$phase] = 'Failed'
+          Write-LogMessage Error "$phase phase failed on $($t.Hostname): $_"
         }
-      } -ThrottleLimit $MaxParallel -ArgumentList $phase, $using:script:PhaseActionsPerHost
+      }
     }
 
     if (-not $didWorkThisPass) { break }  # no pending work left for any per-host phase
@@ -1699,74 +1684,125 @@ function Invoke-PostProcessing {
         # Process site system roles
         if ($computerNode.Properties["SCCMSiteSystemRoles"]) {
 
-            # Get site identifier from SCCMSiteSystemRoles
-            $siteCodeForSiteSystem = $computerNode.Properties["SCCMSiteSystemRoles"].Split("@")[1]
+            # Extract all unique site codes from SCCMSiteSystemRoles
+            $siteCodes = @($computerNode.Properties["SCCMSiteSystemRoles"] | ForEach-Object {
+                if ($_ -match '@(.+)$') {
+                    $matches[1]
+                }
+            } | Select-Object -Unique)
 
-            # Find the primary site for this site system
-            if ($siteCodeForSiteSystem) {
-                $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
+            # Loop through each site this computer hosts roles for
+            foreach ($siteCodeForSiteSystem in $siteCodes) {
 
-                # Add AdminTo edges from site servers to all the other site systems in primary sites
-                if ($primarySiteForSiteSystem) {
-                    $siteServerComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySiteForSiteSystem.Id)"})
-                    $siteDatabaseComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$($primarySiteForSiteSystem.Id)" })
+                # Find the primary site for this site system
+                if ($siteCodeForSiteSystem) {
+                    $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
 
-                    if ($siteServerComputerNodes -and $siteServerComputerNodes.Count -gt 0) {
-                        foreach ($siteServerComputerNode in $siteServerComputerNodes) {
+                    # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
+                    if ($primarySiteForSiteSystem) {
+                        $siteServerComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySiteForSiteSystem.Id)"})
+                        $siteDatabaseComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$($primarySiteForSiteSystem.Id)" })
 
-                            # Don't add AdminTo edges from the site server to the site server -- the computer account may not be in the local admins group
-                            if ($computerNode.Id -ne $siteServerComputerNode.Id) {
-                                Upsert-Edge -Start $siteServerComputerNode.Id -Kind "AdminTo" -End $computerNode.Id -Properties @{
-                                    collectionSource = @("SCCM_Invoke-PostProcessing")
-                                }
+                        if ($siteServerComputerNodes -and $siteServerComputerNodes.Count -gt 0) {
+                            foreach ($siteServerComputerNode in $siteServerComputerNodes) {
 
-                            # If this is a primary site server, add AdminTo edges to all the other site systems 
-                            } else {
-                                $siteSystems = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -like "*@$($primarySiteForSiteSystem.Id)" -and $_.properties.SCCMSiteSystemRoles -notlike "*SMS Site Server@$($primarySiteForSiteSystem.Id)*" })
-                                if ($siteSystems -and $siteSystems.Count -gt 0) {
-                                    foreach ($siteSystem in $siteSystems) {
-                                        if ($computerNode.Id -ne $siteSystem.Id) {
-                                            Upsert-Edge -Start $computerNode.Id -Kind "AdminTo" -End $siteSystem.Id -Properties @{
-                                                collectionSource = @("SCCM_Invoke-PostProcessing")
-                                            }
-                                        }        
+                                # Don't add AdminTo edges from the site server to the site server -- the computer account may not be in the local admins group
+                                if ($computerNode.Id -ne $siteServerComputerNode.Id) {
+                                        Upsert-Edge -Start $siteServerComputerNode.Id -Kind "LocalAdminRequired" -End $computerNode.Id -Properties @{
+                                        collectionSource = @("SCCM_Invoke-PostProcessing")
+                                    }
+
+                                # If this is a primary site server, add AdminTo edges to all the other site systems 
+                                } else {
+                                    $siteSystems = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -like "*@$($primarySiteForSiteSystem.Id)" -and $_.properties.SCCMSiteSystemRoles -notlike "*SMS Site Server@$($primarySiteForSiteSystem.Id)*" })
+                                    if ($siteSystems -and $siteSystems.Count -gt 0) {
+                                        foreach ($siteSystem in $siteSystems) {
+                                            if ($computerNode.Id -ne $siteSystem.Id) {
+                                                    Upsert-Edge -Start $computerNode.Id -Kind "LocalAdminRequired" -End $siteSystem.Id -Properties @{
+                                                    collectionSource = @("SCCM_Invoke-PostProcessing")
+                                                }
+                                            }        
+                                        }
                                     }
                                 }
                             }
-                        } 
-                    }
-
-                    # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site server
-                    if ($computerNode.Properties["SCCMSiteSystemRoles"] -contains "SMS Provider@$($primarySiteForSiteSystem.Id)") {
-                        # Get all sites in this hierarchy
-                        $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $primarySiteForSiteSystem.Id -ExcludeSecondarySites)
-                        foreach ($siteInHierarchy in $sitesInHierarchy) {
-                            Upsert-Edge -Start $computerNode.Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
-                                collectionSource = @("SCCM_Invoke-PostProcessing")
+                            
+                            # Primary site server domain computer accounts have a MSSQL login in the site database
+                            if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
+                                
+                                # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
+                                foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
+                                    Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
+                                        -SiteNode $primarySiteForSiteSystem `
+                                        -SiteDatabaseComputerNode $siteDatabaseComputerNode `
+                                        -SysadminComputerNode $computerNode
+                                }
                             }
                         }
 
-                        # SMS Provider domain computer accounts have a MSSQL login in the site database
-                        if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
+                        # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site server
+                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -contains "SMS Provider") {
 
-                            # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
-                            foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
-                                Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
-                                    -SiteNode $primarySiteForSiteSystem `
-                                    -SiteDatabaseComputerNode $siteDatabaseComputerNode `
-                                    -SysadminComputerNode $computerNode
+                            # Get all sites in this hierarchy
+                            $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $primarySiteForSiteSystem.Id -ExcludeSecondarySites)
+                            foreach ($siteInHierarchy in $sitesInHierarchy) {
+                                Upsert-Edge -Start $computerNode.Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
+                                    collectionSource = @("SCCM_Invoke-PostProcessing")
+                                }
+                            }
+
+                            # SMS Provider domain computer accounts have a MSSQL login in the site database
+                            if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
+
+                                # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
+                                foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
+                                    Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
+                                        -SiteNode $primarySiteForSiteSystem `
+                                        -SiteDatabaseComputerNode $siteDatabaseComputerNode `
+                                        -SysadminComputerNode $computerNode
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
 
-                    # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
-                    if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)@$($primarySiteForSiteSystem.Id)") {
-                        Process-CoerceAndRelayToAdminService -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
-                    }
+    # Process Computer nodes again after site system roles are processed and MSSQL_Logins are created in previous loop
+    foreach ($computerNode in $computerNodes) {
 
-                    # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
-                    if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server|Provider|Management Point)@$($primarySiteForSiteSystem.Id)") {
-                        Process-CoerceAndRelayToMSSQL -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
+        Write-LogMessage Verbose "Processing $($computerNode.id) ($($computerNode.Properties.name)) a second time"
+
+        # Process site system roles
+        if ($computerNode.Properties["SCCMSiteSystemRoles"]) {
+
+            # Extract all unique site codes from SCCMSiteSystemRoles
+            $siteCodes = @($computerNode.Properties["SCCMSiteSystemRoles"] | ForEach-Object {
+                if ($_ -match '@(.+)$') {
+                    $matches[1]
+                }
+            } | Select-Object -Unique)
+
+            # Loop through each site this computer hosts roles for
+            foreach ($siteCodeForSiteSystem in $siteCodes) {
+
+                # Find the primary site for this site system
+                if ($siteCodeForSiteSystem) {
+                    $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
+
+                    # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
+                    if ($primarySiteForSiteSystem) {
+
+                        # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
+                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)") {
+                            Process-CoerceAndRelayToAdminService -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
+                        }
+
+                        # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
+                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server|Provider|Management Point)@$($primarySiteForSiteSystem.Id)") {
+                            Process-CoerceAndRelayToMSSQL -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
+                        }
                     }
                 }
             }
@@ -1792,7 +1828,7 @@ function Invoke-PostProcessing {
                     }
                 }
             } else {
-                Write-LogMessage Warning "Could not identify service account for $($mssqlServerNode.id)"
+                Write-LogMessage Warning "Could not identify service account for $($mssqlServerNode.id), requires privileged collection (AdminService)"
             }
         }
     }
@@ -2026,6 +2062,47 @@ function Upsert-Edge {
         end = @{ value = $End }
         kind = $Kind
         properties = $cleanProperties
+    }
+
+    $traversableEdgeTypes = @(
+        "AdminTo",
+        "LocalAdminRequired",
+        "CoerceAndRelayToAdminService",
+        "CoerceAndRelayToMSSQL",
+        "CoerceAndRelayNTLMtoSMB",
+        "HasSession",
+        "MSSQL_Contains",
+        "MSSQL_ControlDB",
+        "MSSQL_ControlServer",
+        "MSSQL_ExecuteOnHost",
+        "MSSQL_GetAdminTGS",
+        "MSSQL_GetTGS",
+        "MSSQL_HasLogin",
+        "MSSQL_HostFor",
+        "MSSQL_IsMappedTo",
+        "MSSQL_MemberOf",
+        #"MSSQL_ServiceAccountFor",
+        "SameHostAs",
+        "SCCM_AdminsReplicatedTo",
+        "SCCM_AllPermissions",
+        "SCCM_ApplicationAdministrator",
+        "SCCM_AssignAllPermissions",
+        #"SCCM_AssignSpecificPermissions",
+        "SCCM_Contains",
+        "SCCM_FullAdministrator",
+        "SCCM_HasADLastLogonUser",
+        "SCCM_HasClient",
+        "SCCM_HasCurrentUser",
+        #"SCCM_HasMember",
+        "SCCM_HasPrimaryUser",
+        #"SCCM_IsAssigned",
+        "SCCM_IsMappedTo"
+    )
+
+    if ($traversableEdgeTypes -contains $edge.Kind) {
+        $edge.properties["traversable"] = $true
+    } else {
+        $edge.properties["traversable"] = $false
     }
     
     $script:Edges += $edge
@@ -5286,7 +5363,9 @@ public class EPATester
 "@ -ReferencedAssemblies @(
     "System.dll",
     "System.Data.dll",
-    "System.Runtime.InteropServices.dll"
+    "System.Runtime.InteropServices.dll",
+    "System.Threading.dll",
+    "System.Runtime.dll"
 ) -ErrorAction Stop
             # Build connection string for EPA test
             Write-LogMessage Info "Testing EPA settings for $($ServerString)"
@@ -5472,6 +5551,8 @@ function Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer {
         [int]$SqlServicePort = 1433
     )
 
+    Write-LogMessage Verbose "Creating MSSQL sysadmin edges for $($SysadminComputerNode.Id) to site database server $($SiteDatabaseComputerNode.Id)"
+
     try {
 
         # Bail if this is a secondary site or if site type is not defined
@@ -5643,7 +5724,7 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
                 SQLServer = $SqlServerFQDN
             }
         } else {
-            Write-LogMessage Warning "Can't create site server MSSQL login/user nodes without resolving primary site server to AD object"
+            Write-LogMessage Warning "Can't create site server MSSQL login/user nodes without resolving primary site server to AD object, will try again in post-processing"
         }
 
         # We know the built-in sysadmin server role exists on all SQL instances
@@ -6051,7 +6132,7 @@ function Get-ThisSmsProvidersSiteViaAdminService {
         $siteIdUrl = "$baseUrl/wmi/$siteIdQuery"
     
         try {
-            $siteIdResponse = Invoke-WebRequest -Uri $siteIdUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            $siteIdResponse = Invoke-WebRequest -Uri $siteIdUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
         } catch {
             Write-LogMessage Error "Failed to collect this site via AdminService from $Target`: $_"
             return $null
@@ -6090,7 +6171,7 @@ function Get-SitesViaAdminService {
         $siteUrl = "$baseUrl/wmi/$siteQuery"
     
         try {
-            $siteResponse = Invoke-WebRequest -Uri $siteUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+            $siteResponse = Invoke-WebRequest -Uri $siteUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
         } catch {
             Write-LogMessage Error "Failed to collect this site via AdminService from $Target`: $_"
             return $false
@@ -6116,7 +6197,7 @@ function Get-SitesViaAdminService {
             $siteDefUrl = "$baseUrl/wmi/$siteDefQuery"
     
             try {
-                $siteDefResponse = Invoke-WebRequest -Uri $siteDefUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $siteDefResponse = Invoke-WebRequest -Uri $siteDefUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Error retrieving siteGUID for site $($site.SiteCode): $_"
             }
@@ -6226,6 +6307,7 @@ function Get-SitesViaAdminService {
             Add-MSSQLServerNodesAndEdges `
                 -SiteNode $siteNode `
                 -SiteDatabaseComputerNode $siteDatabaseComputerNode `
+                -CollectionSource @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
 
             #Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $site.SiteCode `
             #                            -SqlServerDomainObject $sqlServerDomainObject `
@@ -6275,7 +6357,7 @@ function Get-CombinedDeviceResourcesViaAdminService {
         do {
             $combinedDeviceUrl = "https://$Target/AdminService/wmi/SMS_CombinedDeviceResources?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $combinedDeviceResponse = Invoke-WebRequest -Uri $combinedDeviceUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $combinedDeviceResponse = Invoke-WebRequest -Uri $combinedDeviceUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect combined device resources via SMS_CombinedDeviceResources (skip=$skip): $_"
                 return $false
@@ -6435,7 +6517,7 @@ function Get-SmsRSystemViaAdminService {
         do {
             $smsRSystemUrl = "https://$Target/AdminService/wmi/SMS_R_System?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $smsRSystemResponse = Invoke-WebRequest -Uri $smsRSystemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $smsRSystemResponse = Invoke-WebRequest -Uri $smsRSystemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect systems and groups via SMS_R_System (skip=$skip): $_"
                 return $false
@@ -6530,7 +6612,7 @@ function Get-SmsRUserViaAdminService {
         do {
             $smsRUserUrl = "https://$Target/AdminService/wmi/SMS_R_User?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $smsRUserResponse = Invoke-WebRequest -Uri $smsRUserUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $smsRUserResponse = Invoke-WebRequest -Uri $smsRUserUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect users and groups via SMS_R_User (skip=$skip): $_"
                 return $false
@@ -6613,7 +6695,7 @@ function Get-CollectionsViaAdminService {
         do {
             $collectionUrl = "https://$Target/AdminService/wmi/SMS_Collection?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $collectionResponse = Invoke-WebRequest -Uri $collectionUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $collectionResponse = Invoke-WebRequest -Uri $collectionUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect device/user collections via SMS_Collection from $Target (skip=$skip)`: $_"
                 return $false
@@ -6679,7 +6761,7 @@ function Get-CollectionMembersViaAdminService {
         do {
             $memberUrl = "https://$Target/AdminService/wmi/SMS_FullCollectionMembership?$select&`$top=$batchSize&`$skip=$skip"
             try {
-                $memberResponse = Invoke-WebRequest -Uri $memberUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $memberResponse = Invoke-WebRequest -Uri $memberUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect collection members via SMS_FullCollectionMembership from $Target (skip=$skip)`: $_"
                 return $false
@@ -6784,7 +6866,7 @@ function Get-SecurityRolesViaAdminService {
             #$roleUrl = "https://$Target/AdminService/wmi/SMS_Role?$select&`$top=$batchSize&`$skip=$skip"
             $roleUrl = "https://$Target/AdminService/wmi/SMS_Role?`$top=$batchSize&`$skip=$skip"
             try {
-                $roleResponse = Invoke-WebRequest -Uri $roleUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $roleResponse = Invoke-WebRequest -Uri $roleUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect security roles via SMS_Role from $Target (skip=$skip)`: $_"
                 return $false
@@ -6853,7 +6935,7 @@ function Get-AdminUsersViaAdminService {
             #$adminUrl = "https://$Target/AdminService/wmi/SMS_Admin?$select&`$top=$batchSize&`$skip=$skip"
             $adminUrl = "https://$Target/AdminService/wmi/SMS_Admin?`$top=$batchSize&`$skip=$skip"
             try {
-                $adminResponse = Invoke-WebRequest -Uri $adminUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $adminResponse = Invoke-WebRequest -Uri $adminUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect admin users via SMS_Admin from $Target (skip=$skip)`: $_"
                 return $false
@@ -7025,7 +7107,7 @@ function Get-SiteSystemRolesViaAdminService {
         do {
             $systemUrl = "https://$Target/AdminService/wmi/SMS_SCI_SysResUse?`$top=$batchSize&`$skip=$skip"
             try {
-                $systemResponse = Invoke-WebRequest -Uri $systemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop
+                $systemResponse = Invoke-WebRequest -Uri $systemUrl -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
             } catch {
                 Write-LogMessage Error "Failed to collect site system roles via SMS_SCI_SysResUse from $Target (skip=$skip)`: $_"
                 return $false
@@ -7106,10 +7188,10 @@ function Get-SiteSystemRolesViaAdminService {
                                     SQLServiceAccountName = $serviceAccountObject.samAccountName
                                 }
                                 
-                                # Create edge from service account to computer if not the same
+                                # Create edges between service account and computer if not the same
                                 if ($serviceAccountObject.SID -ne $computerObject.SID) {
 
-                                    Upsert-Edge -Start $serviceAccountObject.SID -Kind "HasSession" -End $computerObject.SID -Properties @{
+                                    Upsert-Edge -Start $computerObject.SID -Kind "HasSession" -End $serviceAccountObject.SID -Properties @{
                                         collectionSource = @("AdminService-SMS_SCI_SysResUse")
                                     }
 
@@ -7724,6 +7806,7 @@ function Invoke-HTTPCollection {
         $siteCode = $null
         $isDP = $false
         $isMP = $false
+        $isSMS = $false
         $connectionFailed = $false
                     
         # Test Management Point HTTP endpoints (try HTTP first, then HTTPS)
@@ -7876,7 +7959,7 @@ function Invoke-HTTPCollection {
                             Write-LogMessage Success "Found distribution point role on $target"
 
                             # This device is already in targets but this returns its ADObject to update the Computer node properties
-                            $distributionPoint = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_DP_SMSPKG$" -SiteCode $(if ($siteCode) { "@$siteCode" })
+                            $distributionPoint = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_DP_SMSPKG$" -SiteCode $(if ($siteCode) { $siteCode })
 
                             # Add site system role to Computer node properties
                             if ($distributionPoint.ADObject) {
@@ -7886,6 +7969,48 @@ function Invoke-HTTPCollection {
                                     SCCMSiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                                 }
                             }
+                        }
+                    }
+                }
+
+                # Test SMS Provider HTTP endpoints
+                $response = $null
+                $endpoint = "https://$target/AdminService/wmi/SMS_Identification"
+
+                try {
+                    Write-LogMessage Verbose "Testing SMS Provider endpoint: $endpoint"
+                    $response = Invoke-HttpRequest $endpoint
+                    if ($response.IsConnectionFailure) {
+                        Write-LogMessage Warning "Unable to connect to $target via HTTPS - skipping remaining HTTP checks"
+                        $connectionFailed = $true
+                        break
+                    }
+                } catch {
+                    Write-LogMessage Verbose "SMS Provider endpoint error on $endpoint`: $_"
+                }
+
+                # Specific response codes indicate presence of distribution point role
+                if ($response) {
+                    # 401 (auth required) and 200 indicate DP presence
+                    if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
+                        $isSMS = $true
+                    } else {
+                        Write-LogMessage Verbose "    Received $($response.StatusCode)"
+                    }
+                }
+
+                if ($isSMS) {
+                    Write-LogMessage Success "Found SMS Provider role on $target"
+
+                    # This device is already in targets but this returns its ADObject to update the Computer node properties
+                    $smsProvider = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_Identification" -SiteCode $(if ($siteCode) { "@$siteCode" })
+
+                    # Add site system role to Computer node properties
+                    if ($smsProvider.ADObject) {
+                        $null = Upsert-Node -Id $smsProvider.ADObject.SID -Kinds @("Computer", "Base") -PSObject $smsProvider.ADObject -Properties @{
+                            collectionSource = @("HTTP-SMS_Identification")
+                            name = $smsProvider.ADObject.samAccountName
+                            SCCMSiteSystemRoles = @("SMS Provider$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                         }
                     }
                 }
@@ -7985,12 +8110,12 @@ function Get-ManagementPointCertIssuer {
                 $null = Upsert-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
                     collectionSource = @("HTTP-sitesigncert")
                     name = $device.ADObject.samAccountName
-                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@${($CollectionTarget.SiteCode)}" })")
+                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($_.SiteCode) { "@$($CollectionTarget.SiteCode)}" })")
                 }
             }
         }
     } catch {
-        Write-LogMessage Verbose "Get-ManagementPointCertIssuer encountered an error: $_"
+        Write-LogMessage Error "Get-ManagementPointCertIssuer encountered an error: $_"
     }
 }
 
@@ -8788,7 +8913,7 @@ function Start-SCCMCollection {
     }
 
     # 5) Orchestrate (runs once-phases once; per-host phases for all targets; respects filter)
-    Invoke-DiscoveryPipeline -SelectedPhases $script:SelectedPhases -MaxParallel 8
+    Invoke-DiscoveryPipeline -SelectedPhases $script:SelectedPhases
 
     Write-LogMessage Success "SCCM collection completed."
 }
@@ -8799,7 +8924,7 @@ function Start-SCCMCollectionA {
     Write-LogMessage Info "Initializing SCCM collection..."
 
     $script:SelectedPhases = Get-SelectedPhases -Methods $CollectionMethods
-    Invoke-DiscoveryPipeline -SelectedPhases $script:SelectedPhases -MaxParallel 8
+    Invoke-DiscoveryPipeline -SelectedPhases $script:SelectedPhases
     return 
 
     # Validate parameters
@@ -9239,19 +9364,32 @@ try {
         }
     }
     
-    # Disable certificate validation
-    Add-Type @"
+    # Disable certificate validation in a cross-version way
+
+    if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        # Windows PowerShell 5.1 (full .NET Framework)
+
+        Add-Type @"
         using System.Net;
         using System.Security.Cryptography.X509Certificates;
         public class TrustAllCertsPolicy : ICertificatePolicy {
             public bool CheckValidationResult(
-                ServicePoint srvPoint, X509Certificate certificate,
-                WebRequest request, int certificateProblem) {
+                ServicePoint srvPoint,
+                X509Certificate certificate,
+                WebRequest request,
+                int certificateProblem) {
                 return true;
             }
         }
 "@
-    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+
+        [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+    }
+
+    else {
+        # PowerShell 7+ (.NET Core / .NET)
+        $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
+    }
 
     # Start collection
     Start-SCCMCollection

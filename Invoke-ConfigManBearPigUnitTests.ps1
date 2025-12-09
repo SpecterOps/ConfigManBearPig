@@ -21,7 +21,8 @@ param(
 
     # Collection method to use (default: AdminService)
     [Parameter(Mandatory=$false)]
-    [string]$CollectionMethods = "LDAP,RemoteRegistry",
+    [string]$CollectionMethods = 'LDAP,DNS,RemoteRegistry,MSSQL,HTTP,SMB',
+    #[string]$CollectionMethods = "AdminService",
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
@@ -69,7 +70,8 @@ function Write-TestLog {
 #endregion
 
 $script:EdgeTypes = @(
-    "AdminTo",
+    #AdminTo,
+    "LocalAdminRequired",
     "CoerceAndRelayToAdminService",
     "CoerceAndRelayToMSSQL",
     "CoerceAndRelayNTLMtoSMB",
@@ -122,11 +124,11 @@ $script:NodeTypes = @(
 
 $script:ExpectedEdges = @(
 
-    ###########
-    # AdminTo #
-    ###########
+    ######################################################################################################
+    # AdminTo (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges) #
+    ######################################################################################################
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The CAS primary site server has local administrator rights on the CAS site database server"
         Source = @{
@@ -145,7 +147,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The CAS primary site server has local administrator rights on the service connection point server"
         Source = @{
@@ -164,7 +166,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the site database server"
         Source = @{
@@ -183,7 +185,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the SMS Provider server"
         Source = @{
@@ -202,7 +204,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the management point server"
         Source = @{
@@ -221,7 +223,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the distribution point server"
         Source = @{
@@ -240,7 +242,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the passive site server"
         Source = @{
@@ -259,7 +261,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 passive site server has local administrator rights on the primary site server"
         Source = @{
@@ -278,7 +280,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Count = 1
         Description = "The PS1 primary site server has local administrator rights on the content library server"
         Source = @{
@@ -297,7 +299,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "AdminTo"
+        Kind = "LocalAdminRequired"
         Negative = $true
         Description = "The PS2 primary site server does not have local administrator rights on the PS1 site database server"
         Source = @{
@@ -494,17 +496,17 @@ $script:ExpectedEdges = @(
         Count = 1
         Description = "The MSSQL service account has an active session on the CAS site database server"
         Source = @{
-            Kinds = @("User", "Base")
-            Properties = @{
-                samAccountName = "sqlsccmsvc"
-                id = "S-1-5-21-*"
-            }
-        }
-        Target = @{
             Kinds = @("Computer", "Base")
             Properties = @{
                 id = "S-1-5-21-*"
                 dNSHostName = "cas-db.$Domain"
+            }
+        }
+        Target = @{
+            Kinds = @("User", "Base")
+            Properties = @{
+                samAccountName = "sqlsccmsvc"
+                id = "S-1-5-21-*"
             }
         }
     },
@@ -513,17 +515,17 @@ $script:ExpectedEdges = @(
         Count = 1
         Description = "The MSSQL service account has an active session on the PS1 site database server"
         Source = @{
-            Kinds = @("User", "Base")
-            Properties = @{
-                samAccountName = "sqlsccmsvc"
-                id = "S-1-5-21-*"
-            }
-        }
-        Target = @{
             Kinds = @("Computer", "Base")
             Properties = @{
                 id = "S-1-5-21-*"
                 dNSHostName = "ps1-db.$Domain"
+            }
+        }
+        Target = @{
+            Kinds = @("User", "Base")
+            Properties = @{
+                samAccountName = "sqlsccmsvc"
+                id = "S-1-5-21-*"
             }
         }
     },
@@ -1133,12 +1135,12 @@ $script:ExpectedEdges = @(
     ##########################
     @{
         Kind="SCCM_FullAdministrator"
-        Count = 13
-        Description = "The domainuser SCCM admin user has the Full Administrator security role over all client devices in the hierarchy"
+        Count = 14
+        Description = "The domainadmin SCCM admin user has the Full Administrator security role over all client devices in the hierarchy"
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
-                id = "mayyhem\domainuser@*"
+                id = "mayyhem\domainadmin@*"
             }
         }
         Target = @{
@@ -1200,7 +1202,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="SCCM_HasCurrentUser"
         Count = 1
-        Description = "The PS1 client device has domainuser as the current logged on user"
+        Description = "The PS1 client device has domainuser as the current logged on user (requires manual addition of user device affinity after Ludus lab build)"
         Source = @{
             Kinds = @("SCCM_ClientDevice")
             Properties = @{
@@ -1961,10 +1963,8 @@ try {
             Write-TestLog "Error during client device normalization check: $_" -Level Error
         }
 
-        Get-EdgeCoverage
         # Display coverage table
         Write-TestLog "Edge Type Coverage Summary:" -Level Info
-        $coverageReport | Format-Table -AutoSize
         Get-MissingTests -ShowDetails
     }
 } catch {
