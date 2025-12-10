@@ -4457,7 +4457,7 @@ function Invoke-RemoteRegistryCollection {
 
             # Add MSSQL nodes/edges for local SQL instance
             if ($siteNode -and $siteServerComputerNode) {
-                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $siteServerComputerNode -CollectionSource "RemoteRegistry-MultisiteComponentServers"
+                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $siteServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
 
                 # Collect EPA settings from local SQL instance
                 $epaSettings = Get-MssqlEpaSettingsViaRemoteRegistry -SqlServerHostname $CollectionTarget.Hostname -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -4512,7 +4512,7 @@ function Invoke-RemoteRegistryCollection {
 
                     # Add MSSQL nodes/edges for remote SQL instance
                     if ($siteNode -and $sqlServerComputerNode) {
-                        Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $sqlServerComputerNode -CollectionSource "RemoteRegistry-MultisiteComponentServers"
+                        Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $sqlServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
                     }
                     
                     # Collect EPA settings from remote SQL instance
@@ -4810,11 +4810,18 @@ function Get-MssqlEpaSettingsViaTDS {
 
     if ($portIsOpen) {
         try {  
-            # Add the EPA testing type
+            if ($PSVersionTable.PSVersion.Major -ge 7) {
+                Write-Warning "Running in PowerShell 7+, so System.Data.SqlClient is unavailable, trying Microsoft.Data.SqlClient"
+                $sqlClientAsm = "Microsoft.Data.SqlClient"
+                #Install-Package Microsoft.Data.SqlClient -Force -SkipDependencies -ErrorAction SilentlyContinue
+            } else {
+                $sqlClientAsm = "System.Data.SqlClient"
+            }
+
             # This must be run remotely and will not display the correct settings if run locally on the SQL server
             Add-Type @"
 using System;
-using System.Data.SqlClient;
+using $sqlClientAsm;
 using System.Runtime.InteropServices;
 
 public class EPATester
@@ -5364,6 +5371,7 @@ public class EPATester
     "System.dll",
     "System.Data.dll",
     "System.Runtime.InteropServices.dll",
+    "$($sqlClientAsm).dll",
     "System.Threading.dll",
     "System.Runtime.dll"
 ) -ErrorAction Stop
@@ -5417,7 +5425,7 @@ function Add-MSSQLServerNodesAndEdges {
         [Parameter(Mandatory = $true)][PSObject]$SiteDatabaseComputerNode,
         [string]$SqlDatabaseName,
         [int]$SqlServicePort = 1433,
-        [string]$CollectionSource
+        [string[]]$CollectionSource
     )
 
     try {
@@ -5886,7 +5894,7 @@ function Invoke-MSSQLCollection {
 function Process-CoerceAndRelayToAdminService {
     param(
         $SiteCode,
-        $CollectionSource
+        [array]$CollectionSource
    )
 
     # Get all site databases that have EPA set to Off and RestrictReceivingNtlmTraffic set to Off for the specified site code
@@ -5912,7 +5920,7 @@ function Process-CoerceAndRelayToAdminService {
 
             # Can't relay back to the same server
             if ($smsProviderComputerNode.Id -eq $siteServer.Id) {
-                Write-LogMessage Verbose "Skipping coerce and relay to AdminService edge from $(if ($siteServer.dNSHostName) { $siteServer.dNSHostName } else { $siteServer.Name }) to itself"
+                Write-LogMessage Verbose "Skipping coerce and relay to AdminService edge from $(if ($siteServer.Properties.dNSHostName) { $siteServer.Properties.dNSHostName } else { $siteServer.Name }) to itself"
                 continue
             }
 
@@ -5940,7 +5948,7 @@ function Process-CoerceAndRelayToAdminService {
 function Process-CoerceAndRelayToMSSQL {
     param(
         $SiteCode,
-        $CollectionSource
+        [array]$CollectionSource
    )
 
     # Get all site databases that have EPA set to Off and RestrictReceivingNtlmTraffic set to Off for the specified site code
@@ -5995,7 +6003,7 @@ function Process-CoerceAndRelayToMSSQL {
 
             # Can't relay back to the same server
             if ($siteDatabaseComputerNode.Id -eq $computerWithMssqlLogin.Id) {
-                Write-LogMessage Verbose "Skipping coerce and relay to MSSQL edge from $($computerWithMssqlLogin.dNSHostName) to itself"
+                Write-LogMessage Verbose "Skipping coerce and relay to MSSQL edge from $($computerWithMssqlLogin.Properties.dNSHostName) to itself"
                 continue
             }
 
@@ -9369,19 +9377,21 @@ try {
     if ($PSVersionTable.PSEdition -eq 'Desktop') {
         # Windows PowerShell 5.1 (full .NET Framework)
 
-        Add-Type @"
-        using System.Net;
-        using System.Security.Cryptography.X509Certificates;
-        public class TrustAllCertsPolicy : ICertificatePolicy {
-            public bool CheckValidationResult(
-                ServicePoint srvPoint,
-                X509Certificate certificate,
-                WebRequest request,
-                int certificateProblem) {
-                return true;
+        if (-not ([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
+            Add-Type @"
+            using System.Net;
+            using System.Security.Cryptography.X509Certificates;
+            public class TrustAllCertsPolicy : ICertificatePolicy {
+                public bool CheckValidationResult(
+                    ServicePoint srvPoint,
+                    X509Certificate certificate,
+                    WebRequest request,
+                    int certificateProblem) {
+                    return true;
+                }
             }
-        }
 "@
+        }
 
         [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
     }
