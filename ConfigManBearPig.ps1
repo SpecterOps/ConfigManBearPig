@@ -2293,7 +2293,7 @@ function Update-GlobalObjectIdentifiers {
         [string]$RootSiteCode
     )
     
-    $globalObjectKinds = @("SCCM_Collection", "SCCM_AdminUser", "SCCM_SecurityRole", "SCCM_ClientDevice")
+    $globalObjectKinds = @("SCCM_Collection", "SCCM_AdminUser", "SCCM_SecurityRole")
 
     foreach ($kind in $globalObjectKinds) {
         $globalObjects = @($script:Nodes | Where-Object { $_.kinds -contains $kind })
@@ -2390,22 +2390,6 @@ function Update-GlobalObjectIdentifiers {
                                     $newRoleMemberId = "$roleMemberBase@$RootSiteCode"
                                     Write-LogMessage Verbose "Updating SCCM_SecurityRole.members entry: $roleMemberId -> $newRoleMemberId"
                                     $obj.properties.members[$i] = $newRoleMemberId
-                                }
-                            }
-                        }
-                    }
-
-                    # SCCM_ClientDevice.memberOf: array of SCCM_Collection IDs
-                    if ($kind -eq "SCCM_ClientDevice" -and $obj.properties.memberOf) {
-                        for ($i = 0; $i -lt $obj.properties.memberOf.Count; $i++) {
-                            $clientMemberOfId = $obj.properties.memberOf[$i]
-                            if ($clientMemberOfId -match '^(.+)@([A-Z0-9]{3})$') {
-                                $clientMemberOfBase = $matches[1]
-                                $clientMemberOfSite = $matches[2]
-                                if ($clientMemberOfSite -ne $RootSiteCode) {
-                                    $newClientMemberOfId = "$clientMemberOfBase@$RootSiteCode"
-                                    Write-LogMessage Verbose "Updating SCCM_ClientDevice.memberOf entry: $clientMemberOfId -> $newClientMemberOfId"
-                                    $obj.properties.memberOf[$i] = $newClientMemberOfId
                                 }
                             }
                         }
