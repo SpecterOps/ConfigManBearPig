@@ -26,21 +26,21 @@ System Requirements:
 Limitations:
     - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
     - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
+    - It is assumed in some cases (e.g., during DP and SMS Provider collection) that a single system does not host site system roles in more than one site. If this is the case, only one site code will be associated with that system.
     - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
-    - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it.
+    - MSSQL collection assumes that any collection target hosting a SQL Server instance is a site database server. If there are other SQL Servers in the environment, false positives may occur.
+    - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
 In Progress / To Do:
     - Unprivileged unit testing
-    - Figure out a way to unprivileged remote enum SMS Provider site code so CoerceAndRelayToAdminService can be created without specifying site code
-    - Option to treat all site servers as SMS Providers
-    - Option to treat remote control SPN as client device
-    - Make verbose/debug logs dependent on PowerShell preference variables
     - CoerceAndRelayNTLMtoSMB collection
     - Entity panels
     - Should TAKEOVER-4 be added (not always traversable)?
     - Clean up unused post-processing and ingest functions
     - Test with SQL on non-standard port
     - Remove hardcoded port 1433 from AdminService collection
+    - Relay management point computer accounts to site databases
+    - Secondary site databases
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
     - CMPivot collection (privileged)
@@ -100,6 +100,9 @@ Specify the path to a temporary directory where .json files will be stored befor
 .PARAMETER ZipDir
 Specify the path to a directory where the final .zip file will be stored (default: current directory)
 
+.PARAMETER LogFile
+Specify the path to a log file to write script log to
+
 .PARAMETER Domain
 Specify a domain to use for LDAP queries and name resolution
 
@@ -111,6 +114,12 @@ Specify a PSCredential object for authentication
 
 .PARAMETER SkipPostProcessing
 Skip post-processing edge creation (creates only direct edges from collection)
+
+.PARAMETER IncludePossibleEdges
+Switch/Flag:
+    - On: Make the following edges traversable (useful for offensive engagements but prone to false positive edges that may not be abusable):
+        - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
+    - Off (default): The edges above are not created or are created as non-traversable
 
 .PARAMETER Verbose
 Enable verbose output
@@ -140,12 +149,16 @@ param(
     [string]$TempDir,
     
     [string]$ZipDir,
+
+    [string]$LogFile,
     
     [string]$Domain = $env:USERDNSDOMAIN,
 
     [string]$DomainController,
     
     [switch]$SkipPostProcessing,
+
+    [switch]$IncludePossibleEdges,
 
     [switch]$Version
 )
@@ -169,6 +182,18 @@ function Write-LogMessage {
     }
    
     $padding = " " * (9 - $Level.Length)
+    $logEntry = "[$timestamp] [$Level]$padding $Message"
+
+    # File output
+    if ($LogFile) {
+        $logEntry | Out-File -FilePath $LogFile -Append -Encoding UTF8
+    }
+
+    # Only print Verbose when $VerbosePreference is set to Continue
+    if ($Level -eq "Verbose" -and $VerbosePreference -ne "Continue") {
+        return
+    }
+
     Write-Host "[$timestamp] [$Level]$padding $Message" -ForegroundColor $color
 }
 
@@ -1242,6 +1267,15 @@ function Add-DeviceToTargets {
             $existingTarget.Source = ($existingTarget.Source, $Source) -join ", "
         }
 
+        # Merge site code
+        if ($SiteCode) {
+            if (-not $existingTarget.SiteCode) {
+                $existingTarget.SiteCode = $SiteCode
+            } elseif ($existingTarget.SiteCode -ne $SiteCode) {
+                Write-LogMessage Warning "Target '$canonicalName' already has SiteCode '$($existingTarget.SiteCode)'; cannot overwrite with '$SiteCode'"
+            }
+        }
+
         $existingTarget.IsNew = $false
         return $existingTarget
     }
@@ -1726,16 +1760,24 @@ function Invoke-PostProcessing {
                                     }
                                 }
                             }
-                            
-                            # Primary site server domain computer accounts have a MSSQL login in the site database
+                        }
+
+                        # Primary site server and SMS Provider dnomain computer accounts have a MSSQL login in the site database
+                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)@$($primarySiteForSiteSystem.Id)") {
+
                             if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
                                 
                                 # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
                                 foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
-                                    Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
-                                        -SiteNode $primarySiteForSiteSystem `
-                                        -SiteDatabaseComputerNode $siteDatabaseComputerNode `
-                                        -SysadminComputerNode $computerNode
+
+                                    # Don't add MSSQL nodes/edges from the site database server to itself
+                                    if ($computerNode.Id -ne $siteDatabaseComputerNode.Id) {
+
+                                        Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
+                                            -SiteNode $primarySiteForSiteSystem `
+                                            -SiteDatabaseComputerNode $siteDatabaseComputerNode `
+                                            -SysadminComputerNode $computerNode
+                                    }
                                 }
                             }
                         }
@@ -1748,18 +1790,6 @@ function Invoke-PostProcessing {
                             foreach ($siteInHierarchy in $sitesInHierarchy) {
                                 Upsert-Edge -Start $computerNode.Id -Kind "SCCM_AssignAllPermissions" -End $siteInHierarchy.Id -Properties @{
                                     collectionSource = @("SCCM_Invoke-PostProcessing")
-                                }
-                            }
-
-                            # SMS Provider domain computer accounts have a MSSQL login in the site database
-                            if ($siteDatabaseComputerNodes -and $siteDatabaseComputerNodes.Count -gt 0) {
-
-                                # There could be multiple site database servers in a site (e.g. for high availability), so create edges to all of them
-                                foreach ($siteDatabaseComputerNode in $siteDatabaseComputerNodes) {
-                                    Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer `
-                                        -SiteNode $primarySiteForSiteSystem `
-                                        -SiteDatabaseComputerNode $siteDatabaseComputerNode `
-                                        -SysadminComputerNode $computerNode
                                 }
                             }
                         }
@@ -2118,6 +2148,46 @@ function Add-SameHostAsEdges {
     foreach ($computerNode in $ComputerNodes) {
         $computerId = $computerNode.Id
         $matchingClientDeviceNodes = @($ClientDeviceNodes | Where-Object { $_.Properties.ADDomainSID -eq $computerId })
+
+        # Merge SCCM_ClientDevice nodes with the same dNSHostName
+        if ($matchingClientDeviceNodes.Count -gt 1) {
+            Write-LogMessage Warning "Multiple SCCM_ClientDevice nodes found with ADDomainSID $computerId; merging nodes"
+            $primaryClientDeviceNode = $matchingClientDeviceNodes[0]
+            for ($i = 1; $i -lt $matchingClientDeviceNodes.Count; $i++) {
+                $duplicateNode = $matchingClientDeviceNodes[$i]
+
+                # Merge properties
+                foreach ($key in $duplicateNode.Properties.Keys) {
+                    if ($primaryClientDeviceNode.Properties.ContainsKey($key)) {
+                        # Merge arrays
+                        if ($primaryClientDeviceNode.Properties[$key] -is [Array] -and $duplicateNode.Properties[$key] -is [Array]) {
+                            $mergedArray = @(($primaryClientDeviceNode.Properties[$key] + $duplicateNode.Properties[$key]) | Where-Object { $_ -ne $null } | Select-Object -Unique)
+                            $primaryClientDeviceNode.Properties[$key] = $mergedArray
+                        }
+                    } else {
+                        # Add new property
+                        $primaryClientDeviceNode.Properties[$key] = $duplicateNode.Properties[$key]
+                    }
+                }
+
+                # Update edges to point to primary node
+                foreach ($edge in $script:Edges) {
+                    if ($edge.start.value -eq $duplicateNode.Id) {
+                        $edge.start.value = $primaryClientDeviceNode.Id
+                    }
+                    if ($edge.end.value -eq $duplicateNode.Id) {
+                        $edge.end.value = $primaryClientDeviceNode.Id
+                    }
+                }
+
+                # Remove duplicate node
+                $script:Nodes = $script:Nodes | Where-Object { $_.Id -ne $duplicateNode.Id }
+                Write-LogMessage Verbose "Merged duplicate SCCM_ClientDevice node $($duplicateNode.Id) into $($primaryClientDeviceNode.Id)"
+            }
+
+            # Update matching nodes to only the primary node
+            $matchingClientDeviceNodes = @($primaryClientDeviceNode)
+        }
 
         foreach ($clientDeviceNode in $matchingClientDeviceNodes) {
             $clientDeviceId = $clientDeviceNode.Id
@@ -3077,6 +3147,7 @@ function Invoke-LDAPCollection {
                         domain = $result.Properties["domain"]
                         objectClass = $result.Properties["objectclass"]
                         objectSid = @{ Value = $sid.Value }
+                        samAccountName = $result.Properties["samAccountName"]
                         servicePrincipalName = $result.Properties["serviceprincipalname"]
                     }
                 }
@@ -3093,8 +3164,28 @@ function Invoke-LDAPCollection {
             if ($system.ObjectSid) {
                 $null = Upsert-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
                     collectionSource = @("LDAP-CmRcService")
-                    name = $system.samAccountName
+                    name = $system.Name
                     SCCMHasClientRemoteControlSPN = $true
+                }
+
+                # Make SCCM_ClientDevice node and link to Computer node if requested
+                if ($IncludePossibleEdges) {
+
+                    # Generate GUID for SCCM Client node (may produce duplicates if client devices are enumerated later)
+                    $sccmClientId = [Guid]::NewGuid().ToString()
+
+                    $null = Upsert-Node -Id $sccmClientId -Kinds @("SCCM_ClientDevice") -PSObject $system -Properties @{
+                        collectionSource = @("LDAP-CmRcService")
+                        ADDomainSID = $system.ObjectSid.Value
+                        name = "$($system.Name)@$($siteCode)"
+                        siteCode = $siteCode
+                        SMSID = "Not yet collected"
+                    }
+
+                    # Create edge from site to client device
+                    Upsert-Edge -Start $siteCode -Kind "SCCM_HasClient" -End $sccmClientId -Properties @{
+                        collectionSource = @("AdminService-ClientDevices")
+                    }
                 }
             }
         }
@@ -4811,9 +4902,8 @@ function Get-MssqlEpaSettingsViaTDS {
     if ($portIsOpen) {
         try {  
             if ($PSVersionTable.PSVersion.Major -ge 7) {
-                Write-Warning "Running in PowerShell 7+, so System.Data.SqlClient is unavailable, trying Microsoft.Data.SqlClient"
+                Write-Warning "Running in PowerShell 7+, so System.Data.SqlClient is unavailable, trying Microsoft.Data.SqlClient, may require installation"
                 $sqlClientAsm = "Microsoft.Data.SqlClient"
-                #Install-Package Microsoft.Data.SqlClient -Force -SkipDependencies -ErrorAction SilentlyContinue
             } else {
                 $sqlClientAsm = "System.Data.SqlClient"
             }
@@ -5371,7 +5461,7 @@ public class EPATester
     "System.dll",
     "System.Data.dll",
     "System.Runtime.InteropServices.dll",
-    "$($sqlClientAsm).dll",
+    #"${sqlClientAsm}.dll",
     "System.Threading.dll",
     "System.Runtime.dll"
 ) -ErrorAction Stop
@@ -5559,7 +5649,7 @@ function Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer {
         [int]$SqlServicePort = 1433
     )
 
-    Write-LogMessage Verbose "Creating MSSQL sysadmin edges for $($SysadminComputerNode.Id) to site database server $($SiteDatabaseComputerNode.Id)"
+    Write-LogMessage Verbose "Creating MSSQL sysadmin edges for $($SysadminComputerNode.properties.dNSHostName) to site database server $($SiteDatabaseComputerNode.properties.dNSHostName)"
 
     try {
 
@@ -5672,6 +5762,15 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
         if (-not $siteNode.Properties.siteType -or $siteNode.Properties.siteType -eq "Secondary Site") {
             Write-LogMessage Verbose "Skipping MSSQL node/edge creation for unidentified or secondary site $SiteCode"
             return
+        }
+
+        # Add site database role to Computer object to catch passive site servers and others not enumerated from RemoteRegistry
+        $SqlServerFQDN = $sqlServerDomainObject.dNSHostName
+        Write-LogMessage Info "Processing MSSQL nodes/edges for primary site $SiteCode on SQL server $SqlServerFQDN"
+        $null = Upsert-Node -Id $sqlServerDomainObject.SID -Kinds @("Computer", "Base") -Properties @{
+            collectionSource = @($CollectionSource)
+            SCCMInfra = $true
+            SCCMSiteSystemRoles = @("SMS SQL Server@$SiteCode")
         }
 
         # Create or update MSSQL_Server node
@@ -5876,13 +5975,13 @@ function Invoke-MSSQLCollection {
 
         $epaResult = Get-MssqlEpaSettingsViaTDS -ServerNameOrIP $target -Port $Port -ServerString $serverString
         if ($epaResult) {
-            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"   
 
             Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $CollectionTarget.SiteCode `
                                           -SqlServerDomainObject $CollectionTarget.ADObject `
                                           -SqlServicePort $Port `
                                           -CollectionSource @("MSSQL-ScanForEPA") `
                                           -EPASettings $epaResult
+            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"   
         } else {
             Write-LogMessage Warning "Failed to collect EPA settings via MSSQL"
         }
@@ -6112,6 +6211,9 @@ function Invoke-AdminServiceCollection {
         }
         
         Write-LogMessage Info "AdminService collection completed: $collectionsSuccessful/$collectionsAttempted successful"
+
+        Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
+        Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
         
         # Mark target as successfully collected
         if (-not $script:CollectionTargets.ContainsKey($target)) {
@@ -7969,6 +8071,12 @@ function Invoke-HTTPCollection {
                             # This device is already in targets but this returns its ADObject to update the Computer node properties
                             $distributionPoint = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_DP_SMSPKG$" -SiteCode $(if ($siteCode) { $siteCode })
 
+                            # Assume site code is same as other roles discovered on this target
+                            if (-not $siteCode -and $distributionPoint.SiteCode) {
+                                Write-LogMessage Warning "Assuming site code is $($distributionPoint.SiteCode) for distribution point on $target based on other roles discovered"
+                                $siteCode = $distributionPoint.SiteCode
+                            }
+
                             # Add site system role to Computer node properties
                             if ($distributionPoint.ADObject) {
                                 $null = Upsert-Node -Id $distributionPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $distributionPoint.ADObject -Properties @{
@@ -7982,50 +8090,60 @@ function Invoke-HTTPCollection {
                 }
 
                 # Test SMS Provider HTTP endpoints
-                $response = $null
-                $endpoint = "https://$target/AdminService/wmi/SMS_Identification"
+                if ($isSMS -ne $true) {
+                    $response = $null
+                    $endpoint = "https://$target/AdminService/wmi/SMS_Identification"
 
-                try {
-                    Write-LogMessage Verbose "Testing SMS Provider endpoint: $endpoint"
-                    $response = Invoke-HttpRequest $endpoint
-                    if ($response.IsConnectionFailure) {
-                        Write-LogMessage Warning "Unable to connect to $target via HTTPS - skipping remaining HTTP checks"
-                        $connectionFailed = $true
-                        break
+                    try {
+                        Write-LogMessage Verbose "Testing SMS Provider endpoint: $endpoint"
+                        $response = Invoke-HttpRequest $endpoint
+                        if ($response.IsConnectionFailure) {
+                            Write-LogMessage Warning "Unable to connect to $target via HTTPS - skipping remaining HTTP checks"
+                            $connectionFailed = $true
+                            break
+                        }
+                    } catch {
+                        Write-LogMessage Verbose "SMS Provider endpoint error on $endpoint`: $_"
                     }
-                } catch {
-                    Write-LogMessage Verbose "SMS Provider endpoint error on $endpoint`: $_"
-                }
 
-                # Specific response codes indicate presence of distribution point role
-                if ($response) {
-                    # 401 (auth required) and 200 indicate DP presence
-                    if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
-                        $isSMS = $true
-                    } else {
-                        Write-LogMessage Verbose "    Received $($response.StatusCode)"
-                    }
-                }
-
-                if ($isSMS) {
-                    Write-LogMessage Success "Found SMS Provider role on $target"
-
-                    # This device is already in targets but this returns its ADObject to update the Computer node properties
-                    $smsProvider = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_Identification" -SiteCode $(if ($siteCode) { "@$siteCode" })
-
-                    # Add site system role to Computer node properties
-                    if ($smsProvider.ADObject) {
-                        $null = Upsert-Node -Id $smsProvider.ADObject.SID -Kinds @("Computer", "Base") -PSObject $smsProvider.ADObject -Properties @{
-                            collectionSource = @("HTTP-SMS_Identification")
-                            name = $smsProvider.ADObject.samAccountName
-                            SCCMSiteSystemRoles = @("SMS Provider$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
+                    # Specific response codes indicate presence of distribution point role
+                    if ($response) {
+                        # 401 (auth required) and 200 indicate DP presence
+                        if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
+                            $isSMS = $true
+                        } else {
+                            Write-LogMessage Verbose "    Received $($response.StatusCode)"
                         }
                     }
-                }
-                
-                # Skip remaining checks if connection failed
-                if ($connectionFailed) {
-                    break
+
+                    if ($isSMS) {
+                        # This device is already in targets but this returns its ADObject to update the Computer node properties
+                        $smsProvider = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_Identification" -SiteCode $(if ($siteCode) { $siteCode })
+
+                        if ($smsProvider -and $smsProvider.IsNew) {
+                            Write-LogMessage Success "Found SMS Provider role on $target"
+                        }
+
+                        # Assume site code is same as other roles discovered on this target
+                        if (-not $siteCode -and $smsProvider.SiteCode) {
+                            Write-LogMessage Warning "Assuming site code is $($smsProvider.SiteCode) for SMS Provider on $target based on other roles discovered"
+                            $siteCode = $smsProvider.SiteCode
+                        }
+
+                        # Add site system role to Computer node properties
+                        if ($smsProvider.ADObject) {
+                            $null = Upsert-Node -Id $smsProvider.ADObject.SID -Kinds @("Computer", "Base") -PSObject $smsProvider.ADObject -Properties @{
+                                collectionSource = @("HTTP-SMS_Identification")
+                                name = $smsProvider.ADObject.samAccountName
+                                SCCMSiteSystemRoles = @("SMS Provider$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
+                            }
+                        }
+                    }
+                    
+                    # Skip remaining checks if connection failed
+                    if ($connectionFailed) {
+                        break
+                    }
                 }
             } catch {
                 Write-LogMessage Warning "HTTP collection failed for protocol $protocol on $target`: $_"
@@ -8050,6 +8168,9 @@ function Invoke-HTTPCollection {
         }
     } catch {}
     Write-LogMessage Success "HTTP collection completed"
+    Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
+    Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
+    Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
 }
 
 function Get-ManagementPointCertIssuer {
@@ -8064,6 +8185,7 @@ function Get-ManagementPointCertIssuer {
         Write-LogMessage Verbose "Probing MP site signing certificate issuer on: $target"
 
         $issuerCN = $null
+        $siteServerHostname = $null
         $protocols = @('http','https')
         foreach ($protocol in $protocols) {
             $endpoint = "$protocol`://$target/SMS_MP/.sms_aut?sitesigncert"
@@ -8096,6 +8218,11 @@ function Get-ManagementPointCertIssuer {
                                 $issuerCN = $cert.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $true)
                             }
                             Write-LogMessage Verbose "sitesigncert issuer CN: $issuerCN"
+
+                            $siteServerHostname = $cert.DnsNameList | Where-Object { $_ -and $_ -ne "" } | Select-Object -First 1
+                            if ($siteServerHostname) {
+                                Write-LogMessage Verbose "sitesigncert DNS Name: $siteServerHostname"
+                            }
                         } catch {
                             Write-LogMessage Verbose "Failed to parse certificate from sitesigncert on ${target}: $_"
                         }
@@ -8110,15 +8237,15 @@ function Get-ManagementPointCertIssuer {
             if ($issuerCN) { break }
         }
 
-        if ($issuerCN -and ($issuerCN -match '(?i)^Site Server$' -or $issuerCN -match '(?i)Site Server')) {
-            Write-LogMessage Success "Detected Site Server certificate issuer via sitesigncert"
+        if ($issuerCN -and ($issuerCN -match '(?i)^Site Server$' -or $issuerCN -match '(?i)Site Server') -and $siteServerHostname) {
+            Write-LogMessage Success "Detected Site Server certificate issuer $siteServerHostname via sitesigncert"
             # Attach role to the computer node
-            $device = Add-DeviceToTargets -DeviceName $target -Source "HTTP-sitesigncert"
+            $device = Add-DeviceToTargets -DeviceName $siteServerHostname -Source "HTTP-sitesigncert"
             if ($device -and $device.ADObject -and $device.ADObject.SID) {
                 $null = Upsert-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
                     collectionSource = @("HTTP-sitesigncert")
                     name = $device.ADObject.samAccountName
-                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($_.SiteCode) { "@$($CollectionTarget.SiteCode)}" })")
+                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@$($CollectionTarget.SiteCode)}" })")
                 }
             }
         }
@@ -8321,34 +8448,29 @@ public const int NERR_ServerNotStarted = 2114;
             } 
 
             # Create SCCM_Site if it doesn't exist already
-            if ($isDP -or $isSiteServer) {
-                if ($siteCode) {
-                    $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
-                        collectionSource = $collectionSource
-                        SCCMInfra = $true
-                        siteCode = $siteCode
-                    }
-                } else {
-                    Write-LogMessage Warning "Could not determine site code for roles"
-                }
-
-                # Create or update the Computer node with site system roles and properties
-                $roles = @()
-                if ($isSiteServer) {
-                    $roles += "SMS Site Server$(if ($siteCode) { "@$siteCode"})"
-                }
-                if ($isDP) {
-                    $roles += "SMS Distribution Point$(if ($siteCode) { "@$siteCode"})"
-                }
-
-                $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
+            if ($siteCode) {
+                $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
                     collectionSource = $collectionSource
-                    name = $CollectionTarget.ADObject.samAccountName
-                    SCCMHostsContentLibrary = $hostsContentLib
-                    SCCMIsPXESupportEnabled = $isPXEEnabled
-                    SCCMSiteSystemRoles = $roles
+                    SCCMInfra = $true
+                    siteCode = $siteCode
                 }
-            } 
+            }
+            # Create or update the Computer node with site system roles and properties
+            $roles = @()
+            if ($isSiteServer) {
+                $roles += "SMS Site Server$(if ($siteCode) { "@$siteCode"})"
+            }
+            if ($isDP) {
+                $roles += "SMS Distribution Point$(if ($siteCode) { "@$siteCode"})"
+            }
+
+            $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
+                collectionSource = $collectionSource
+                name = $CollectionTarget.ADObject.samAccountName
+                SCCMHostsContentLibrary = $hostsContentLib
+                SCCMIsPXESupportEnabled = $isPXEEnabled
+                SCCMSiteSystemRoles = $roles
+            }
         } else {
             Write-LogMessage Warning "Failed to enumerate SMB shares on $target (access denied or not accessible)"
         }
@@ -8367,13 +8489,16 @@ public const int NERR_ServerNotStarted = 2114;
     }
 
     Write-LogMessage "SMB collection completed" -Level "Success"
+    Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
+    Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
+    Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
 }
 
 #endregion
 
 
 #region Output Generation
-
+    
 # Helper function to display current file size
 function Show-CurrentFileSize {
     param(
