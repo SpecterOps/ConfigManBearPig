@@ -24,10 +24,10 @@ System Requirements:
     - Various permissions based on collection methods used
 
 Limitations:
+    - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
     - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
     - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
     - It is assumed in some cases (e.g., during DP and SMS Provider collection) that a single system does not host site system roles in more than one site. If this is the case, only one site code will be associated with that system.
-    - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
     - MSSQL collection assumes that any collection target hosting a SQL Server instance is a site database server. If there are other SQL Servers in the environment, false positives may occur.
     - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
@@ -35,6 +35,7 @@ In Progress / To Do:
     - Unprivileged unit testing
     - CoerceAndRelayNTLMtoSMB collection
     - Entity panels
+    - Get members of groups with permissions on System Management container
     - Should TAKEOVER-4 be added (not always traversable)?
     - Clean up unused post-processing and ingest functions
     - Test with SQL on non-standard port
@@ -117,7 +118,9 @@ Skip post-processing edge creation (creates only direct edges from collection)
 
 .PARAMETER IncludePossibleEdges
 Switch/Flag:
-    - On: Make the following edges traversable (useful for offensive engagements but prone to false positive edges that may not be abusable):
+    - On: Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
+        - CoerceAndRelayToMSSQL: EPA setting is assumed to be Off if the MSSQL server can't be reached
+        - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, otherwise use Remote Registry collection to confirm
         - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
     - Off (default): The edges above are not created or are created as non-traversable
 
@@ -429,390 +432,429 @@ function Resolve-PrincipalInDomain {
         [string]$Domain
     )
     
+    # Initialize domain cache for discovered domain suffixes
+    if (-not $script:DiscoveredDomains) { $script:DiscoveredDomains = @{} }
+    
     # Initialize and check cache to avoid repeated lookups
     if (-not $script:ResolvedPrincipalCache) { $script:ResolvedPrincipalCache = @{} }
-    $cacheKey = ("{0}|{1}" -f $Domain, $Name).ToLower()
-    if ($script:ResolvedPrincipalCache.ContainsKey($cacheKey)) {
-        if ($script:ResolvedPrincipalCache[$cacheKey] -eq $null) {
-            Write-LogMessage Verbose "Already tried to resolve $Name in domain $Domain and failed, skipping"
-            return $null
-        }
-        Write-LogMessage Verbose "Resolved $Name in domain $Domain from cache"
-        return $script:ResolvedPrincipalCache[$cacheKey]
-    }
-
-    Write-LogMessage Verbose "Attempting to resolve $Name in domain $Domain"
     
-    $adPowershellSucceeded = $false
-    
-    # Try Active Directory PowerShell module first
-    if (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) {
-        Write-LogMessage Verbose "Trying AD PowerShell module in domain $Domain"
-        
-        try {
-            $adObject = $null
-            
-            # Set server parameter if domain is specified and different from current
-            $adParams = @{ Identity = $Name }
-            if ($script:DomainController) {
-                $adParams.Server = $script.DomainController
-            } elseif ($Domain -and $Domain -ne $env:USERDOMAIN -and $Domain -ne $env:USERDNSDOMAIN) {
-                $adParams.Server = $Domain
+    # Extract domain suffix from FQDN if present
+    $domainsToTry = @()
+    if ($Name -match '\.') {
+        # Name appears to be an FQDN, extract potential domain suffix
+        $nameParts = $Name -split '\.'
+        if ($nameParts.Count -gt 2) {
+            # Try extracting domain from FQDN (everything after first part)
+            $extractedDomain = ($nameParts[1..($nameParts.Count - 1)] -join '.').ToUpper()
+            if ($extractedDomain -ne $Domain.ToUpper()) {
+                $domainsToTry += $extractedDomain
+                Write-LogMessage Verbose "Extracted domain suffix '$extractedDomain' from FQDN '$Name'"
+                
+                # Add to discovered domains cache
+                if (-not $script:DiscoveredDomains.ContainsKey($extractedDomain)) {
+                    $script:DiscoveredDomains[$extractedDomain] = $true
+                    Write-LogMessage Verbose "Added '$extractedDomain' to discovered domains cache"
+                }
             }
+        }
+    }
+    
+    # Add the originally specified domain
+    if ($Domain) {
+        $domainsToTry += $Domain
+    }
+    
+    # Try resolution in each domain
+    foreach ($domainToTry in $domainsToTry) {
+        $cacheKey = ("{0}|{1}" -f $domainToTry, $Name).ToLower()
+        
+        # Check cache first
+        if ($script:ResolvedPrincipalCache.ContainsKey($cacheKey)) {
+            if ($script:ResolvedPrincipalCache[$cacheKey] -eq $null) {
+                Write-LogMessage Verbose "Already tried to resolve $Name in domain $domainToTry and failed, trying next domain"
+                continue
+            }
+            Write-LogMessage Verbose "Resolved $Name in domain $domainToTry from cache"
+            return $script:ResolvedPrincipalCache[$cacheKey]
+        }
+
+        Write-LogMessage Verbose "Attempting to resolve $Name in domain $domainToTry"
+        
+        $adPowershellSucceeded = $false
+        
+        # Try Active Directory PowerShell module first
+        if (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) {
+            Write-LogMessage Verbose "Trying AD PowerShell module in domain $domainToTry"
             
-            # Try Computer first
             try {
-                $adObject = Get-ADComputer @adParams -ErrorAction Stop
-            } catch {
-                # Try Computer by SID
+                $adObject = $null
+                
+                # Set server parameter if domain is specified and different from current
+                $adParams = @{ Identity = $Name }
+                if ($script:DomainController) {
+                    $adParams.Server = $script.DomainController
+                } elseif ($domainToTry -and $domainToTry -ne $env:USERDOMAIN -and $domainToTry -ne $env:USERDNSDOMAIN) {
+                    $adParams.Server = $domainToTry
+                }
+            
+                # Try Computer first
                 try {
-                    $adParams.Remove('Identity')
-                    $adParams.LDAPFilter = "(objectSid=$Name)"
                     $adObject = Get-ADComputer @adParams -ErrorAction Stop
-                    if (-not $adObject) { throw }
                 } catch {
-                    # Try User
+                    # Try Computer by SID
                     try {
-                        $adParams.Remove('LDAPFilter')
-                        $adParams.Identity = $Name
-                        $adObject = Get-ADUser @adParams -ErrorAction Stop
+                        $adParams.Remove('Identity')
+                        $adParams.LDAPFilter = "(objectSid=$Name)"
+                        $adObject = Get-ADComputer @adParams -ErrorAction Stop
+                        if (-not $adObject) { throw }
                     } catch {
-                        # Try User by SID
+                        # Try User
                         try {
-                            $adParams.Remove('Identity')
-                            $adParams.LDAPFilter = "(objectSid=$Name)"
+                            $adParams.Remove('LDAPFilter')
+                            $adParams.Identity = $Name
                             $adObject = Get-ADUser @adParams -ErrorAction Stop
-                            if (-not $adObject) { throw }
                         } catch {
-                            # Try Group
+                            # Try User by SID
                             try {
-                                $adParams.Remove('LDAPFilter')
-                                $adParams.Identity = $Name
-                                $adObject = Get-ADGroup @adParams -ErrorAction Stop
+                                $adParams.Remove('Identity')
+                                $adParams.LDAPFilter = "(objectSid=$Name)"
+                                $adObject = Get-ADUser @adParams -ErrorAction Stop
+                                if (-not $adObject) { throw }
                             } catch {
-                                # Try Group by SID
+                                # Try Group
                                 try {
-                                    $adParams.Remove('Identity')
-                                    $adParams.LDAPFilter = "(objectSid=$Name)"
+                                    $adParams.Remove('LDAPFilter')
+                                    $adParams.Identity = $Name
                                     $adObject = Get-ADGroup @adParams -ErrorAction Stop
-                                    if (-not $adObject) { throw }
                                 } catch {
-                                    Write-LogMessage Verbose "No AD object found for '$Name' in domain '$Domain'"
+                                    # Try Group by SID
+                                    try {
+                                        $adParams.Remove('Identity')
+                                        $adParams.LDAPFilter = "(objectSid=$Name)"
+                                        $adObject = Get-ADGroup @adParams -ErrorAction Stop
+                                        if (-not $adObject) { throw }
+                                    } catch {
+                                        Write-LogMessage Verbose "No AD object found for '$Name' in domain '$domainToTry'"
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            
-            if ($adObject) {
-                $adObjectName = if ($adObject.UserPrincipalName) { $adObject.UserPrincipalName } elseif ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.SamAccountName }
-                $adObjectSid = $adObject.SID.ToString()
-                Write-LogMessage Verbose "Resolved '$Name' to AD principal in '$Domain': $adObjectName ($adObjectSid)"
                 
-                # Upper the first letter of object class to match BloodHound kind
-                $kind = if ($adObject.ObjectClass -and $adObject.ObjectClass.Length -gt 0) { 
-                    $adObject.ObjectClass.Substring(0,1).ToUpper() + $adObject.ObjectClass.Substring(1).ToLower() 
-                } else { 
-                    $adObject.ObjectClass 
-                }
-                
-                $adPowershellSucceeded = $true
-                $result = [PSCustomObject]@{
-                    name = $adObjectName
-                    distinguishedName = $adObject.DistinguishedName
-                    DNSHostName = $adObject.DNSHostName
-                    Domain = $Domain
-                    Enabled = $adObject.Enabled
-                    IsDomainPrincipal = $true
-                    SamAccountName = $adObject.SamAccountName
-                    SID = $adObject.SID.ToString()
-                    UserPrincipalName = $adObject.UserPrincipalName
-                    Type = $kind
-                    Error = $null
-                }
-                $script:ResolvedPrincipalCache[$cacheKey] = $result
-                return $result
-            }
-        } catch {
-            Write-LogMessage Verbose "AD PowerShell lookup failed for '$Name' in domain '$Domain': $_"
-        }
-    }
-
-    # Try ADSISearcher approach before .NET methods (.NET does not return dNSHostName property)
-    try {
-        Write-LogMessage Verbose "Attempting ADSISearcher for '$Name' in domain '$Domain'"
-        
-        # Build LDAP path
-        $domainDN = if ($Domain) {
-            "DC=" + ($Domain -replace "\.", ",DC=")
-        } else {
-            $null
-        }
-
-        # Use Domain Controller in LDAP path if specified
-        $ldapPath = if ($script:DomainController -and $domainDN) {
-            "LDAP://$($script:DomainController)/$domainDN"
-        } elseif ($domainDN) {
-            "LDAP://$domainDN"
-        } else {
-            "LDAP://"
-        }
-        
-        $adsiSearcher = if ($ldapPath -ne "LDAP://") {
-            New-Object System.DirectoryServices.DirectorySearcher([ADSI]$ldapPath)
-        } else {
-            New-Object System.DirectoryServices.DirectorySearcher
-        }
-        
-        # Try different search filters
-        $searchFilters = @(
-            "(samAccountName=$Name)",
-            "(objectSid=$Name)",
-            "(userPrincipalName=$Name)",
-            "(dnsHostName=$Name)",
-            "(cn=$Name)"
-        )
-        
-        $adsiResult = $null
-        foreach ($filter in $searchFilters) {
-            try {
-                $adsiSearcher.Filter = $filter
-                $adsiResult = $adsiSearcher.FindOne()
-                if ($adsiResult) {
-                    Write-LogMessage Verbose "Found object using ADSISearcher with filter: $filter"
-                    break
+                if ($adObject) {
+                    $adObjectName = if ($adObject.UserPrincipalName) { $adObject.UserPrincipalName } elseif ($adObject.DNSHostName) { $adObject.DNSHostName } else { $adObject.SamAccountName }
+                    $adObjectSid = $adObject.SID.ToString()
+                    Write-LogMessage Verbose "Resolved '$Name' to AD principal in '$domainToTry': $adObjectName ($adObjectSid)"
+                    
+                    # Upper the first letter of object class to match BloodHound kind
+                    $kind = if ($adObject.ObjectClass -and $adObject.ObjectClass.Length -gt 0) { 
+                        $adObject.ObjectClass.Substring(0,1).ToUpper() + $adObject.ObjectClass.Substring(1).ToLower() 
+                    } else { 
+                        $adObject.ObjectClass 
+                    }
+                    
+                    $adPowershellSucceeded = $true
+                    $result = [PSCustomObject]@{
+                        name = $adObjectName
+                        distinguishedName = $adObject.DistinguishedName
+                        DNSHostName = $adObject.DNSHostName
+                        Domain = $domainToTry
+                        Enabled = $adObject.Enabled
+                        IsDomainPrincipal = $true
+                        SamAccountName = $adObject.SamAccountName
+                        SID = $adObject.SID.ToString()
+                        UserPrincipalName = $adObject.UserPrincipalName
+                        Type = $kind
+                        Error = $null
+                    }
+                    $script:ResolvedPrincipalCache[$cacheKey] = $result
+                    return $result
                 }
             } catch {
-                Write-LogMessage Verbose "ADSISearcher filter '$filter' failed: $_"
+                Write-LogMessage Verbose "AD PowerShell lookup failed for '$Name' in domain '$domainToTry': $_"
             }
         }
-        
-        if ($adsiResult) {
-            $props = $adsiResult.Properties
-            $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
-            $objectSid = if ($props["objectsid"]) { 
-                (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
-            } else { 
-                $null 
+
+        # Try ADSISearcher approach before .NET methods (.NET does not return dNSHostName property)
+        try {
+            Write-LogMessage Verbose "Attempting ADSISearcher for '$Name' in domain '$domainToTry'"
+            
+            # Build LDAP path
+            $domainDN = if ($domainToTry) {
+                "DC=" + ($domainToTry -replace "\.", ",DC=")
+            } else {
+                $null
             }
-                            
-            $result = [PSCustomObject]@{
-                name = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } elseif ($props["dnshostname"]) { $props["dnshostname"][0] } else { $props["samaccountname"][0] }
-                distinguishedName = if ($props["distinguishedname"]) { $props["distinguishedname"][0] } else { $null }
-                DNSHostName = if ($props["dnshostname"]) { $props["dnshostname"][0] } else { $null }
-                Domain = $Domain
-                Enabled = if ($props["useraccountcontrol"]) { 
-                    -not ([int]$props["useraccountcontrol"][0] -band 2) 
+
+            # Use Domain Controller in LDAP path if specified
+            $ldapPath = if ($script:DomainController -and $domainDN) {
+                "LDAP://$($script:DomainController)/$domainDN"
+            } elseif ($domainDN) {
+                "LDAP://$domainDN"
+            } else {
+                "LDAP://"
+            }
+            
+            $adsiSearcher = if ($ldapPath -ne "LDAP://") {
+                New-Object System.DirectoryServices.DirectorySearcher([ADSI]$ldapPath)
+            } else {
+                New-Object System.DirectoryServices.DirectorySearcher
+            }
+            
+            # Try different search filters
+            $searchFilters = @(
+                "(samAccountName=$Name)",
+                "(objectSid=$Name)",
+                "(userPrincipalName=$Name)",
+                "(dnsHostName=$Name)",
+                "(cn=$Name)"
+            )
+            
+            $adsiResult = $null
+            foreach ($filter in $searchFilters) {
+                try {
+                    $adsiSearcher.Filter = $filter
+                    $adsiResult = $adsiSearcher.FindOne()
+                    if ($adsiResult) {
+                        Write-LogMessage Verbose "Found object using ADSISearcher with filter: $filter"
+                        break
+                    }
+                } catch {
+                    Write-LogMessage Verbose "ADSISearcher filter '$filter' failed: $_"
+                }
+            }
+            
+            if ($adsiResult) {
+                $props = $adsiResult.Properties
+                $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
+                $objectSid = if ($props["objectsid"]) { 
+                    (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
                 } else { 
                     $null 
                 }
-                IsDomainPrincipal = $true
-                SamAccountName = if ($props["samaccountname"]) { $props["samaccountname"][0] } else { $null }
-                SID = $objectSid
-                UserPrincipalName = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } else { $null }
-                Type = if ($objectClass -and $objectClass.Length -gt 0) { 
-                    $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower() 
-                } else { 
-                    "Unknown" 
-                }
-                Error = $null
-            }
-            
-            $adsiSearcher.Dispose()
-            $script:ResolvedPrincipalCache[$cacheKey] = $result
-            return $result
-        }
-        
-        $adsiSearcher.Dispose()
-        
-    } catch {
-        Write-LogMessage Verbose "ADSISearcher lookup failed for '$Name' in domain '$Domain': $_"
-    }    
-    
-    # Try .NET DirectoryServices AccountManagement
-    if ($script:UseNetFallback -or -not (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) -or -not $adPowershellSucceeded) {
-        Write-LogMessage Verbose "Attempting .NET DirectoryServices AccountManagement for '$Name' in domain '$Domain'"
-        
-        try {
-            # Try AccountManagement approach
-             # Use Domain Controller if specified
-             if ($script:DomainController) {
-                $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
-                    [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
-                    $script:DomainController
-                )
-            } else {
-                $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
-                    [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
-                    $Domain
-                )
-            }
-            $principal = $null
-            
-            # Try as Computer
-            try {
-                $principal = [System.DirectoryServices.AccountManagement.ComputerPrincipal]::FindByIdentity($context, $Name)
-                if ($principal) {
-                    Write-LogMessage Verbose "Found computer principal using .NET DirectoryServices: $($principal.Name)"
-                }
-            } catch {
-                Write-LogMessage Verbose "Computer lookup failed: $_"
-            }
-            
-            # Try as User if computer lookup failed
-            if (-not $principal) {
-                try {
-                    $principal = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity($context, $Name)
-                    if ($principal) {
-                        Write-LogMessage Verbose "Found user principal using .NET DirectoryServices: $($principal.Name)"
-                    }
-                } catch {
-                    Write-LogMessage Verbose "User lookup failed: $_"
-                }
-            }
-            
-            # Try as Group if user lookup failed
-            if (-not $principal) {
-                try {
-                    $principal = [System.DirectoryServices.AccountManagement.GroupPrincipal]::FindByIdentity($context, $Name)
-                    if ($principal) {
-                        Write-LogMessage Verbose "Found group principal using .NET DirectoryServices: $($principal.Name)"
-                    }
-                } catch {
-                    Write-LogMessage Verbose "Group lookup failed: $_"
-                }
-            }
-            
-            if ($principal) {
-                $principalType = $principal.GetType().Name -replace "Principal$", ""
-                
+                                
                 $result = [PSCustomObject]@{
-                    name = if ($principal.UserPrincipalName) { $principal.UserPrincipalName } else { $principal.SamAccountName }
-                    distinguishedName = $principal.DistinguishedName
-                    DNSHostName = $principal.dNSHostName
-                    Domain = $Domain
-                    Enabled = if ($principal.PSObject.Properties['Enabled']) { $principal.Enabled } else { $null }
-                    IsDomainPrincipal = $true
-                    SamAccountName = $principal.SamAccountName
-                    SID = $principal.Sid.Value
-                    UserPrincipalName = $principal.UserPrincipalName
-                    Type = $principalType
-                    Error = $null
-                }
-                
-                $context.Dispose()
-                $script:ResolvedPrincipalCache[$cacheKey] = $result
-                return $result
-
-            } else {
-                Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$Domain'"
-            }
-            
-            $context.Dispose()
-            
-        } catch {
-            Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$Domain': $_"
-        }
-        
-        # Try DirectorySearcher as final .NET attempt
-        try {
-            Write-LogMessage Verbose "Attempting DirectorySearcher for '$Name' in domain '$Domain'"
-            
-            Add-Type -AssemblyName System.DirectoryServices -ErrorAction Stop
-            
-            $searcher = New-Object System.DirectoryServices.DirectorySearcher
-            $searcher.Filter = "(|(samAccountName=$Name)(objectSid=$Name)(userPrincipalName=$Name)(dnsHostName=$Name))"
-            $null = $searcher.PropertiesToLoad.Add("samAccountName")
-            $null = $searcher.PropertiesToLoad.Add("objectSid")
-            $null = $searcher.PropertiesToLoad.Add("distinguishedName")
-            $null = $searcher.PropertiesToLoad.Add("userPrincipalName")
-            $null = $searcher.PropertiesToLoad.Add("dnsHostName")
-            $null = $searcher.PropertiesToLoad.Add("objectClass")
-            $null = $searcher.PropertiesToLoad.Add("userAccountControl")
-            
-            $result = $searcher.FindOne()
-            if ($result) {
-                $objectClass = $result.Properties["objectclass"][$result.Properties["objectclass"].Count - 1]
-                $objectSid = (New-Object System.Security.Principal.SecurityIdentifier($result.Properties["objectsid"][0], 0)).Value
-                
-                Write-LogMessage Verbose "Found object using DirectorySearcher: $($result.Properties["samaccountname"][0])"
-                
-                $returnResult = [PSCustomObject]@{
-                    name = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } elseif ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $result.Properties["samaccountname"][0] }
-                    distinguishedName = $result.Properties["distinguishedname"][0]
-                    DNSHostName = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
-                    Domain = $Domain
-                    Enabled = if ($result.Properties["useraccountcontrol"].Count -gt 0) { 
-                        -not ([int]$result.Properties["useraccountcontrol"][0] -band 2) 
+                    name = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } elseif ($props["dnshostname"]) { $props["dnshostname"][0] } else { $props["samaccountname"][0] }
+                    distinguishedName = if ($props["distinguishedname"]) { $props["distinguishedname"][0] } else { $null }
+                    DNSHostName = if ($props["dnshostname"]) { $props["dnshostname"][0] } else { $null }
+                    Domain = $domainToTry
+                    Enabled = if ($props["useraccountcontrol"]) { 
+                        -not ([int]$props["useraccountcontrol"][0] -band 2) 
                     } else { 
                         $null 
                     }
                     IsDomainPrincipal = $true
-                    SamAccountName = $result.Properties["samaccountname"][0]
+                    SamAccountName = if ($props["samaccountname"]) { $props["samaccountname"][0] } else { $null }
                     SID = $objectSid
-                    UserPrincipalName = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } else { $null }
-                    Type = $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower()
+                    UserPrincipalName = if ($props["userprincipalname"]) { $props["userprincipalname"][0] } else { $null }
+                    Type = if ($objectClass -and $objectClass.Length -gt 0) { 
+                        $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower() 
+                    } else { 
+                        "Unknown" 
+                    }
                     Error = $null
                 }
                 
-                $searcher.Dispose()
-                $script:ResolvedPrincipalCache[$cacheKey] = $returnResult
-                return $returnResult
+                $adsiSearcher.Dispose()
+                $script:ResolvedPrincipalCache[$cacheKey] = $result
+                return $result
             }
             
-            $searcher.Dispose()
+            $adsiSearcher.Dispose()
             
         } catch {
-            Write-LogMessage Verbose "DirectorySearcher failed for '$Name' in domain '$Domain': $_"
-        }
-    }
-    
-    # Try NTAccount translation
-    try {
-        Write-LogMessage Verbose "Attempting NTAccount translation for '$Name' in domain '$Domain'"
+            Write-LogMessage Verbose "ADSISearcher lookup failed for '$Name' in domain '$domainToTry': $_"
+        }    
         
-        # Try direct SID lookup
-        $ntAccount = New-Object System.Security.Principal.NTAccount($Domain, $Name)
-        $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier])
-        $resolvedSid = $sid.Value
-        Write-LogMessage Verbose "Resolved SID for '$Name' using NTAccount in '$Domain': $resolvedSid"
-        
-        $ntResult = [PSCustomObject]@{
-            name = "$Domain\$Name"
-            SID = $resolvedSid
-            Domain = $Domain
-            Error = $null
-        }
-        $script:ResolvedPrincipalCache[$cacheKey] = $ntResult
-        return $ntResult
-    } catch {
-        Write-LogMessage Verbose "NTAccount translation failed for '$Name' in domain '$Domain': $_"
-    }
-    
-    # Try SID to name translation as final attempt (if input looks like a SID)
-    if ($Name -match "^S-\d+-\d+") {
-        try {
-            Write-LogMessage Verbose "Attempting SID to name translation for '$Name'"
-            $sid = New-Object System.Security.Principal.SecurityIdentifier($Name)
-            $resolvedName = $sid.Translate([System.Security.Principal.NTAccount]).Value
-            Write-LogMessage Verbose "Resolved name for SID '$Name': $resolvedName"
+        # Try .NET DirectoryServices AccountManagement
+        if ($script:UseNetFallback -or -not (Get-Command -Name Get-ADComputer -ErrorAction SilentlyContinue) -or -not $adPowershellSucceeded) {
+            Write-LogMessage Verbose "Attempting .NET DirectoryServices AccountManagement for '$Name' in domain '$domainToTry'"
             
-            $sidResult = [PSCustomObject]@{
-                name = $resolvedName
-                SID = $Name
-                Domain = $Domain
+            try {
+                # Try AccountManagement approach
+                # Use Domain Controller if specified
+                if ($script:DomainController) {
+                    $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                        [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
+                        $script:DomainController
+                    )
+                } else {
+                    $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                        [System.DirectoryServices.AccountManagement.ContextType]::Domain, 
+                        $domainToTry
+                    )
+                }
+                $principal = $null
+                
+                # Try as Computer
+                try {
+                    $principal = [System.DirectoryServices.AccountManagement.ComputerPrincipal]::FindByIdentity($context, $Name)
+                    if ($principal) {
+                        Write-LogMessage Verbose "Found computer principal using .NET DirectoryServices: $($principal.Name)"
+                    }
+                } catch {
+                    Write-LogMessage Verbose "Computer lookup failed: $_"
+                }
+                
+                # Try as User if computer lookup failed
+                if (-not $principal) {
+                    try {
+                        $principal = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity($context, $Name)
+                        if ($principal) {
+                            Write-LogMessage Verbose "Found user principal using .NET DirectoryServices: $($principal.Name)"
+                        }
+                    } catch {
+                        Write-LogMessage Verbose "User lookup failed: $_"
+                    }
+                }
+                
+                # Try as Group if user lookup failed
+                if (-not $principal) {
+                    try {
+                        $principal = [System.DirectoryServices.AccountManagement.GroupPrincipal]::FindByIdentity($context, $Name)
+                        if ($principal) {
+                            Write-LogMessage Verbose "Found group principal using .NET DirectoryServices: $($principal.Name)"
+                        }
+                    } catch {
+                        Write-LogMessage Verbose "Group lookup failed: $_"
+                    }
+                }
+                
+                if ($principal) {
+                    $principalType = $principal.GetType().Name -replace "Principal$", ""
+                    
+                    $result = [PSCustomObject]@{
+                        name = if ($principal.UserPrincipalName) { $principal.UserPrincipalName } else { $principal.SamAccountName }
+                        distinguishedName = $principal.DistinguishedName
+                        DNSHostName = $principal.dNSHostName
+                        Domain = $domainToTry
+                        Enabled = if ($principal.PSObject.Properties['Enabled']) { $principal.Enabled } else { $null }
+                        IsDomainPrincipal = $true
+                        SamAccountName = $principal.SamAccountName
+                        SID = $principal.Sid.Value
+                        UserPrincipalName = $principal.UserPrincipalName
+                        Type = $principalType
+                        Error = $null
+                    }
+                    
+                    $context.Dispose()
+                    $script:ResolvedPrincipalCache[$cacheKey] = $result
+                    return $result
+
+                } else {
+                    Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$domainToTry'"
+                }
+                
+                $context.Dispose()
+                
+            } catch {
+                Write-LogMessage Verbose ".NET DirectoryServices failed to resolve '$Name' in domain '$domainToTry': $_"
+            }
+            
+            # Try DirectorySearcher as final .NET attempt
+            try {
+                Write-LogMessage Verbose "Attempting DirectorySearcher for '$Name' in domain '$domainToTry'"
+                
+                Add-Type -AssemblyName System.DirectoryServices -ErrorAction Stop
+                
+                $searcher = New-Object System.DirectoryServices.DirectorySearcher
+                $searcher.Filter = "(|(samAccountName=$Name)(objectSid=$Name)(userPrincipalName=$Name)(dnsHostName=$Name))"
+                $null = $searcher.PropertiesToLoad.Add("samAccountName")
+                $null = $searcher.PropertiesToLoad.Add("objectSid")
+                $null = $searcher.PropertiesToLoad.Add("distinguishedName")
+                $null = $searcher.PropertiesToLoad.Add("userPrincipalName")
+                $null = $searcher.PropertiesToLoad.Add("dnsHostName")
+                $null = $searcher.PropertiesToLoad.Add("objectClass")
+                $null = $searcher.PropertiesToLoad.Add("userAccountControl")
+                
+                $result = $searcher.FindOne()
+                if ($result) {
+                    $objectClass = $result.Properties["objectclass"][$result.Properties["objectclass"].Count - 1]
+                    $objectSid = (New-Object System.Security.Principal.SecurityIdentifier($result.Properties["objectsid"][0], 0)).Value
+                    
+                    Write-LogMessage Verbose "Found object using DirectorySearcher: $($result.Properties["samaccountname"][0])"
+                    
+                    $returnResult = [PSCustomObject]@{
+                        name = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } elseif ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $result.Properties["samaccountname"][0] }
+                        distinguishedName = $result.Properties["distinguishedname"][0]
+                        DNSHostName = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
+                        Domain = $domainToTry
+                        Enabled = if ($result.Properties["useraccountcontrol"].Count -gt 0) { 
+                            -not ([int]$result.Properties["useraccountcontrol"][0] -band 2) 
+                        } else { 
+                            $null 
+                        }
+                        IsDomainPrincipal = $true
+                        SamAccountName = $result.Properties["samaccountname"][0]
+                        SID = $objectSid
+                        UserPrincipalName = if ($result.Properties["userprincipalname"].Count -gt 0) { $result.Properties["userprincipalname"][0] } else { $null }
+                        Type = $objectClass.Substring(0,1).ToUpper() + $objectClass.Substring(1).ToLower()
+                        Error = $null
+                    }
+                    
+                    $searcher.Dispose()
+                    $script:ResolvedPrincipalCache[$cacheKey] = $returnResult
+                    return $returnResult
+                }
+                
+                $searcher.Dispose()
+                
+            } catch {
+                Write-LogMessage Verbose "DirectorySearcher failed for '$Name' in domain '$domainToTry': $_"
+            }
+        }
+        
+        # Try NTAccount translation
+        try {
+            Write-LogMessage Verbose "Attempting NTAccount translation for '$Name' in domain '$domainToTry'"
+            
+            # Try direct SID lookup
+            $ntAccount = New-Object System.Security.Principal.NTAccount($domainToTry, $Name)
+            $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier])
+            $resolvedSid = $sid.Value
+            Write-LogMessage Verbose "Resolved SID for '$Name' using NTAccount in '$domainToTry': $resolvedSid"
+            
+            $ntResult = [PSCustomObject]@{
+                name = "$domainToTry\$Name"
+                SID = $resolvedSid
+                Domain = $domainToTry
                 Error = $null
             }
-            $script:ResolvedPrincipalCache[$cacheKey] = $sidResult
-            return $sidResult
+            $script:ResolvedPrincipalCache[$cacheKey] = $ntResult
+            return $ntResult
         } catch {
-            Write-LogMessage Verbose "SID to name translation failed for '$Name': $_"
+            Write-LogMessage Verbose "NTAccount translation failed for '$Name' in domain '$domainToTry': $_"
         }
+        
+        # Try SID to name translation as final attempt (if input looks like a SID)
+        if ($Name -match "^S-\d+-\d+") {
+            try {
+                Write-LogMessage Verbose "Attempting SID to name translation for '$Name'"
+                $sid = New-Object System.Security.Principal.SecurityIdentifier($Name)
+                $resolvedName = $sid.Translate([System.Security.Principal.NTAccount]).Value
+                Write-LogMessage Verbose "Resolved name for SID '$Name': $resolvedName"
+                
+                $sidResult = [PSCustomObject]@{
+                    name = $resolvedName
+                    SID = $Name
+                    Domain = $domainToTry
+                    Error = $null
+                }
+                $script:ResolvedPrincipalCache[$cacheKey] = $sidResult
+                return $sidResult
+            } catch {
+                Write-LogMessage Verbose "SID to name translation failed for '$Name': $_"
+            }
+        }
+        
+        # Mark this domain as failed in cache and continue to next domain
+        Write-LogMessage Verbose "Failed to resolve '$Name' in domain '$domainToTry', trying next domain if available"
+        $script:ResolvedPrincipalCache[$cacheKey] = $null
     }
     
-    # Return failure
-    $script:ResolvedPrincipalCache[$cacheKey] = $null
+    # All domains failed
+    Write-LogMessage Verbose "Failed to resolve '$Name' in all attempted domains"
     return $null
 }
 
@@ -1245,7 +1287,7 @@ function Add-DeviceToTargets {
         if (-not ($DeviceName -match '\.')) {
             # keep short name as provided; resolution may happen later in another phase
         }
-        Write-LogMessage Warning "Could not resolve '$DeviceName' to a domain object; adding by name."
+        Write-LogMessage Warning "Could not resolve '$DeviceName' to a domain object; adding by name"
     }
 
     # Existing target by dedup key?
@@ -1782,8 +1824,8 @@ function Invoke-PostProcessing {
                             }
                         }
 
-                        # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site server
-                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -contains "SMS Provider") {
+                        # If an SMS Provider domain computer account is being added, create SCCM_AssignAllPermissions edge to the site
+                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -like "*SMS Provider*") {
 
                             # Get all sites in this hierarchy
                             $sitesInHierarchy = @(Get-SitesInHierarchy -SiteCode $primarySiteForSiteSystem.Id -ExcludeSecondarySites)
@@ -1826,12 +1868,12 @@ function Invoke-PostProcessing {
 
                         # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
                         if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)") {
-                            Process-CoerceAndRelayToAdminService -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
+                            Process-CoerceAndRelayToAdminService -SiteCode $primarySiteForSiteSystem.Id -CollectionSource @("Post-processing")
                         }
 
                         # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
                         if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server|Provider|Management Point)@$($primarySiteForSiteSystem.Id)") {
-                            Process-CoerceAndRelayToMSSQL -SiteCode $primarySiteForSiteSystem.Id -CollectionSource $computerNode.Properties["collectionSource"]
+                            Process-CoerceAndRelayToMSSQL -SiteCode $primarySiteForSiteSystem.Id
                         }
                     }
                 }
@@ -2568,7 +2610,7 @@ function Get-HierarchyRoot {
         $_.properties.siteType -eq "Primary Site" 
     })
     
-    return if ($primarySites -and $primarySites.Count -gt 0) { $primarySites[0] } else { $null }
+    return $(if ($primarySites -and $primarySites.Count -gt 0) { $primarySites[0] } else { $null })
 }
 
 function Get-AllHierarchies {
@@ -2754,7 +2796,7 @@ function Get-MssqlEpaSettingsViaRemoteRegistry {
                     elseif ($epSetting -eq 2) {
                         $extendedProtection = "Required"
                     }
-                    else {
+                    elseif ($epSetting -eq 0) {
                         $extendedProtection = "Off"
                     }
                     
@@ -3140,35 +3182,41 @@ function Invoke-LDAPCollection {
             }
         }
 
-        foreach ($system in $remoteControlSystems) {
+        if ($remoteControlSystems.Count -gt 0) {
 
-            Write-LogMessage Success "Found computer with Remote Control SPN: $($system.DNSHostName)"
+            # Get the first primary site code published to AD -- this could very well be wrong in multi-site environments, but it should be in the same hierarchy
+            $siteCode = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.properties.siteType -eq "Primary Site" } | Select-Object -First 1 | ForEach-Object { $_.id }
 
-            # Create Computer node for these systems
-            if ($system.ObjectSid) {
-                $null = Upsert-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
-                    collectionSource = @("LDAP-CmRcService")
-                    name = $system.Name
-                    SCCMHasClientRemoteControlSPN = $true
-                }
+            foreach ($system in $remoteControlSystems) {
 
-                # Make SCCM_ClientDevice node and link to Computer node if requested
-                if ($IncludePossibleEdges) {
+                Write-LogMessage Success "Found computer with Remote Control SPN: $($system.DNSHostName)"
 
-                    # Generate GUID for SCCM Client node (may produce duplicates if client devices are enumerated later)
-                    $sccmClientId = [Guid]::NewGuid().ToString()
-
-                    $null = Upsert-Node -Id $sccmClientId -Kinds @("SCCM_ClientDevice") -PSObject $system -Properties @{
+                # Create Computer node for these systems
+                if ($system.ObjectSid) {
+                    $null = Upsert-Node -Id $system.ObjectSid.Value -Kinds @("Computer", "Base") -PSObject $system -Properties @{
                         collectionSource = @("LDAP-CmRcService")
-                        ADDomainSID = $system.ObjectSid.Value
-                        name = "$($system.Name)@$($siteCode)"
-                        siteCode = $siteCode
-                        SMSID = "Not yet collected"
+                        name = $system.Name
+                        SCCMHasClientRemoteControlSPN = $true
                     }
 
-                    # Create edge from site to client device
-                    Upsert-Edge -Start $siteCode -Kind "SCCM_HasClient" -End $sccmClientId -Properties @{
-                        collectionSource = @("AdminService-ClientDevices")
+                    # Make SCCM_ClientDevice node and link to Computer node if requested
+                    if ($IncludePossibleEdges) {
+
+                        # Generate GUID for SCCM Client node (may produce duplicates if client devices are enumerated later)
+                        $sccmClientId = [Guid]::NewGuid().ToString()
+
+                        $null = Upsert-Node -Id $sccmClientId -Kinds @("SCCM_ClientDevice") -PSObject $system -Properties @{
+                            collectionSource = @("LDAP-CmRcService")
+                            ADDomainSID = $system.ObjectSid.Value
+                            name = "$($system.Name)@$($siteCode)"
+                            siteCode = $siteCode
+                            SMSID = "Not yet collected"
+                        }
+
+                        # Create edge from site to client device
+                        Upsert-Edge -Start $siteCode -Kind "SCCM_HasClient" -End $sccmClientId -Properties @{
+                            collectionSource = @("AdminService-ClientDevices")
+                        }
                     }
                 }
             }
@@ -4660,39 +4708,38 @@ function Invoke-RemoteRegistryCollection {
             Write-LogMessage Error "Error querying CurrentUser key on $target`: $currentUserResult"
         } elseif ($currentUserResult -and $currentUserResult.Count -eq 0) {
             Write-LogMessage Verbose "No values found in CurrentUser subkey on $target"
+        } elseif ($currentUserResult -and $currentUserResult.Count -eq 1) {
+            $currentUserSid = $currentUserResult.Values | Select-Object -Index 0
         } elseif ($currentUserResult -and $currentUserResult.Count -eq 2) {
             $currentUserSid = $currentUserResult.Values | Select-Object -Index 1
-            Write-LogMessage Verbose "Found CurrentUser $currentUserSid on $target"
-            # Resolve SID to AD object
-            try {
-                $userADObject = Resolve-PrincipalInDomain -Name $currentUserSid -Domain $script:Domain
-
-                if ($userADObject) {
-                    Write-LogMessage Success "Found current user: $($userADObject.SamAccountName) ($currentUserSid)"
-                    
-                    # Create User node for current user
-                    $null = Upsert-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
-                        collectionSource = @("RemoteRegistry-CurrentUser")
-                        name = $userADObject.samAccountName
-                    }
-
-                    # Create Computer -[HasSession]-> User edge
-                    Upsert-Edge -Start $CollectionTarget.ADObject.SID -Kind "HasSession" -End $currentUserSid -Properties @{
-                        collectionSource = @("RemoteRegistry-CurrentUser")
-                    }
-                } else {
-                    Write-LogMessage Warning "Failed to resolve current user SID $sid"
-                }
-            } catch {
-                Write-LogMessage Error "Error resolving current user SID $sid`: $_"
-            }
         } else {
             Write-LogMessage Warning "Unexpected number of values in CurrentUser subkey on $target`: $($currentUserResult.Count)"
         }
 
-        # Get Extended Protection for Authentication (EPA) settings from SQL Server instance(s)
+        Write-LogMessage Verbose "Found CurrentUser $currentUserSid on $target"
+        # Resolve SID to AD object
+        try {
+            $userADObject = Resolve-PrincipalInDomain -Name $currentUserSid -Domain $script:Domain
 
-        
+            if ($userADObject) {
+                Write-LogMessage Success "Found current user: $($userADObject.SamAccountName) ($currentUserSid)"
+                
+                # Create User node for current user
+                $null = Upsert-Node -Id $currentUserSid -Kinds @("User", "Base") -PSObject $userADObject -Properties @{
+                    collectionSource = @("RemoteRegistry-CurrentUser")
+                    name = $userADObject.samAccountName
+                }
+
+                # Create Computer -[HasSession]-> User edge
+                Upsert-Edge -Start $CollectionTarget.ADObject.SID -Kind "HasSession" -End $currentUserSid -Properties @{
+                    collectionSource = @("RemoteRegistry-CurrentUser")
+                }
+            } else {
+                Write-LogMessage Warning "Failed to resolve current user SID $sid"
+            }
+        } catch {
+            Write-LogMessage Error "Error resolving current user SID $sid`: $_"
+        }
         Write-LogMessage Success "Remote Registry collection completed for $target"
     } catch {
         Write-LogMessage Error "Remote Registry collection failed for $target`: $_"
@@ -5732,7 +5779,7 @@ function Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer {
 function Add-MSSQLNodesAndEdgesForPrimarySite {
     param(
         [Parameter(Mandatory = $true)][string]$SiteCode,
-        [Parameter(Mandatory = $true)][PSObject]$sqlServerDomainObject,
+        [Parameter(Mandatory = $true)][PSObject]$SqlServerDomainObject,
         [string]$SqlDatabaseName,
         [int]$SqlServicePort = 1433,
         [psobject]$SiteServerDomainObject,
@@ -5741,6 +5788,28 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
     )
 
     try {
+
+        # Create or update MSSQL_Server node first
+        $portSuffix = if ($SqlServicePort) { ":$SqlServicePort" } else { ":1433" }
+        $SQLServerDomainSID = "$( $SqlServerDomainObject.SID )$portSuffix"
+        $null = Upsert-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
+            collectionSource = @($CollectionSource)
+            databases = if ($SqlDatabaseName) { @($SqlDatabaseName) } else { @() }
+            extendedProtection = if ($EPASettings) { $EPASettings.ExtendedProtection } else { $null }
+            forceEncryption = if ($EPASettings) { $EPASettings.ForceEncryption } else { $null }
+            name = "$($SqlServerDomainObject.dNSHostName)$portSuffix"
+            dnsHostName = $SqlServerDomainObject.dNSHostName
+            SQLServicePort = if ($SqlServicePort) { $SqlServicePort } else { 1433 }
+            SCCMInfra = if ($SiteCode -ne "Unknown") { $true } else { $false }
+            SCCMSite = if ($SiteCode -ne "Unknown") { $SiteCode } else { $null }
+        }
+
+        if ($SiteCode -eq "Unknown") {
+            Write-LogMessage Warning "Skipping SCCM site database node/edge creation for collection target without a site code"
+            return
+        }
+
+
         # Bail if this is a secondary site or if site type is not defined
         $siteNode = $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $SiteCode }
         if (-not $siteNode.Properties.siteType -or $siteNode.Properties.siteType -eq "Secondary Site") {
@@ -5748,28 +5817,14 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
             return
         }
 
-        # Add site database role to Computer object to catch passive site servers and others not enumerated from RemoteRegistry
-        $SqlServerFQDN = $sqlServerDomainObject.dNSHostName
-        Write-LogMessage Info "Processing MSSQL nodes/edges for primary site $SiteCode on SQL server $SqlServerFQDN"
-        $null = Upsert-Node -Id $sqlServerDomainObject.SID -Kinds @("Computer", "Base") -Properties @{
-            collectionSource = @($CollectionSource)
-            SCCMInfra = $true
-            SCCMSiteSystemRoles = @("SMS SQL Server@$SiteCode")
-        }
+        # Bail if we don't know this is a site database from Remote Registry collection
+        if (-not $IncludePossibleEdges) {
+            $sqlServerComputerNode = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Id -eq $SqlServerDomainObject.SID }
 
-        # Create or update MSSQL_Server node
-        $portSuffix = if ($SqlServicePort) { ":$SqlServicePort" } else { ":1433" }
-        $SQLServerDomainSID = "$( $sqlServerDomainObject.SID )$portSuffix"
-        $null = Upsert-Node -Id $SQLServerDomainSID -Kinds @("MSSQL_Server") -Properties @{
-            collectionSource = @($CollectionSource)
-            databases = if ($SqlDatabaseName) { @($SqlDatabaseName) } else { @() }
-            extendedProtection = if ($EPASettings) { $EPASettings.ExtendedProtection } else { $null }
-            forceEncryption = if ($EPASettings) { $EPASettings.ForceEncryption } else { $null }
-            name = "$($sqlServerDomainObject.dNSHostName)$portSuffix"
-            dnsHostName = $sqlServerDomainObject.dNSHostName
-            SQLServicePort = if ($SqlServicePort) { $SqlServicePort } else { 1433 }
-            SCCMInfra = $true
-            SCCMSite = $SiteCode
+            if ($sqlServerComputerNode.properties.collectionSource -notcontains "RemoteRegistry-MultisiteComponentServers") {
+                Write-LogMessage Verbose "Skipping MSSQL node/edge creation for $($SqlServerDomainObject.dNSHostName) as site database is not known from Remote Registry collection"
+                return
+            }
         }
 
         # Ensure database name
@@ -5855,11 +5910,11 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
         # Create edges
         ## Computer level
         ### (Computer) -[MSSQL_HostFor]-> (MSSQL_Server)
-        Upsert-Edge -Start $sqlServerDomainObject.SID -Kind "MSSQL_HostFor" -End $SQLServerDomainSID -Properties @{
+        Upsert-Edge -Start $SqlServerDomainObject.SID -Kind "MSSQL_HostFor" -End $SQLServerDomainSID -Properties @{
             collectionSource = @($CollectionSource)
         }
         ### (MSSQL_Server) -[MSSQL_ExecuteOnHost]-> (Computer)
-        Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_ExecuteOnHost" -End $sqlServerDomainObject.SID -Properties @{
+        Upsert-Edge -Start $SQLServerDomainSID -Kind "MSSQL_ExecuteOnHost" -End $SqlServerDomainObject.SID -Properties @{
             collectionSource = @($CollectionSource)
         }
 
@@ -5960,12 +6015,19 @@ function Invoke-MSSQLCollection {
         $epaResult = Get-MssqlEpaSettingsViaTDS -ServerNameOrIP $target -Port $Port -ServerString $serverString
         if ($epaResult) {
 
+            # If there is no SiteCode from LDAP or RemoteRegistry collection (e.g., if matched a naming pattern), set to "Unknown"
+            if (-not $CollectionTarget.SiteCode) {
+                Write-LogMessage Warning "No SiteCode found for CollectionTarget $target"
+                $CollectionTarget.SiteCode = "Unknown"
+            }
+
             Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $CollectionTarget.SiteCode `
                                           -SqlServerDomainObject $CollectionTarget.ADObject `
                                           -SqlServicePort $Port `
                                           -CollectionSource @("MSSQL-ScanForEPA") `
                                           -EPASettings $epaResult
-            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"   
+
+            Write-LogMessage Success "Successfully collected EPA settings via MSSQL"
         } else {
             Write-LogMessage Warning "Failed to collect EPA settings via MSSQL"
         }
@@ -6030,9 +6092,8 @@ function Process-CoerceAndRelayToAdminService {
 
 function Process-CoerceAndRelayToMSSQL {
     param(
-        $SiteCode,
-        [array]$CollectionSource
-   )
+        $SiteCode
+    )
 
     # Get all site databases that have EPA set to Off and RestrictReceivingNtlmTraffic set to Off for the specified site code
     $siteDatabaseComputerNodes = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$SiteCode" -and ($null -eq $_.Properties.restrictReceivingNtlmTraffic -or $_.Properties.restrictReceivingNtlmTraffic -eq "Off" ) }
@@ -6077,6 +6138,15 @@ function Process-CoerceAndRelayToMSSQL {
             continue
         }
 
+        # Bail if Extended Protection is not Off
+        if (-not $mssqlServerNode.Properties.extendedProtection) {
+            if ($IncludePossibleEdges) {
+                $mssqlServerNode.Properties.extendedProtection = "Off"
+            } else {
+                continue
+            }
+        }
+
         if ($mssqlServerNode.Properties.extendedProtection -and $mssqlServerNode.Properties.extendedProtection -ne "Off") {
             Write-LogMessage Verbose "MSSQL server $($mssqlServerNode.Properties.name) has Extended Protection enabled ($($mssqlServerNode.Properties.extendedProtection)), skipping coerce and relay to MSSQL edge"
             continue
@@ -6107,9 +6177,12 @@ function Process-CoerceAndRelayToMSSQL {
                     -Properties @{
                         name = "AUTHENTICATED USERS@$($computerWithMssqlLogin.Properties.Domain)"
                     }
+
+            # Get collection source from MSSQL server node EPA properties
+            $collectionSource = @($mssqlServerNode.Properties["collectionSource"] | Where-Object { $_ -like "MSSQL-ScanForEPA" -or $_ -like "RemoteRegistry-MultisiteComponentServers" })
             
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToMSSQL" -End $mssqlLogin.Id -Properties @{
-                collectionSource = @($CollectionSource)
+                collectionSource = @($collectionSource)
                 coercionVictimHostName = $computerWithMssqlLogin.Properties.dNSHostName
                 relayTargetHostName = $mssqlServerNode.Properties.dNSHostName
                 relayTargetPort = $mssqlServerNode.Properties.SQLServicePort
@@ -6410,24 +6483,6 @@ function Get-SitesViaAdminService {
             #                            -SiteServerDomainObject $siteServerDomainObject `
             #                            -CollectionSource @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
         }
-    
-        <#
-        # Loop again to add parent site edges now that all sites are created and populated
-        foreach ($site in $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }) {
-
-            # Create edges in both directions between primary sites and central administration sites, but only from primary sites to secondary sites
-            if ($site.siteType -ne )
-
-
-            if ($site.properties.ParentSiteCode -and $site.properties.ParentSiteCode -ne "None") {
-    
-                # Create Site-to-Site edges
-                Upsert-Edge -Start $site.properties.SiteCode -Kind "SCCM_AdminsReplicatedTo" -End $site.properties.ParentSiteCode -Properties @{
-                    collectionSource = @("AdminService-SMS_SCI_SiteDefinition")
-                }
-            }
-        }#>
-
         return $true
 
     } catch {
@@ -7304,16 +7359,26 @@ function Get-SiteSystemRolesViaAdminService {
 
                     # Create or update Computer node
                     if ($computerObject) {
-                        $null = Upsert-Node -Id $computerObject.SID -Kinds @("Computer", "Base") -PSObject $computerObject -Properties @{
+                        $computerNode = Upsert-Node -Id $computerObject.SID -Kinds @("Computer", "Base") -PSObject $computerObject -Properties @{
                             collectionSource = @("AdminService-SMS_SCI_SysResUse")
                             name = $computerObject.samAccountName
                             SCCMInfra = $true
                             SCCMSiteSystemRoles = $roleNames
                         }
+
+                        # Add MSSQL nodes and edges for site database servers
+                        if ($roleNames -contains "SMS SQL Server@$siteCode") {
+                            $siteNode = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.id -eq $siteCode }
+                            if ($siteNode) {
+                                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode `
+                                                             -SiteDatabaseComputerNode $computerNode `
+                                                             -CollectionSource "AdminService-SMS_SCI_SysResUse" `
+                            }
+                        }
+
                     } else {
                         Write-LogMessage Error "No domain object found for $systemName, but site systems require domain accounts"
                     }
-
                     $totalProcessed++
                 }
             }
@@ -8453,7 +8518,7 @@ public const int NERR_ServerNotStarted = 2114;
                 name = $CollectionTarget.ADObject.samAccountName
                 SCCMHostsContentLibrary = $hostsContentLib
                 SCCMIsPXESupportEnabled = $isPXEEnabled
-                SCCMSiteSystemRoles = $roles
+                SCCMSiteSystemRoles = if ($roles) { $roles } else { $null }
             }
         } else {
             Write-LogMessage Warning "Failed to enumerate SMB shares on $target (access denied or not accessible)"
@@ -9306,13 +9371,6 @@ try {
                         "type" = "font-awesome"
                     }
                 }
-                "Host" = @{
-                    "icon" = @{
-                        "color" = "#2eff4d"
-                        "name" = "laptop-code"
-                        "type" = "font-awesome"
-                    }
-                }   
             }
         }
         

@@ -25,14 +25,14 @@ param(
     #[string]$CollectionMethods = 'AdminService',
 
     [Parameter(Mandatory=$false)]
-    [switch]$IncludePossibleEdges = $true,
+    [switch]$IncludePossibleEdges,
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
     [string]$SmsProvider,# = 'cas-pss.mayyhem.com',
 
     [Parameter(Mandatory=$false)]
-    [string]$LogFile = ".\ConfigManBearPigUnitTests.log",
+    [string]$LogFile,
 
     # Limit tests to a single edge type for focused debugging
     [Parameter(Mandatory=$false)]
@@ -610,8 +610,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 2
-        Description = "The primary and passive PS1 site database MSSQL servers contain the CM_<SiteCode> database"
+        Count = 1
+        Description = "The PS1 site database MSSQL server contains the CM_<SiteCode> database"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -627,8 +627,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 2
-        Description = "The primary and passive PS1 site database MSSQL servers contain the PS1-PSS$ login"
+        Count = 1
+        Description = "The PS1 site database MSSQL server contains the PS1-PSS$ login"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -644,8 +644,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 2
-        Description = "The primary and passive PS1 site databases contain the db_owner database role"
+        Count = 1
+        Description = "The PS1 site database contains the db_owner database role"
         Source = @{
             Kinds = @("MSSQL_Database")
             Properties = @{
@@ -661,8 +661,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 2
-        Description = "The primary and passive PS1 site databases contain the PS1-PSS$ user"
+        Count = 1
+        Description = "The PS1 site database contains the PS1-PSS$ user"
         Source = @{
             Kinds = @("MSSQL_Database")
             Properties = @{
@@ -678,7 +678,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL servers contain the sysadmin server role"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -699,7 +699,7 @@ $script:ExpectedEdges = @(
     ###################
     @{
         Kind="MSSQL_ControlDB"
-        Count = 3
+        Count = 2
         Description = "The db_owner MSSQL database role controls the site database"
         Source = @{
             Kinds = @("MSSQL_DatabaseRole")
@@ -720,7 +720,7 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ControlServer"
-        Count = 3
+        Count = 2
         Description = "The sysadmin MSSQL server role controls the server instance"
         Source = @{
             Kinds = @("MSSQL_ServerRole")
@@ -741,7 +741,7 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ExecuteOnHost"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL server can execute commands on its host"
         Source = @{
             Kinds = @("MSSQL_Server")
@@ -762,7 +762,7 @@ $script:ExpectedEdges = @(
     #####################
     @{
         Kind="MSSQL_GetAdminTGS"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL service account can request a TGS for any domain login on the server instance"
         Source = @{
             Kinds = @("User", "Base")
@@ -806,8 +806,8 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="MSSQL_HasLogin"
-        Count = 6
-        Description = "The primary and passive site server and SMS Provider computers have logins on the MSSQL server instances (CAS-PSS -> CAS-DB, PS1-PSS -> PS1-DB, PS1-SMS -> PS1-DB, PS1-SMS -> PS1-PSV, PS1-PSV -> PS1-DB)"
+        Count = 4
+        Description = "The primary and passive site server and SMS Provider computers have logins on the MSSQL server instances (CAS-PSS -> CAS-DB, PS1-PSS -> PS1-DB, PS1-SMS -> PS1-DB, PS1-PSV -> PS1-DB)"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -827,7 +827,7 @@ $script:ExpectedEdges = @(
     #################
     @{
         Kind="MSSQL_HostFor"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL server computers host the MSSQL server instances"
         Source = @{
             Kinds = @("Computer", "Base")
@@ -848,7 +848,7 @@ $script:ExpectedEdges = @(
     ####################
     @{
         Kind="MSSQL_IsMappedTo"
-        Count = 6
+        Count = 4
         Description = "The primary and passive site server and SMS Provider MSSQL server logins (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are mapped to database users in the site databases"
         Source = @{
             Kinds = @("MSSQL_Login")
@@ -869,7 +869,7 @@ $script:ExpectedEdges = @(
     ##################
     @{
         Kind="MSSQL_MemberOf"
-        Count = 6
+        Count = 4
         Description = "The primary and passive site server and SMS Provider MSSQL database users (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are members of the db_owner database role in the site databases"
         Source = @{
             Kinds = @("MSSQL_DatabaseUser")
@@ -886,7 +886,7 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_MemberOf"
-        Count = 6
+        Count =  4
         Description = "The primary and passive site server and SMS Provider MSSQL server logins (CAS-PSS, PS1-PSS, PS1-PSV, and PS1-SMS) are members of the sysadmin server role on the MSSQL server instances"
         Source = @{
             Kinds = @("MSSQL_Login")
@@ -907,7 +907,7 @@ $script:ExpectedEdges = @(
     ###########################
     @{
         Kind="MSSQL_ServiceAccountFor"
-        Count = 3
+        Count = 2
         Description = "The site database MSSQL service account is the service account for the MSSQL server instances (CAS and PS1 primary and passive)"
         Source = @{
             Kinds = @("User", "Base")
@@ -1533,6 +1533,7 @@ function Invoke-Collection {
     # "-CollectionMethods","'AdminService'","-SmsProvider","site-sms.aperture.local","-Verbose"
     $scriptParams = @{
         CollectionMethods = $CollectionMethods
+        LogFile = $LogFile
         SmsProvider = $SmsProvider
         Verbose = $true
     }
