@@ -33,6 +33,7 @@ Limitations:
 
 In Progress / To Do:
     - Unprivileged unit testing
+    - Memory/disk usage monitoring functions
     - CoerceAndRelayNTLMtoSMB collection
     - Entity panels
     - Get members of groups with permissions on System Management container
@@ -42,6 +43,7 @@ In Progress / To Do:
     - Remove hardcoded port 1433 from AdminService collection
     - Relay management point computer accounts to site databases
     - Secondary site databases
+    - Group and user collection members
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
     - CMPivot collection (privileged)
@@ -1559,7 +1561,7 @@ function Invoke-PostProcessing {
                 $rootSiteCode = if ($rootSiteNode) {
                     $rootSiteNode.id
                 } else { 
-                    Write-Warning "Could not determine root site code for hierarchy containing site $($sccmSiteNode.id); using current site as root"
+                    Write-LogMessage Warning "Could not determine root site code for hierarchy containing site $($sccmSiteNode.id); using current site as root"
                     $sccmSiteNode.id
                 }
                 
@@ -1620,6 +1622,11 @@ function Invoke-PostProcessing {
         }
     }
 
+    # Re-fetch global object nodes after updating their identifiers
+    $sccmAdminUserNodes = @($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_AdminUser" })
+    $sccmCollectionNodes = @($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Collection" })
+    $sccmSecurityRoleNodes = @($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_SecurityRole" })
+
     # Process nodes that occur once in each hierarchy
     foreach ($rootSite in $rootSiteNodes) {
         $rootSiteCode = $rootSite.id
@@ -1630,11 +1637,12 @@ function Invoke-PostProcessing {
 
         foreach ($securityRoleNode in $sccmSecurityRoleNodesInHierarchy) {
 
-            Write-LogMessage Verbose "Processing role assignments for $($securityRoleNode.id)"
+            Write-LogMessage Verbose "Processing role assignments for $($securityRoleNode.id) ($($securityRoleNode.Properties.name)) in hierarchy with root site $rootSiteCode"
 
             foreach ($adminUserId in $securityRoleNode.Properties.members) {
 
-                $adminUserNode = $sccmAdminUserNodes | Where-Object { $_.id -eq $adminUserId }
+                # Account for duplicate objects created during global object identifier update -- BloodHound will merge on ObjectIdentifier
+                $adminUserNode = $sccmAdminUserNodes | Where-Object { $_.id -eq $adminUserId } | Select-Object -First 1
 
                 # Track whether admin has complete control of the hierarchy
                 $adminIsFullAdministrator = $securityRoleNode.id -eq "SMS0001R@$($rootSiteCode)"
@@ -1642,7 +1650,8 @@ function Invoke-PostProcessing {
 
                 foreach ($collectionId in $adminUserNode.Properties.collectionIds) {
 
-                    $collection = $sccmCollectionNodes | Where-Object { $_.id -eq $collectionId }
+                    # Account for duplicate objects created during global object identifier update -- BloodHound will merge on ObjectIdentifier
+                    $collection = @($sccmCollectionNodes | Where-Object { $_.id -eq $collectionId }) | Select-Object -First 1
 
                     if ($collection.Properties.name -eq "All Systems" -or $collection.Properties.name -eq "All Users and User Groups") {
                         $allSystemsAllObjectsAllUsersAndUserGroups += $collectionId
@@ -2323,6 +2332,8 @@ function Update-GlobalObjectIdentifiers {
     Updates SCCM_Collection, SCCM_AdminUser, and SCCM_SecurityRole node identifiers
     to use the root site code instead of the current site code, since these objects
     are configured at the hierarchy level.
+
+    Don't worry about duplicates - BloodHound will merge on ObjectIdentifier.
     
     .PARAMETER RootSiteCode
     The root site code to use as the new suffix
@@ -2372,22 +2383,6 @@ function Update-GlobalObjectIdentifiers {
                     Write-LogMessage Verbose "Updated $($edgesToUpdate.Count) edges referencing $kind $oldId"
 
                     # --- Also update identifiers stored in object properties ---
-
-                    # SCCM_Collection.members: array of SCCM_ClientDevice IDs
-                    if ($kind -eq "SCCM_Collection" -and $obj.properties.members) {
-                        for ($i = 0; $i -lt $obj.properties.members.Count; $i++) {
-                            $memberId = $obj.properties.members[$i]
-                            if ($memberId -match '^(.+)@([A-Z0-9]{3})$') {
-                                $memberBase = $matches[1]
-                                $memberSite = $matches[2]
-                                if ($memberSite -ne $RootSiteCode) {
-                                    $newMemberId = "$memberBase@$RootSiteCode"
-                                    Write-LogMessage Verbose "Updating SCCM_Collection.members entry: $memberId -> $newMemberId"
-                                    $obj.properties.members[$i] = $newMemberId
-                                }
-                            }
-                        }
-                    }
 
                     # SCCM_AdminUser.memberOf: array of SCCM_SecurityRole IDs
                     if ($kind -eq "SCCM_AdminUser" -and $obj.properties.memberOf) {
@@ -4933,7 +4928,7 @@ function Get-MssqlEpaSettingsViaTDS {
     if ($portIsOpen) {
         try {  
             if ($PSVersionTable.PSVersion.Major -ge 7) {
-                Write-Warning "Running in PowerShell 7+, so System.Data.SqlClient is unavailable, trying Microsoft.Data.SqlClient, may require installation"
+                Write-LogMessage Warning "Running in PowerShell 7+, so System.Data.SqlClient is unavailable, trying Microsoft.Data.SqlClient, may require installation"
                 $sqlClientAsm = "Microsoft.Data.SqlClient"
             } else {
                 $sqlClientAsm = "System.Data.SqlClient"
@@ -6895,12 +6890,11 @@ function Get-CollectionsViaAdminService {
 
 function Get-CollectionMembersViaAdminService {
     param(
-        [string]$Target,
-        [string]$SiteCode
+        [string]$Target
     )
 
     try {
-        Write-LogMessage Info "Collecting collection members via SMS_FullCollectionMembership from $Target for site $SiteCode"
+        Write-LogMessage Info "Collecting collection members via SMS_FullCollectionMembership from $Target"
         # Query SMS_FullCollectionMembership as per design document
         $select = "`$select=CollectionID,ResourceID,SiteCode"
         $batchSize = 1000
@@ -6933,18 +6927,22 @@ function Get-CollectionMembersViaAdminService {
             
             foreach ($collection in $membersByCollection) {
 
-                $collectionId = "$($collection.Name)@$SiteCode"
+                # Get site code from first member in group, will be set to root site code later
+                $siteCode = $collection.Group[0].SiteCode
+                $collectionId = "$($collection.Name)@$siteCode"
 
                 # Update collection node with members
                 $null = Upsert-Node -Id $collectionId -Kinds @("SCCM_Collection") -Properties @{
                     collectionSource = @("AdminService-SMS_FullCollectionMembership")
                     # Use member site code from response
                     members = $collection.Group | ForEach-Object { "$($_.ResourceID)@$($_.SiteCode)" }
-                    sourceSiteCode = $SiteCode
+                    sourceSiteCode = $siteCode
                 }
 
                 # Create edges for each member
                 foreach ($member in $collection.Group) {
+                    $memberNode = $null
+
                     # First get the node for the member
                     $memberUser = $script:Nodes | Where-Object { $_.kinds -contains "User" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$($member.SiteCode)" }
                     $memberGroup = $script:Nodes | Where-Object { $_.kinds -contains "Group" -and $_.properties.SCCMResourceIDs -contains "$($member.ResourceID)@$($member.SiteCode)" }
@@ -6968,9 +6966,6 @@ function Get-CollectionMembersViaAdminService {
                                 collectionIds = @($collectionId)
                             }
                         }
-                        
-                    
-
                     } elseif ($member.ResourceID -eq '2046820352') {
                         Write-LogMessage Verbose "Skipping built-in collection member $($member.ResourceID): x86 Unknown Computer"
                     } elseif ($member.ResourceID -eq '2046820353') {
@@ -8166,12 +8161,10 @@ function Invoke-HTTPCollection {
                     }
 
                     if ($isSMS) {
+                        Write-LogMessage Success "Found SMS Provider role on $target"
+
                         # This device is already in targets but this returns its ADObject to update the Computer node properties
                         $smsProvider = Add-DeviceToTargets -DeviceName $target -Source "HTTP-SMS_Identification" -SiteCode $(if ($siteCode) { $siteCode })
-
-                        if ($smsProvider -and $smsProvider.IsNew) {
-                            Write-LogMessage Success "Found SMS Provider role on $target"
-                        }
 
                         # Assume site code is same as other roles discovered on this target
                         if (-not $siteCode -and $smsProvider.SiteCode) {
