@@ -120,11 +120,11 @@ Skip post-processing edge creation (creates only direct edges from collection)
 
 .PARAMETER IncludePossibleEdges
 Switch/Flag:
-    - On: Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
+    - On (default): Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
         - CoerceAndRelayToMSSQL: EPA setting is assumed to be Off if the MSSQL server can't be reached
         - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, otherwise use Remote Registry collection to confirm
         - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
-    - Off (default): The edges above are not created or are created as non-traversable
+    - Off: The edges above are not created or are created as non-traversable
 
 .PARAMETER Verbose
 Enable verbose output
@@ -163,7 +163,7 @@ param(
     
     [switch]$SkipPostProcessing,
 
-    [switch]$IncludePossibleEdges,
+    [switch]$IncludePossibleEdges = $true,
 
     [switch]$Version
 )
@@ -269,7 +269,8 @@ function Test-Prerequisites {
 $script:PhasesOnce    = @('LDAP','Local','DNS')
 
 # Phases that run PER HOST
-$script:PhasesPerHost = @('RemoteRegistry','MSSQL','AdminService','WMI','HTTP','SMB')
+#$script:PhasesPerHost = @('RemoteRegistry','MSSQL','AdminService','WMI','HTTP','SMB')
+$script:PhasesPerHost = @('RemoteRegistry','MSSQL','AdminService','HTTP','SMB')
 
 # Canonical overall order (for selection + display)
 $script:AllPhases = $script:PhasesOnce + $script:PhasesPerHost
@@ -1866,7 +1867,7 @@ function Invoke-PostProcessing {
             } | Select-Object -Unique)
 
             # Loop through each site this computer hosts roles for
-            foreach ($siteCodeForSiteSystem in $siteCodes) {
+            foreach ($siteCodeForSiteSystem in $siteCodes) {       
 
                 # Find the primary site for this site system
                 if ($siteCodeForSiteSystem) {
@@ -1874,6 +1875,19 @@ function Invoke-PostProcessing {
 
                     # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
                     if ($primarySiteForSiteSystem) {
+
+                        # Initialize the siteSystemRoles property if it doesn't exist
+                        if (-not $primarySiteForSiteSystem.Properties.ContainsKey("siteSystemRoles")) {
+                            $primarySiteForSiteSystem.Properties["siteSystemRoles"] = @()
+                        }
+                        
+                        # Add the computer to the list if it's not already there
+                        if ($computerNode.Properties.dNSHostName -notin $primarySiteForSiteSystem.Properties["siteSystemRoles"]) {
+                            foreach ($role in $computerNode.Properties["SCCMSiteSystemRoles"] | Where-Object { $_ -like "*@$($primarySiteForSiteSystem.Id)" }) {
+                                $primarySiteForSiteSystem.Properties["siteSystemRoles"] += "$($computerNode.Properties.dNSHostName): $role"
+                            }
+                            Write-LogMessage Verbose "Added $($computerNode.Properties.dNSHostName) to siteSystemRoles for site $siteCodeForSiteSystem"
+                        }
 
                         # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
                         if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)") {
@@ -3210,7 +3224,7 @@ function Invoke-LDAPCollection {
 
                         # Create edge from site to client device
                         Upsert-Edge -Start $siteCode -Kind "SCCM_HasClient" -End $sccmClientId -Properties @{
-                            collectionSource = @("AdminService-ClientDevices")
+                            collectionSource = @("LDAP-CmRcService")
                         }
                     }
                 }
@@ -3888,6 +3902,7 @@ function Invoke-LocalCollection {
                     $null = Upsert-Node -Id $mp.ADObject.SID -Kinds @("Computer", "Base") -PSObject $mp.ADObject -Properties @{
                         collectionSource = @("Local-SMS_LookupMP")
                         name = $mp.ADObject.samAccountName
+                        SCCMInfra = $true
                         SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                     }
                 }
@@ -4345,6 +4360,7 @@ function Invoke-DNSCollection {
                 $null = Upsert-Node -Id $adObject.SID -Kinds @("Computer", "Base") -PSObject $adObject -Properties @{
                     collectionSource = @("DNS")
                     name = $adObject.samAccountName
+                    SCCMInfra = $true
                     SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                 }
             } else {
@@ -4508,6 +4524,7 @@ function Invoke-RemoteRegistryCollection {
                             $null = Upsert-Node -Id $componentServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $componentServer.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
                                 name = $componentServer.ADObject.samAccountName
+                                SCCMInfra = $true
                                 SCCMSiteSystemRoles = @("SMS Component Server@$siteCode")
                             }
                         }
@@ -4517,6 +4534,7 @@ function Invoke-RemoteRegistryCollection {
                             $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $CollectionTarget.ADObject -Properties @{
                                 collectionSource = @("RemoteRegistry-ComponentServer")
                                 name = $CollectionTarget.ADObject.samAccountName
+                                SCCMInfra = $true
                                 SCCMSiteSystemRoles = @("SMS Site Server@$siteCode")
                             }
                         }
@@ -4569,6 +4587,7 @@ function Invoke-RemoteRegistryCollection {
                 $siteServerComputerNode = Upsert-Node -Id $target.ADObject.SID -Kinds @("Computer", "Base") -PSObject $target.ADObject -Properties @{
                     collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                     name = $target.ADObject.samAccountName
+                    SCCMInfra = $true
                     SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode", "SMS Site Server@$siteCode")
                 }
             }
@@ -4587,6 +4606,7 @@ function Invoke-RemoteRegistryCollection {
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
                         name = $CollectionTarget.ADObject.samAccountName
+                        SCCMInfra = $true
                         restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
                     }
 
@@ -4625,6 +4645,7 @@ function Invoke-RemoteRegistryCollection {
                     $sqlServerComputerNode = Upsert-Node -Id $sqlServer.ADObject.SID -Kinds @("Computer", "Base") -PSObject $sqlServer.ADObject -Properties @{
                         collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                         name = $sqlServer.ADObject.samAccountName
+                        SCCMInfra = $true
                         SCCMSiteSystemRoles = @("SMS SQL Server@$siteCode")
                     }
 
@@ -4642,6 +4663,7 @@ function Invoke-RemoteRegistryCollection {
                             collectionSource = @("RemoteRegistry-MultisiteComponentServers")
                             disableLoopbackCheck = $epaSettings.DisableLoopbackCheck
                             name = $sqlServer.ADObject.samAccountName
+                            SCCMInfra = $true
                             restrictReceivingNtlmTraffic = $epaSettings.RestrictReceivingNtlmTraffic
                         }
 
@@ -7043,7 +7065,6 @@ function Get-SecurityRolesViaAdminService {
                     roleID = if ($role.RoleID) { $role.RoleID } else { $null }
                     roleName = if ($role.RoleName) { $role.RoleName } else { $null }
                     roleDescription = if ($role.RoleDescription) { $role.RoleDescription } else { $null }
-                    SCCMInfra = $true
                     siteCode = $SiteCode
                 }
                 $totalProcessed++
@@ -8025,6 +8046,7 @@ function Invoke-HTTPCollection {
                                     $null = Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                         collectionSource = @("HTTP-MPKEYINFORMATION")
                                         name = $managementPoint.ADObject.samAccountName
+                                        SCCMInfra = $true
                                         SCCMSiteSystemRoles = @("SMS Management Point$(if ($siteCode) { "@$siteCode" })")
                                     }
                                 }
@@ -8051,6 +8073,7 @@ function Invoke-HTTPCollection {
                                                         $null = Upsert-Node -Id $managementPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $managementPoint.ADObject -Properties @{
                                                             collectionSource = @("HTTP-MPKEYINFORMATION")
                                                             name = $managementPoint.ADObject.samAccountName
+                                                            SCCMInfra = $true
                                                             SCCMSiteSystemRoles = @("SMS Management Point@$siteCode")
                                                         }
                                                     }
@@ -8126,6 +8149,7 @@ function Invoke-HTTPCollection {
                                 $null = Upsert-Node -Id $distributionPoint.ADObject.SID -Kinds @("Computer", "Base") -PSObject $distributionPoint.ADObject -Properties @{
                                     collectionSource = @("HTTP-SMS_DP_SMSPKG$")
                                     name = $distributionPoint.ADObject.samAccountName
+                                    SCCMInfra = $true
                                     SCCMSiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                                 }
                             }
@@ -8177,6 +8201,7 @@ function Invoke-HTTPCollection {
                             $null = Upsert-Node -Id $smsProvider.ADObject.SID -Kinds @("Computer", "Base") -PSObject $smsProvider.ADObject -Properties @{
                                 collectionSource = @("HTTP-SMS_Identification")
                                 name = $smsProvider.ADObject.samAccountName
+                                SCCMInfra = $true
                                 SCCMSiteSystemRoles = @("SMS Provider$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
                             }
                         }
@@ -8287,6 +8312,7 @@ function Get-ManagementPointCertIssuer {
                 $null = Upsert-Node -Id $device.ADObject.SID -Kinds @("Computer","Base") -PSObject $device.ADObject -Properties @{
                     collectionSource = @("HTTP-sitesigncert")
                     name = $device.ADObject.samAccountName
+                    SCCMInfra = $true
                     SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@$($CollectionTarget.SiteCode)}" })")
                 }
             }
@@ -8510,6 +8536,7 @@ public const int NERR_ServerNotStarted = 2114;
                 collectionSource = $collectionSource
                 name = $CollectionTarget.ADObject.samAccountName
                 SCCMHostsContentLibrary = $hostsContentLib
+                SCCMInfra = $true
                 SCCMIsPXESupportEnabled = $isPXEEnabled
                 SCCMSiteSystemRoles = if ($roles) { $roles } else { $null }
             }
@@ -9093,207 +9120,8 @@ function Start-SCCMCollection {
     Write-LogMessage Success "SCCM collection completed."
 }
 
-
-function Start-SCCMCollectionA {
-    
-    Write-LogMessage Info "Initializing SCCM collection..."
-
-    $script:SelectedPhases = Get-SelectedPhases -Methods $CollectionMethods
-    Invoke-DiscoveryPipeline -SelectedPhases $script:SelectedPhases
-    return 
-
-    # Validate parameters
-    if ($ComputerFile -and $SMSProvider) {
-        Write-LogMessage Warning "Cannot specify both ComputerFile and SMSProvider"
-        return
-    }
-       
-    # Determine collection strategy based on parameters
-    if ($SMSProvider) {
-        Write-LogMessage Info "Using SMS Provider mode: $SMSProvider"
-
-        $collectionTarget = Add-DeviceToTargets -DeviceName $SMSProvider -Source "ScriptParameter-SMSProvider"
-
-        if (-not $collectionTarget) {
-            Write-LogMessage Error "Failed to add device to targets"
-            return
-        }
-        
-        # Only AdminService and WMI are applicable for SMS Provider mode
-        if ($enableAdminService) {
-            Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
-        }
-        
-        if ($enableWMI) {
-            Invoke-SmsProviderWmiCollection -CollectionTarget $collectionTarget
-        }
-    
-    } elseif ($Computers) {
-        Write-LogMessage Info "Using Computers mode: $($Computers -join ', ')"
-        
-        foreach ($target in $Computers) {
-            # Add targets and resolve to AD objects
-            Add-DeviceToTargets -DeviceName $target -Source "ScriptParameter-Computers"
-        }
-        
-        # Execute enabled methods for Computers mode
-        if ($enableRemoteRegistry) {
-            foreach ($collectionTarget in $@($script:CollectionTargets.Values)) {
-                Invoke-RemoteRegistryCollection -Target $collectionTarget
-            }
-        }
-
-        if ($enableMSSQL) {
-            foreach ($collectionTarget in $@($script:CollectionTargets.Values)) {
-                Invoke-MSSQLCollection -CollectionTarget $collectionTarget
-            }
-        }
-        
-        if ($enableAdminService) {
-            foreach ($collectionTarget in $script:CollectionTargets.Values) {
-                Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
-            }
-        }
-        
-        if ($enableHTTP) {
-            Invoke-HTTPCollection -Targets $script:CollectionTargets
-        }
-        
-        if ($enableSMB) {
-            Invoke-SMBCollection -Targets $script:CollectionTargets
-        }
-        
-    } elseif ($ComputerFile) {
-        Write-LogMessage Info "Using ComputerFile mode: $ComputerFile"
-        
-        if (-not (Test-Path $ComputerFile)) {
-            Write-LogMessage Warning "File not found: $ComputerFile"
-            return
-        }
-        
-        # Load targets from file
-        $computerTargets = Get-Content $ComputerFile | Where-Object { $_.Trim() -ne "" }
-        foreach ($target in $computerTargets) {
-            # Add targets and resolve to AD objects
-            Add-DeviceToTargets -DeviceName $target -Source "ScriptParameter-ComputerFile"
-        }
-        
-        # Execute enabled methods for ComputerFile mode
-        if ($enableRemoteRegistry) {
-            foreach ($collectionTarget in $@($script:CollectionTargets.Values)) {
-                Invoke-RemoteRegistryCollection -Target $collectionTarget
-            }
-        }
-
-        if ($enableMSSQL) {
-            foreach ($collectionTarget in $@($script:CollectionTargets.Values)) {
-                Invoke-MSSQLCollection -CollectionTarget $collectionTarget
-            }
-        }
-        
-        if ($enableAdminService) {
-            foreach ($collectionTarget in $script:CollectionTargets.Values) {
-                Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
-            }
-        }
-        
-        if ($enableHTTP) {
-            Invoke-HTTPCollection -Targets $script:CollectionTargets
-        }
-        
-        if ($enableSMB) {
-            Invoke-SMBCollection -Targets $script:CollectionTargets
-        }
-        
-    } else {        
-        # Phase 1: LDAP - Identify targets in System Management container
-        if ($enableLDAP) {
-            if ($script:Domain) {
-                Invoke-LDAPCollection
-            } else {
-                Write-LogMessage Warning "No domain specified, skipping LDAP collection"
-            }
-        }
-        
-        # Phase 2: Local - Data available when running on SCCM client
-        if ($enableLocal) {
-            Invoke-LocalCollection
-        }
-        
-        # Phase 3: DNS - Management points published to DNS
-        if ($enableDNS) {
-            if ($script:Domain) {
-                Invoke-DNSCollection
-            } else {
-                Write-LogMessage Warning "No domain specified, skipping DNS collection"
-            }
-        }
-        
-        if ($script:CollectionTargets.Count -eq 0 -and ($enableRemoteRegistry -or $enableAdminService -or $enableWMI -or $enableHTTP -or $enableSMB)) {
-            Write-LogMessage Warning "No SCCM targets identified from LDAP/Local/DNS phases. Ensure you have appropriate permissions and are in an SCCM environment."
-            return
-        }
-        
-        if ($script:CollectionTargets.Count -gt 0) {
-            Write-LogMessage Info "Identified $($script:CollectionTargets.Count) potential SCCM targets"
-            
-            # Phase 4: Remote Registry - On targets identified in previous phases
-            if ($enableRemoteRegistry) {
-                # Run on copy of targets to avoid modification during iteration
-                Invoke-RemoteRegistryCollection -Targets @($script:CollectionTargets.Values)
-            }
-
-            # Phase 5: MSSQL - On targets identified in previous phases
-            if ($enableMSSQL) {
-                foreach ($collectionTarget in $script:CollectionTargets.Values) {
-                    Invoke-MSSQLCollection -CollectionTarget $collectionTarget
-                }
-            }
-            
-            # Phase 6: AdminService - On targets identified in previous phases
-            if ($enableAdminService) {
-                foreach ($collectionTarget in $script:CollectionTargets.Values) {
-                    Invoke-AdminServiceCollection -CollectionTarget $collectionTarget
-                }
-            }
-            
-            # Phase 7: WMI - If AdminService collection fails
-            if ($enableWMI) {
-                $uncollectedTargets = $script:CollectionTargets.Keys | Where-Object { 
-                    -not $_.Value["Collected"] 
-                }
-                if ($uncollectedTargets.Count -gt 0) {
-                    Invoke-SmsProviderWmiCollection -CollectionTargets $uncollectedTargets
-                }
-            }
-            
-            # Phase 8: HTTP - If AdminService and WMI collections fail
-            if ($enableHTTP) {
-                $uncollectedTargets = $script:CollectionTargets.GetEnumerator() | Where-Object { 
-                    -not $_.Value["Collected"] 
-                }
-                if ($uncollectedTargets.Count -gt 0) {
-                    Invoke-HTTPCollection -Targets $uncollectedTargets
-                }
-            }
-            
-            # Phase 9: SMB - If AdminService and WMI collections fail
-            if ($enableSMB) {
-                $uncollectedTargets = $script:CollectionTargets.GetEnumerator() | Where-Object { 
-                    -not $_.Value["Collected"] 
-                }
-                if ($uncollectedTargets.Count -gt 0) {
-                    Invoke-SMBCollection -Targets $uncollectedTargets
-                }
-            }
-        }
-    }
-    Write-LogMessage "SCCM collection completed successfully!" -Level "Success"
-}
-
-
-
 #endregion
+
 
 #region Script Entry Point
 
