@@ -80,7 +80,7 @@ $script:EdgeTypes = @(
     "LocalAdminRequired",
     "CoerceAndRelayToAdminService",
     "CoerceAndRelayToMSSQL",
-    "CoerceAndRelayNTLMtoSMB",
+    "CoerceAndRelaytoSMB",
     "HasSession",
     "MSSQL_Contains",
     "MSSQL_ControlDB",
@@ -369,8 +369,7 @@ $script:ExpectedEdges = @(
             }
         }
         Properties = @{
-            coercionVictimHostName = "cas-pss.mayyhem.com"
-            relayTargetHostName = "cas-db.mayyhem.com"
+            coercionVictimAndRelayTargetPairs = @("Coerce cas-pss.mayyhem.com, relay to cas-db.mayyhem.com:1433")
         }
     },
     @{
@@ -390,8 +389,27 @@ $script:ExpectedEdges = @(
             }
         }
         Properties = @{
-            coercionVictimHostName = "ps1-pss.mayyhem.com"
-            relayTargetHostName = "ps1-db.mayyhem.com"
+            coercionVictimAndRelayTargetPairs = @("Coerce ps1-pss.mayyhem.com, relay to ps1-db.mayyhem.com:1433")
+        }
+    },
+    @{
+        Kind = "CoerceAndRelayToMSSQL"
+        Count = 1
+        Description = "Authenticated Users group can coerce and relay authentication to the MSSQL service on the PS1 site database server"
+        Source = @{
+            Kinds = @("Group", "Base")
+            Properties = @{
+                id = "*-S-1-5-11"
+            }
+        }
+        Target = @{
+            Kinds = @("MSSQL_Login")
+            Properties = @{
+                id = "MAYYHEM\PS1-SMS$@*:1433"
+            }
+        }
+        Properties = @{
+            coercionVictimAndRelayTargetPairs = @("Coerce ps1-sms.mayyhem.com, relay to ps1-db.mayyhem.com:1433")
         }
     },
     @{
@@ -411,17 +429,15 @@ $script:ExpectedEdges = @(
             }
         }
         Properties = @{
-            coercionVictimHostName = "ps1-psv.mayyhem.com"
-            relayTargetHostName = "ps1-db.mayyhem.com"
+            coercionVictimAndRelayTargetPairs = @("Coerce ps1-psv.mayyhem.com, relay to ps1-db.mayyhem.com:1433")
         }
     },
 
     ###########################
-    # CoerceAndRelayNTLMtoSMB #
+    # CoerceAndRelayToSMB #
     ###########################
-    <#
     @{
-        Kind = "CoerceAndRelayNTLMtoSMB"
+        Kind = "CoerceAndRelayToSMB"
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 SMS Provider"
         Source = @{
             Kinds = @("Group", "Base")
@@ -439,7 +455,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "CoerceAndRelayNTLMtoSMB"
+        Kind = "CoerceAndRelayToSMB"
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 site database server"
         Source = @{
             Kinds = @("Group", "Base")
@@ -457,7 +473,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "CoerceAndRelayNTLMtoSMB"
+        Kind = "CoerceAndRelayToSMB"
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 primary site server"
         Source = @{
             Kinds = @("Group", "Base")
@@ -475,7 +491,7 @@ $script:ExpectedEdges = @(
         }
     },
     @{
-        Kind = "CoerceAndRelayNTLMtoSMB"
+        Kind = "CoerceAndRelayToSMB"
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 passive site server"
         Source = @{
             Kinds = @("Group", "Base")
@@ -678,8 +694,8 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind="MSSQL_Contains"
-        Count = 2
-        Description = "The site database MSSQL servers contain the sysadmin server role"
+        Count = 3
+        Description = "The MSSQL servers contain the sysadmin server role"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -720,7 +736,7 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ControlServer"
-        Count = 2
+        Count = 3
         Description = "The sysadmin MSSQL server role controls the server instance"
         Source = @{
             Kinds = @("MSSQL_ServerRole")
@@ -741,8 +757,8 @@ $script:ExpectedEdges = @(
     #######################
     @{
         Kind="MSSQL_ExecuteOnHost"
-        Count = 2
-        Description = "The site database MSSQL server can execute commands on its host"
+        Count = 3
+        Description = "The MSSQL server can execute commands on its host"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -827,8 +843,8 @@ $script:ExpectedEdges = @(
     #################
     @{
         Kind="MSSQL_HostFor"
-        Count = 2
-        Description = "The site database MSSQL server computers host the MSSQL server instances"
+        Count = 3
+        Description = "The MSSQL server computers host the MSSQL server instances"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{

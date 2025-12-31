@@ -28,13 +28,13 @@ Limitations:
     - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
     - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
     - It is assumed in some cases (e.g., during DP and SMS Provider collection) that a single system does not host site system roles in more than one site. If this is the case, only one site code will be associated with that system.
+    - CoerceAndRelayNTLMtoSMB collection doesn't work because post-processed AdminTo edges can't be added via OpenGraph yet, so added CoerceAndRelayToSMB edges instead
     - MSSQL collection assumes that any collection target hosting a SQL Server instance is a site database server. If there are other SQL Servers in the environment, false positives may occur.
     - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
 In Progress / To Do:
     - Unprivileged unit testing
     - Memory/disk usage monitoring functions
-    - CoerceAndRelayNTLMtoSMB collection
     - Entity panels
     - Get members of groups with permissions on System Management container
     - Should TAKEOVER-4 be added (not always traversable)?
@@ -86,6 +86,7 @@ Supported values:
     - Zip (default): OpenGraph implementation, outputs .zip containing .json file
     - JSON: OpenGraph implementation, outputs uncompressed .json file
     - StdOut: OpenGraph implementation, outputs JSON to console (can be piped to BHOperator)
+    - CustomNodes: Outputs only custom nodes to .json file for BloodHound API
 
 .PARAMETER FileSizeLimit
 Stop enumeration after all collected files exceed this size on disk
@@ -118,13 +119,13 @@ Specify a PSCredential object for authentication
 .PARAMETER SkipPostProcessing
 Skip post-processing edge creation (creates only direct edges from collection)
 
-.PARAMETER IncludePossibleEdges
+.PARAMETER DisablePossibleEdges
 Switch/Flag:
-    - On (default): Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
+    - Off (default): Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
         - CoerceAndRelayToMSSQL: EPA setting is assumed to be Off if the MSSQL server can't be reached
-        - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, otherwise use Remote Registry collection to confirm
+        - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, which may create false positives if MSSQL is installed on SCCM-related targets for other purposes, otherwise use Remote Registry collection to confirm
         - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
-    - Off: The edges above are not created or are created as non-traversable
+    - On: The edges above are not created or are created as non-traversable to reduce false positives at the expense of possible edges
 
 .PARAMETER Verbose
 Enable verbose output
@@ -163,7 +164,7 @@ param(
     
     [switch]$SkipPostProcessing,
 
-    [switch]$IncludePossibleEdges = $true,
+    [switch]$DisablePossibleEdges,
 
     [switch]$Version
 )
@@ -1439,6 +1440,20 @@ function Upsert-Node {
                         if ($addedItems.Count -gt 0) {
                             $updatedProperties += "$key`: Added [$($addedItems -join ', ')] to existing [$($oldValue -join ', ')]"
                         }
+                    } elseif ($oldValue -is [Array]) {
+                        # Old value is array, new is single value - add if not present
+                        if ($newValue -notin $oldValue) {
+                            $existingProps[$key] = @($oldValue + $newValue)
+                            $updatedProperties += "$key`: Added '$newValue' to existing [$($oldValue -join ', ')]"
+                        }
+                    } elseif ($newValue -is [Array]) {
+                        # New value is array, old is single value - add old if not present
+                        if ($oldValue -notin $newValue) {
+                            $existingProps[$key] = @($newValue + $oldValue)
+                            $updatedProperties += "$key`: Added '$oldValue' to new [$($newValue -join ', ')]"
+                        } else {
+                            $existingProps[$key] = $newValue
+                        }
                     } else {
                         # Non-array properties - check if different and replace
                         if ($oldValue -ne $newValue) {
@@ -1786,7 +1801,7 @@ function Invoke-PostProcessing {
 
                     # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
                     if ($primarySiteForSiteSystem) {
-                        $siteServerComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySiteForSiteSystem.Id)"})
+                        $siteServerComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySiteForSiteSystem.Id)" })
                         $siteDatabaseComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$($primarySiteForSiteSystem.Id)" })
 
                         if ($siteServerComputerNodes -and $siteServerComputerNodes.Count -gt 0) {
@@ -1851,7 +1866,7 @@ function Invoke-PostProcessing {
         }
     }
 
-    # Process Computer nodes again after site system roles are processed and MSSQL_Logins are created in previous loop
+    # Process Computer nodes again after site system roles are processed
     foreach ($computerNode in $computerNodes) {
 
         Write-LogMessage Verbose "Processing $($computerNode.id) ($($computerNode.Properties.name)) a second time"
@@ -1873,7 +1888,6 @@ function Invoke-PostProcessing {
                 if ($siteCodeForSiteSystem) {
                     $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
 
-                    # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
                     if ($primarySiteForSiteSystem) {
 
                         # Initialize the siteSystemRoles property if it doesn't exist
@@ -1886,17 +1900,7 @@ function Invoke-PostProcessing {
                             foreach ($role in $computerNode.Properties["SCCMSiteSystemRoles"] | Where-Object { $_ -like "*@$($primarySiteForSiteSystem.Id)" }) {
                                 $primarySiteForSiteSystem.Properties["siteSystemRoles"] += "$($computerNode.Properties.dNSHostName): $role"
                             }
-                            Write-LogMessage Verbose "Added $($computerNode.Properties.dNSHostName) to siteSystemRoles for site $siteCodeForSiteSystem"
-                        }
-
-                        # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
-                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|Provider)") {
-                            Process-CoerceAndRelayToAdminService -SiteCode $primarySiteForSiteSystem.Id -CollectionSource @("Post-processing")
-                        }
-
-                        # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
-                        if ($computerNode.Properties["SCCMSiteSystemRoles"] -match "SMS (Site Server|SQL Server|Provider|Management Point)@$($primarySiteForSiteSystem.Id)") {
-                            Process-CoerceAndRelayToMSSQL -SiteCode $primarySiteForSiteSystem.Id
+                            Write-LogMessage Verbose "Added $($computerNode.Properties.dNSHostName): $role to siteSystemRoles for site $siteCodeForSiteSystem"
                         }
                     }
                 }
@@ -1904,8 +1908,21 @@ function Invoke-PostProcessing {
         }
     }
 
-    # Loop through sites again to process MSSQL_GetTGS edges
+    # Loop through sites again to process relay and MSSQL_GetTGS edges after MSSQL nodes are all created
     foreach ($sccmSiteNode in $sccmSiteNodes) {
+
+        if ($sccmSiteNode.Type -ne "Secondary Site") {
+            Write-LogMessage Verbose "Processing relay edges for site $($sccmSiteNode.id)"
+
+            # Add CoerceAndRelayToAdminService edges for site servers and SMS Providers
+            Process-CoerceAndRelayToAdminService -SiteCode $sccmSiteNode.Id -CollectionSource @("Post-processing")
+
+            # Add CoerceAndRelayToMSSQL edges for site servers, site database servers, SMS Providers, and management points
+            Process-CoerceAndRelayToMSSQL -SiteCode $sccmSiteNode.Id
+            
+            # Add CoerceAndRelayToSMB edges for all site system roles
+            Process-CoerceAndRelayToSMB -SiteCode $sccmSiteNode.Id
+        }
     
         # Get MSSQL_Server nodes for this site and add MSSQL_GetTGS edges from MSSQL service accounts to every server login
         $mssqlServerNodesInSite = @($mssqlServerNodes | Where-Object { $_.Properties.sccmSite -eq $sccmSiteNode.id })
@@ -3209,7 +3226,7 @@ function Invoke-LDAPCollection {
                     }
 
                     # Make SCCM_ClientDevice node and link to Computer node if requested
-                    if ($IncludePossibleEdges) {
+                    if (-not $DisablePossibleEdges) {
 
                         # Generate GUID for SCCM Client node (may produce duplicates if client devices are enumerated later)
                         $sccmClientId = [Guid]::NewGuid().ToString()
@@ -4419,6 +4436,25 @@ function Invoke-RemoteRegistryCollection {
         Write-LogMessage Success "Remote Registry connection successful: $target"
         $regConnectionSuccessful = $true
         
+        # Check SMB signing requirement
+        Write-LogMessage Info "Checking SMB signing requirement on $target"
+        $smbSigningResult = Get-SMBSigningRequiredFromRegistry -ComputerName $target
+
+        if ($smbSigningResult.SigningRequired -ne $null) {
+            if ($smbSigningResult.SigningRequired -eq $true) {
+                Write-LogMessage Warning "SMB signing is REQUIRED on $target (detected via $($smbSigningResult.Method))"
+            } elseif ($smbSigningResult.SigningRequired -eq $false) {
+                Write-LogMessage Verbose "SMB signing is NOT required on $target (detected via $($smbSigningResult.Method))"
+            } else {
+                Write-LogMessage Verbose "Could not determine SMB signing requirement on $target`: $($smbSigningResult.Error)"
+            }
+            # Update Computer node property
+            $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer","Base") -PSObject $CollectionTarget.ADObject -Properties @{
+                SMBSigningRequired = $smbSigningResult.SigningRequired
+                CollectionSource = @("RemoteRegistry-SMBSigningCheck")
+            }
+        }
+        
         # Query 1: Get site code from Triggers subkey - Job 2
         $triggersCode = {
             param($target)
@@ -4594,7 +4630,7 @@ function Invoke-RemoteRegistryCollection {
 
             # Add MSSQL nodes/edges for local SQL instance
             if ($siteNode -and $siteServerComputerNode) {
-                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $siteServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+                Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SqlServerComputerNode $siteServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
 
                 # Collect EPA settings from local SQL instance
                 $epaSettings = Get-MssqlEpaSettingsViaRemoteRegistry -SqlServerHostname $CollectionTarget.Hostname -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
@@ -4651,7 +4687,7 @@ function Invoke-RemoteRegistryCollection {
 
                     # Add MSSQL nodes/edges for remote SQL instance
                     if ($siteNode -and $sqlServerComputerNode) {
-                        Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SiteDatabaseComputerNode $sqlServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
+                        Add-MSSQLServerNodesAndEdges -SiteNode $siteNode -SqlServerComputerNode $sqlServerComputerNode -CollectionSource @("RemoteRegistry-MultisiteComponentServers")
                     }
                     
                     # Collect EPA settings from remote SQL instance
@@ -4765,6 +4801,218 @@ function Invoke-RemoteRegistryCollection {
     Write-LogMessage Verbose "`nSites found:`n    $(($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" }).Properties.SiteCode -join "`n    ")"
     Write-LogMessage Verbose "`nSite system roles:`n    $(($script:Nodes | Where-Object { $null -ne $_.Properties.SCCMSiteSystemRoles } | ForEach-Object { "$($_.Properties.dNSHostName) ($($_.Properties.SCCMSiteSystemRoles -join ', '))" }) -join "`n    ")"
     Write-LogMessage Verbose "`nCollection targets:`n    $(($script:CollectionTargets.Keys) -join "`n    ")"
+}
+
+function Get-SMBSigningRequiredFromRegistry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ComputerName
+    )
+    
+    $result = @{
+        SigningRequired = $null
+        Method = 'Unknown'
+        Error = $null
+    }
+    
+    # First attempt: Check registry values locally if applicable
+    try {
+        $regPath = "SYSTEM\CurrentControlSet\Services\LanManServer\Parameters"
+        $requireValueName = "RequireSecuritySignature"
+        $enableValueName = "EnableSecuritySignature"
+        
+        try {
+            # Try to open remote registry
+            $regKey = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
+            
+            try {
+                $regSubKey = $regKey.OpenSubKey($regPath)
+                
+                if ($regSubKey) {
+                    $requireValue = $regSubKey.GetValue($requireValueName)
+                    $enableValue = $regSubKey.GetValue($enableValueName)
+                    
+                    # RequireSecuritySignature takes precedence
+                    if ($null -ne $requireValue) {
+                        $result.SigningRequired = ([int]$requireValue -ne 0)
+                        $result.Method = 'Registry'
+                        Write-LogMessage Verbose "SMB Signing check for $ComputerName via registry: RequireSecuritySignature=$([int]$requireValue)"
+                        return $result
+                    }
+                    # If RequireSecuritySignature is missing, check EnableSecuritySignature
+                    elseif ($null -ne $enableValue) {
+                        $enableInt = [int]$enableValue
+                        if ($enableInt -eq 0) {
+                            # If explicitly disabled, signing is not required
+                            $result.SigningRequired = $false
+                            $result.Method = 'Registry'
+                            Write-LogMessage Verbose "SMB Signing check for $ComputerName via registry: EnableSecuritySignature=0 (not required)"
+                            return $result
+                        }
+                        # If EnableSecuritySignature is 1, we can't conclusively determine, fall through to SMB negotiate
+                    }
+                    
+                    $regSubKey.Close()
+                }
+            }
+            finally {
+                $regKey.Close()
+            }
+        }
+        catch {
+            Write-LogMessage Verbose "Could not check SMB signing via registry on $ComputerName`: $($_.Exception.Message)"
+        }
+    }
+    catch {
+        Write-LogMessage Verbose "Unexpected error during registry check: $_"
+    }
+}
+
+function Get-SMBSigningRequiredViaSMBNegotiate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ComputerName
+    )
+    
+    $result = @{
+        SigningRequired = $null
+        Method = 'Unknown'
+        Error = $null
+    }
+    
+    # SMB2 negotiate based on SharpHoundCommon implementation
+    try {
+        Write-LogMessage Verbose "Attempting SMB2 negotiate for SMB signing check on $ComputerName"
+        
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $connectAsync = $tcpClient.ConnectAsync($ComputerName, 445)
+        
+        if ($connectAsync.Wait(2000)) {  # 2 second timeout
+            try {
+                $networkStream = $tcpClient.GetStream()
+                $networkStream.ReadTimeout = 2000
+                $networkStream.WriteTimeout = 2000
+                
+                # Build SMB2 negotiate request following SharpHoundCommon's SMB2NegotiateRequest.cs
+                # Using MemoryStream to build the packet dynamically
+                $ms = New-Object System.IO.MemoryStream
+                $writer = New-Object System.IO.BinaryWriter($ms)
+                
+                # NetBIOS header placeholder (will update length at the end)
+                $writer.Write([byte]0x00)  # Message type
+                $writer.Write([byte]0x00)  # Length (high byte)
+                $writer.Write([byte]0x00)  # Length (middle byte)
+                $writer.Write([byte]0x00)  # Length (low byte)
+                
+                # SMB2 Header (64 bytes)
+                $writer.Write([uint32]0x424D53FE)  # Protocol ID (little-endian: 0xFE 'S' 'M' 'B')
+                $writer.Write([uint16]64)          # Structure Size
+                $writer.Write([uint16]0)           # Credit Charge
+                $writer.Write([uint32]0)           # Status
+                $writer.Write([uint16]0)           # Command (NEGOTIATE = 0)
+                $writer.Write([uint16]1)           # Credits Requested
+                $writer.Write([uint32]0)           # Flags
+                $writer.Write([uint32]0)           # Next Command
+                $writer.Write([uint64]0)           # Message ID
+                $writer.Write([uint32]0)           # Reserved
+                $writer.Write([uint32]0)           # Tree ID
+                $writer.Write([uint64]0)           # Session ID
+                $writer.Write((New-Object byte[] 16))  # Signature (16 bytes of zeros)
+                
+                # SMB2 NEGOTIATE Request Body
+                $writer.Write([uint16]36)          # Structure Size (always 36 for NEGOTIATE)
+                
+                # Dialects array - we'll include multiple like SharpHoundCommon does
+                $dialects = @(
+                    [uint16]0x0202,  # SMB 2.0.2
+                    [uint16]0x0210,  # SMB 2.1
+                    [uint16]0x0300,  # SMB 3.0
+                    [uint16]0x0302,  # SMB 3.0.2
+                    [uint16]0x0311   # SMB 3.1.1
+                )
+                
+                $writer.Write([uint16]$dialects.Count)  # Dialect Count
+                $writer.Write([uint16]0x0002)       # Security Mode (Signing Required)
+                $writer.Write([uint16]0)            # Reserved
+                $writer.Write([uint32]0x000000FF)   # Capabilities (all capabilities)
+                
+                # Client GUID (16 bytes) - using random GUID
+                $guid = [System.Guid]::NewGuid()
+                $writer.Write($guid.ToByteArray())
+                
+                $writer.Write([uint64]0)            # Negotiate Context Offset (0 = no contexts)
+                $writer.Write([uint16]0)            # Negotiate Context Count
+                $writer.Write([uint16]0)            # Reserved
+                
+                # Write dialect list
+                foreach ($dialect in $dialects) {
+                    $writer.Write($dialect)
+                }
+                
+                # Update NetBIOS header with correct length
+                $fullPacket = $ms.ToArray()
+                $smbLength = $fullPacket.Length - 4  # Exclude NetBIOS header itself
+                $fullPacket[1] = [byte](($smbLength -shr 16) -band 0xFF)
+                $fullPacket[2] = [byte](($smbLength -shr 8) -band 0xFF)
+                $fullPacket[3] = [byte]($smbLength -band 0xFF)
+                
+                $writer.Dispose()
+                $ms.Dispose()
+                
+                # Send the request
+                $networkStream.Write($fullPacket, 0, $fullPacket.Length)
+                $networkStream.Flush()
+                
+                # Read response
+                $buffer = New-Object byte[] 1024
+                $readAsync = $networkStream.ReadAsync($buffer, 0, $buffer.Length)
+                
+                if ($readAsync.Wait(2000)) {
+                    $bytesRead = $readAsync.Result
+                    
+                    # Validate we have enough bytes for NetBIOS + SMB2 Header + NEGOTIATE response
+                    if ($bytesRead -gt 72) {
+                        # Check SMB2 protocol signature at offset 4
+                        if ($buffer[4] -eq 0xFE -and $buffer[5] -eq 0x53 -and $buffer[6] -eq 0x4D -and $buffer[7] -eq 0x42) {
+                            # SMB2 NEGOTIATE response structure starts at offset 68 (4 NetBIOS + 64 SMB2 header)
+                            # Structure Size (2 bytes) at offset 68
+                            # SecurityMode (2 bytes) at offset 70
+                            $securityMode = [BitConverter]::ToUInt16($buffer, 70)
+                            
+                            # Check signing flags
+                            $signingEnabled = ($securityMode -band 0x0001) -ne 0
+                            $signingRequired = ($securityMode -band 0x0002) -ne 0
+                            
+                            $result.SigningRequired = $signingRequired
+                            $result.Method = 'SMB2'
+                            Write-LogMessage Verbose "SMB Signing check for $ComputerName via SMB2: SigningEnabled=$signingEnabled, SigningRequired=$signingRequired"
+                            return $result
+                        }
+                    }
+                }
+                else {
+                    Write-LogMessage Verbose "SMB2 read timeout for $ComputerName"
+                }
+            }
+            catch {
+                Write-LogMessage Verbose "SMB2 negotiate error for $ComputerName`: $($_.Exception.Message)"
+            }
+            finally {
+                if ($networkStream) { $networkStream.Dispose() }
+                if ($tcpClient) { $tcpClient.Dispose() }
+            }
+        }
+        else {
+            Write-LogMessage Verbose "Could not connect to SMB port on $ComputerName"
+        }
+    }
+    catch {
+        Write-LogMessage Verbose "SMB2 negotiate failed for $ComputerName`: $($_.Exception.Message)"
+    }
+    
+    # If we got here, we couldn't determine via SMB2
+    $result.Error = "Could not determine SMB signing requirement via SMB2"
+    return $result
 }
 
 function Get-MssqlEpaSettingsViaTDS {
@@ -5560,10 +5808,11 @@ public class EPATester
 function Add-MSSQLServerNodesAndEdges {
     param(
         [Parameter(Mandatory = $true)][PSObject]$SiteNode,
-        [Parameter(Mandatory = $true)][PSObject]$SiteDatabaseComputerNode,
+        [Parameter(Mandatory = $true)][PSObject]$SqlServerComputerNode,
         [string]$SqlDatabaseName,
         [int]$SqlServicePort = 1433,
-        [string[]]$CollectionSource
+        [string[]]$CollectionSource,
+        [PSObject]$EPASettings
     )
 
     try {
@@ -5591,8 +5840,7 @@ function Add-MSSQLServerNodesAndEdges {
             $SqlServicePort = 1433
         }
 
-        $siteDatabaseComputerSidAndPort = "$($SiteDatabaseComputerNode.id):$SqlServicePort"
-        $siteDatabaseId = "$($siteDatabaseComputerSidAndPort)\$($SqlDatabaseName)"
+        $siteDatabaseComputerSidAndPort = "$($SqlServerComputerNode.id):$SqlServicePort"
 
         # Create or update MSSQL_Server node
         $null = Upsert-Node -Id $siteDatabaseComputerSidAndPort -Kinds @("MSSQL_Server") -Properties @{
@@ -5600,12 +5848,12 @@ function Add-MSSQLServerNodesAndEdges {
             databases = if ($SqlDatabaseName) { @($SqlDatabaseName) } else { @() }
             extendedProtection = if ($EPASettings) { $EPASettings.ExtendedProtection } else { $null }
             forceEncryption = if ($EPASettings) { $EPASettings.ForceEncryption } else { $null }
-            name = "$($SiteDatabaseComputerNode.Properties.dNSHostName):$SqlServicePort"
-            dnsHostName = $SiteDatabaseComputerNode.Properties.dNSHostName
+            name = "$($SqlServerComputerNode.Properties.dNSHostName):$SqlServicePort"
+            dnsHostName = $SqlServerComputerNode.Properties.dNSHostName
             SQLServicePort = $SqlServicePort
             SCCMInfra = $true
             SCCMSite = $SiteNode.Properties.siteCode
-        }        
+        }
 
         # We know the built-in sysadmin server role exists on all SQL instances
         $null = Upsert-Node -Id "sysadmin@$siteDatabaseComputerSidAndPort" -Kinds @("MSSQL_ServerRole") -Properties @{
@@ -5615,8 +5863,36 @@ function Add-MSSQLServerNodesAndEdges {
             members = if ($sysadminComputerMssqlLoginId) { @($sysadminComputerMssqlLoginId) } else { @() }
             name = "sysadmin"
             SCCMSite = $SiteNode.Properties.siteCode
-            SQLServer = $SiteDatabaseComputerNode.Properties.dNSHostName
+            SQLServer = $SqlServerComputerNode.Properties.dNSHostName
         }
+        ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_ServerRole)
+        Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_Contains" -End "sysadmin@$siteDatabaseComputerSidAndPort" -Properties @{
+            collectionSource = @($CollectionSource)
+        }
+        ### (MSSQL_ServerRole) -[MSSQL_ControlServer]-> (MSSQL_Server)
+        Upsert-Edge -Start "sysadmin@$siteDatabaseComputerSidAndPort" -Kind "MSSQL_ControlServer" -End $siteDatabaseComputerSidAndPort -Properties @{
+            collectionSource = @($CollectionSource)
+        }
+        ### (Computer) -[MSSQL_HostFor]-> (MSSQL_Server)
+        Upsert-Edge -Start $SqlServerComputerNode.id -Kind "MSSQL_HostFor" -End $siteDatabaseComputerSidAndPort -Properties @{
+            collectionSource = @($CollectionSource)
+        }
+        ### (MSSQL_Server) -[MSSQL_ExecuteOnHost]-> (Computer)
+        Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_ExecuteOnHost" -End $SqlServerComputerNode.id -Properties @{
+            collectionSource = @($CollectionSource)
+        }
+
+        # Bail if we don't know this is a site database from Remote Registry collection
+        if ($DisablePossibleEdges) {
+            if ($SqlServerComputerNode.properties.collectionSource -notcontains "RemoteRegistry-MultisiteComponentServers") {
+                Write-LogMessage Verbose "Skipping MSSQL node/edge creation for $($SqlServerDomainObject.dNSHostName) as site database server is not known from Remote Registry collection"
+                return
+            }
+        } else {
+            Write-LogMessage Verbose "Assuming that $($SqlServerComputerNode.Properties.dNSHostName) is a site database server for site $($SiteNode.Properties.siteCode) due to lack of -DisablePossibleEdges flag, may produce false positives"
+        }
+
+        $siteDatabaseId = "$($siteDatabaseComputerSidAndPort)\$($SqlDatabaseName)"
 
         # Create or update MSSQL_Database node
         $null = Upsert-Node -Id $siteDatabaseId -Kinds @("MSSQL_Database") -Properties @{
@@ -5626,7 +5902,7 @@ function Add-MSSQLServerNodesAndEdges {
             name = $SqlDatabaseName
             SCCMInfra = $true
             SCCMSite = $SiteNode.Properties.siteCode
-            SQLServer = $SiteDatabaseComputerNode.Properties.dNSHostName
+            SQLServer = $SqlServerComputerNode.Properties.dNSHostName
         }
 
         # Create or update MSSQL_DatabaseRole node
@@ -5637,35 +5913,15 @@ function Add-MSSQLServerNodesAndEdges {
             members = if ($sysadminComputerMssqlDatabaseUserId) { @($sysadminComputerMssqlDatabaseUserId) } else { @() }
             name = "db_owner"
             SCCMSite = $SiteNode.Properties.siteCode
-            SQLServer = $SiteDatabaseComputerNode.Properties.dNSHostName
+            SQLServer = $SqlServerComputerNode.Properties.dNSHostName
         }
 
-        # Create edges
-        ## Computer level
-        ### (Computer) -[MSSQL_HostFor]-> (MSSQL_Server)
-        Upsert-Edge -Start $SiteDatabaseComputerNode.id -Kind "MSSQL_HostFor" -End $siteDatabaseComputerSidAndPort -Properties @{
-            collectionSource = @($CollectionSource)
-        }
-        ### (MSSQL_Server) -[MSSQL_ExecuteOnHost]-> (Computer)
-        Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_ExecuteOnHost" -End $SiteDatabaseComputerNode.id -Properties @{
-            collectionSource = @($CollectionSource)
-        }
 
-        ## Server level
+
         ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_Database)
         Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_Contains" -End $siteDatabaseId -Properties @{
             collectionSource = @($CollectionSource)
         }
-        ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_ServerRole)
-        Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_Contains" -End "sysadmin@$siteDatabaseComputerSidAndPort" -Properties @{
-            collectionSource = @($CollectionSource)
-        }
-        ### (MSSQL_ServerRole) -[MSSQL_ControlServer]-> (MSSQL_Server)
-        Upsert-Edge -Start "sysadmin@$siteDatabaseComputerSidAndPort" -Kind "MSSQL_ControlServer" -End $siteDatabaseComputerSidAndPort -Properties @{
-            collectionSource = @($CollectionSource)
-        }
-
-        ## Database Level
         ### (MSSQL_Database) -[MSSQL_Contains]-> (MSSQL_DatabaseRole)
         Upsert-Edge -Start $siteDatabaseId -Kind "MSSQL_Contains" -End "db_owner@$siteDatabaseId" -Properties @{
             collectionSource = @($CollectionSource)
@@ -5683,7 +5939,7 @@ function Add-MSSQLServerNodesAndEdges {
             }
         }
     } catch {
-        Write-LogMessage Error "Failed to add MSSQL server nodes/edges for $($SiteDatabaseComputerNode.Properties.dNSHostName) in site $($SiteNode.Properties.siteCode): $_"
+        Write-LogMessage Error "Failed to add MSSQL server nodes/edges for $($SqlServerComputerNode.Properties.dNSHostName) in site $($SiteNode.Properties.siteCode): $_"
     }
 
 }
@@ -5793,6 +6049,7 @@ function Invoke-ProcessMssqlNodesAndEdgesForSysadminComputer {
     }
 }
 
+# Decommissioned function, kept for backward compatibility
 function Add-MSSQLNodesAndEdgesForPrimarySite {
     param(
         [Parameter(Mandatory = $true)][string]$SiteCode,
@@ -5805,6 +6062,13 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
     )
 
     try {
+
+        if (-not $DisablePossibleEdges -or $SiteCode -ne "Unknown") {
+            Write-LogMessage Verbose "Creating MSSQL nodes/edges for site database server $($SqlServerDomainObject.dNSHostName)"
+        } else {
+            Write-LogMessage Verbose "Skipping MSSQL node/edge creation for collection target without a site code"
+            return
+        }
 
         # Create or update MSSQL_Server node first
         $portSuffix = if ($SqlServicePort) { ":$SqlServicePort" } else { ":1433" }
@@ -5821,12 +6085,6 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
             SCCMSite = if ($SiteCode -ne "Unknown") { $SiteCode } else { $null }
         }
 
-        if ($SiteCode -eq "Unknown") {
-            Write-LogMessage Warning "Skipping SCCM site database node/edge creation for collection target without a site code"
-            return
-        }
-
-
         # Bail if this is a secondary site or if site type is not defined
         $siteNode = $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Properties.SiteCode -eq $SiteCode }
         if (-not $siteNode.Properties.siteType -or $siteNode.Properties.siteType -eq "Secondary Site") {
@@ -5835,7 +6093,7 @@ function Add-MSSQLNodesAndEdgesForPrimarySite {
         }
 
         # Bail if we don't know this is a site database from Remote Registry collection
-        if (-not $IncludePossibleEdges) {
+        if ($DisablePossibleEdges) {
             $sqlServerComputerNode = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Id -eq $SqlServerDomainObject.SID }
 
             if ($sqlServerComputerNode.properties.collectionSource -notcontains "RemoteRegistry-MultisiteComponentServers") {
@@ -6038,12 +6296,30 @@ function Invoke-MSSQLCollection {
                 $CollectionTarget.SiteCode = "Unknown"
             }
 
-            Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $CollectionTarget.SiteCode `
-                                          -SqlServerDomainObject $CollectionTarget.ADObject `
-                                          -SqlServicePort $Port `
-                                          -CollectionSource @("MSSQL-ScanForEPA") `
-                                          -EPASettings $epaResult
+            #Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $CollectionTarget.SiteCode `
+            #                              -SqlServerDomainObject $CollectionTarget.ADObject `
+            #                              -SqlServicePort $Port `
+            #                              -CollectionSource @("MSSQL-ScanForEPA") `
+            #                              -EPASettings $epaResult
 
+            $sqlServerComputerNode = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Id -eq $CollectionTarget.ADObject.SID }
+            if (-not $sqlServerComputerNode) {
+                Write-LogMessage Warning "No Computer node found for SQL Server $target with SID $($CollectionTarget.ADObject.SID), cannot add MSSQL nodes/edges"
+                return
+            }
+
+            $siteNode = @($script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Id -eq $CollectionTarget.SiteCode }) | Select-Object -First 1
+            if (-not $siteNode) {
+                Write-LogMessage Warning "No SCCM_Site node found for SiteCode $($CollectionTarget.SiteCode), cannot add MSSQL nodes/edges"
+                return
+            }
+
+            Add-MSSQLServerNodesAndEdges `
+                -SiteNode $siteNode `
+                -SqlServerComputerNode $sqlServerComputerNode `
+                -CollectionSource @("MSSQL-ScanForEPA") `
+                -EPASettings $epaResult
+            
             Write-LogMessage Success "Successfully collected EPA settings via MSSQL"
         } else {
             Write-LogMessage Warning "Failed to collect EPA settings via MSSQL"
@@ -6059,7 +6335,7 @@ function Process-CoerceAndRelayToAdminService {
         [array]$CollectionSource
    )
 
-    # Get all site databases that have EPA set to Off and RestrictReceivingNtlmTraffic set to Off for the specified site code
+    # Get all SMS Providers that have RestrictReceivingNtlmTraffic set to Off for the specified site code
     $smsProviderComputerNodes = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Provider@$SiteCode" -and ($null -eq $_.Properties.restrictReceivingNtlmTraffic -or $_.Properties.restrictReceivingNtlmTraffic -eq "Off" ) }
     if (-not $smsProviderComputerNodes) {
         Write-LogMessage Verbose "No SMS Provider found with RestrictReceivingNtlmTraffic set to Off in site code $SiteCode to coerce and relay to AdminService"
@@ -6099,8 +6375,8 @@ function Process-CoerceAndRelayToAdminService {
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToAdminService" -End $SiteCode -Properties @{
                 collectionSource = @($CollectionSource)
                 coercionVictimAndRelayTargetPairs = @("Coerce $($siteServer.Properties.dNSHostName), relay to $($smsProviderComputerNode.Properties.dNSHostName)")
-                #coercionVictimHostName = $siteServer.Properties.dNSHostName
-                #relayTargetHostName = $smsProviderComputerNode.Properties.ADObject.dNSHostName
+                #coercionVictimHostname = $siteServer.Properties.dNSHostName
+                #relayTargetHostName = $smsProviderComputerNode.Properties.dNSHostName
                 #relayTargetPort = $smsProviderComputerNode.Properties.port
             }
         }
@@ -6157,7 +6433,7 @@ function Process-CoerceAndRelayToMSSQL {
 
         # Bail if Extended Protection is not Off
         if (-not $mssqlServerNode.Properties.extendedProtection) {
-            if ($IncludePossibleEdges) {
+            if (-not $DisablePossibleEdges) {
                 $mssqlServerNode.Properties.extendedProtection = "Off"
             } else {
                 continue
@@ -6200,9 +6476,65 @@ function Process-CoerceAndRelayToMSSQL {
             
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToMSSQL" -End $mssqlLogin.Id -Properties @{
                 collectionSource = @($collectionSource)
-                coercionVictimHostName = $computerWithMssqlLogin.Properties.dNSHostName
-                relayTargetHostName = $mssqlServerNode.Properties.dNSHostName
-                relayTargetPort = $mssqlServerNode.Properties.SQLServicePort
+                coercionVictimAndRelayTargetPairs = @("Coerce $($computerWithMssqlLogin.Properties.dNSHostName), relay to $($mssqlServerNode.Properties.dNSHostName)$(if ($mssqlServerNode.Properties.SQLServicePort -and $mssqlServerNode.Properties.SQLServicePort -ne 1433) { ":$($mssqlServerNode.Properties.SQLServicePort)" } else { ":1433" })")
+                #coercionVictimHostname = $computerWithMssqlLogin.Properties.dNSHostName
+                #relayTargetHostName = $mssqlServerNode.Properties.dNSHostName
+                #relayTargetPort = $mssqlServerNode.Properties.SQLServicePort
+            }
+        }
+    }
+}
+
+function Process-CoerceAndRelayToSMB {
+    param(
+        $SiteCode
+    )
+
+    # Get all site systems where SMB signing is not set to Required and RestrictReceivingNtlmTraffic set to Off for the specified site code
+    $siteSystemsWithoutSmbSigning = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -and $_.Properties.SMBSigningRequired -eq $false -and ($null -eq $_.Properties.restrictReceivingNtlmTraffic -or $_.Properties.restrictReceivingNtlmTraffic -eq "Off" ) }
+
+    if (-not $siteSystemsWithoutSmbSigning) {
+        Write-LogMessage Verbose "No site systems found with SMB Signing not required and RestrictReceivingNtlmTraffic set to Off in site code $SiteCode to relay coerced authentication to SMB"
+        return
+    }
+
+    # Get all site servers for the specified site code
+    $siteServers = @($script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -contains "SMS Site Server@$SiteCode" })
+    
+    if ($siteServers) {
+        $siteServers = $siteServers | Sort-Object -Property Id -Unique
+    }
+    if ($siteServers.Count -eq 0) {
+        Write-LogMessage Verbose "No site servers found for site code $SiteCode to coerce and relay to SMB on other site system roles"
+        return
+    }
+
+    foreach ($siteSystemWithoutSmbSigning in $siteSystemsWithoutSmbSigning) {
+
+
+        foreach ($siteServer in $siteServers) {
+
+            # Can't relay back to the same server
+            if ($siteSystemsWithoutSmbSigning.Id -eq $siteServer.Id) {
+                Write-LogMessage Verbose "Skipping coerce and relay to SMB edge from $($siteServer.Properties.dNSHostName) to itself"
+                continue
+            }
+
+            $authedUsersObjectId = "$($siteServer.Properties.Domain)`-S-1-5-11"
+
+            # Add node for Authenticated Users so we don't get Unknown kind
+            $null = Upsert-Node -Id $authedUsersObjectId `
+                    -Kinds $("Group", "Base") `
+                    -Properties @{
+                        name = "AUTHENTICATED USERS@$($siteServer.Properties.Domain)"
+                    }
+
+            # Get collection source from Computer node properties
+            $collectionSource = @($siteSystemWithoutSmbSigning.Properties["collectionSource"] | Where-Object { $_ -like "SMB-Negotiate" -or $_ -like "RemoteRegistry-SMBSigningCheck" })
+            
+            Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToSMB" -End $siteSystemWithoutSmbSigning.Id -Properties @{
+                collectionSource = @($collectionSource)
+                coercionVictimHostname = $siteServer.Properties.dNSHostName
             }
         }
     }
@@ -6490,7 +6822,7 @@ function Get-SitesViaAdminService {
             # Finally, add MSSQL nodes and edges for each site
             Add-MSSQLServerNodesAndEdges `
                 -SiteNode $siteNode `
-                -SiteDatabaseComputerNode $siteDatabaseComputerNode `
+                -SqlServerComputerNode $siteDatabaseComputerNode `
                 -CollectionSource @("AdminService-SMS_Sites", "AdminService-SMS_SCI_SiteDefinition")
 
             #Add-MSSQLNodesAndEdgesForPrimarySite -SiteCode $site.SiteCode `
@@ -7379,7 +7711,7 @@ function Get-SiteSystemRolesViaAdminService {
                             collectionSource = @("AdminService-SMS_SCI_SysResUse")
                             name = $computerObject.samAccountName
                             SCCMInfra = $true
-                            SCCMSiteSystemRoles = $roleNames
+                            SCCMSiteSystemRoles = @($roleNames) 
                         }
 
                         # Add MSSQL nodes and edges for site database servers
@@ -7387,7 +7719,7 @@ function Get-SiteSystemRolesViaAdminService {
                             $siteNode = $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" -and $_.id -eq $siteCode }
                             if ($siteNode) {
                                 Add-MSSQLServerNodesAndEdges -SiteNode $siteNode `
-                                                             -SiteDatabaseComputerNode $computerNode `
+                                                             -SqlServerComputerNode $computerNode `
                                                              -CollectionSource "AdminService-SMS_SCI_SysResUse" `
                             }
                         }
@@ -8313,7 +8645,7 @@ function Get-ManagementPointCertIssuer {
                     collectionSource = @("HTTP-sitesigncert")
                     name = $device.ADObject.samAccountName
                     SCCMInfra = $true
-                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@$($CollectionTarget.SiteCode)}" })")
+                    SCCMSiteSystemRoles = @("SMS Site Server$(if ($CollectionTarget.SiteCode) { "@$($CollectionTarget.SiteCode)" })")
                 }
             }
         }
@@ -8378,6 +8710,25 @@ public const int NERR_ServerNotStarted = 2114;
     if ($script:CollectionTargets[$target]["Collected"]) {
         Write-LogMessage Info "Target $target already collected, skipping SMB"
         return
+    }
+    
+    # Check SMB signing requirement
+    Write-LogMessage Info "Checking SMB signing requirement on $target"
+    $smbSigningResult = Get-SMBSigningRequiredViaSMBNegotiate -ComputerName $target
+
+    if ($smbSigningResult.SigningRequired -ne $null) {
+        if ($smbSigningResult.SigningRequired -eq $true) {
+            Write-LogMessage Verbose "SMB signing is REQUIRED on $target (detected via $($smbSigningResult.Method))"
+        } elseif ($smbSigningResult.SigningRequired -eq $false) {
+            Write-LogMessage Verbose "SMB signing is NOT required on $target (detected via $($smbSigningResult.Method))"
+        } else {
+            Write-LogMessage Verbose "Could not determine SMB signing requirement on $target`: $($smbSigningResult.Error)"
+        }
+        # Update Computer node property
+        $null = Upsert-Node -Id $CollectionTarget.ADObject.SID -Kinds @("Computer","Base") -PSObject $CollectionTarget.ADObject -Properties @{
+            SMBSigningRequired = $smbSigningResult.SigningRequired
+            CollectionSource = @("SMB-Negotiate")
+        }
     }
     
     # Check for SCCM-specific SMB shares using NetAPI32
@@ -8538,7 +8889,7 @@ public const int NERR_ServerNotStarted = 2114;
                 SCCMHostsContentLibrary = $hostsContentLib
                 SCCMInfra = $true
                 SCCMIsPXESupportEnabled = $isPXEEnabled
-                SCCMSiteSystemRoles = if ($roles) { $roles } else { $null }
+                SCCMSiteSystemRoles = if ($roles) { @($roles) } else { $null }
             }
         } else {
             Write-LogMessage Warning "Failed to enumerate SMB shares on $target (access denied or not accessible)"
@@ -9154,7 +9505,7 @@ try {
         return
     }
 
-    if ($OutputFormat -eq "NodeGlyphs") {
+    if ($OutputFormat -eq "CustomNodes") {
         $customNodes = @{
             "custom_types" = @{
                 "SCCM_Site" = @{
@@ -9189,6 +9540,48 @@ try {
                     "icon" = @{
                         "color" = "#f59b42"
                         "name" = "desktop"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_DatabaseUser" = @{
+                    "icon" = @{
+                        "color" = "#f5ef42"
+                        "name" = "user"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_Login" = @{
+                    "icon" = @{
+                        "color" = "#dd42f5"
+                        "name" = "user-gear"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_DatabaseRole" = @{
+                    "icon" = @{
+                        "color" = "#f5a142"
+                        "name" = "users"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_Database" = @{
+                    "icon" = @{
+                        "color" = "#f54242"
+                        "name" = "database"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_Server" = @{
+                    "icon" = @{
+                        "color" = "#42b9f5"
+                        "name" = "server"
+                        "type" = "font-awesome"
+                    }
+                }
+                "MSSQL_ServerRole" = @{
+                    "icon" = @{
+                        "color" = "#6942f5"
+                        "name" = "users-gear"
                         "type" = "font-awesome"
                     }
                 }
