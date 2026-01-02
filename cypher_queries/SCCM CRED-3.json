@@ -1,0 +1,1 @@
+{"query":"MATCH p = (:Computer)-[:SCCM_HasNetworkAccessAccount]-(:User)\nRETURN p","name":"SCCM CRED-3","description":""}
