@@ -21,11 +21,17 @@ param(
 
     # Collection method to use (default: AdminService)
     [Parameter(Mandatory=$false)]
-    [string]$CollectionMethods = 'LDAP,DNS,RemoteRegistry,MSSQL,HTTP,SMB',
+    [string]$CollectionMethods,# = 'LDAP,DNS,RemoteRegistry,MSSQL,HTTP,SMB',
     #[string]$CollectionMethods = 'AdminService',
 
     [Parameter(Mandatory=$false)]
     [switch]$DisablePossibleEdges,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableBadOpsec,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$ShowCleartextPasswords,
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
@@ -105,6 +111,7 @@ $script:EdgeTypes = @(
     "SCCM_HasClient",
     "SCCM_HasCurrentUser",
     "SCCM_HasMember",
+    "SCCM_HasNetworkAccessAccount",
     "SCCM_HasPrimaryUser",
     "SCCM_IsAssigned",
     "SCCM_IsMappedTo"
@@ -1558,6 +1565,12 @@ function Invoke-Collection {
     # Add switch parameters only if they are set
     if ($DisablePossibleEdges) {
         $scriptParams['DisablePossibleEdges'] = $true
+    }
+    if ($EnableBadOpsec) {
+        $scriptParams['EnableBadOpsec'] = $true
+    }
+    if ($ShowCleartextPasswords) {
+        $scriptParams['ShowCleartextPasswords'] = $true
     }
     
     # Run the enumeration script

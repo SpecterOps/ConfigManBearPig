@@ -1,0 +1,1 @@
+{"query":"MATCH p = ()-[:SCCM_AllPermissions|SCCM_IsMappedTo|SCCM_IsAssigned]-() RETURN p","name":"SCCM Admin Users","description":""}
