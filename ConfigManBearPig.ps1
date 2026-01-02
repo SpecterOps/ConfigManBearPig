@@ -8,9 +8,9 @@ Author: Chris Thompson (@_Mayyhem) at SpecterOps
 Purpose:
     Collects BloodHound OpenGraph compatible SCCM data following these ordered steps:
     1.  LDAP (identify sites, site servers, fallback status points, and management points in System Management container)
-    2.  *DHCP (identify PXE-enabled distribution points)
-    3.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
-    4.  DNS (identify management points published to DNS)
+    2.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
+    3.  DNS (identify management points published to DNS)
+    4.  *DHCP (identify PXE-enabled distribution points)
     5.  Remote Registry (identify site servers, site databases, and current users on targets)
     6.  MSSQL (check database servers for Extended Protection for Authentication)
     7.  AdminService (collect information from SMS Providers with privileges to query site information)
@@ -55,9 +55,9 @@ Display usage information
 Collection methods to use (comma-separated):
     - All (default): All SCCM collection methods
     - LDAP
-    - DHCP
     - Local
     - DNS
+    - DHCP
     - RemoteRegistry
     - MSSQL
     - AdminService
@@ -266,7 +266,7 @@ function Test-Prerequisites {
 #region Phase Orchestration
 
 # Phases that run ONCE for the whole run (can add targets)
-#$script:PhasesOnce    = @('LDAP','DHCP','Local','DNS')
+#$script:PhasesOnce    = @('LDAP','Local','DNS','DHCP')
 $script:PhasesOnce    = @('LDAP','Local','DNS')
 
 # Phases that run PER HOST
@@ -1921,7 +1921,7 @@ function Invoke-PostProcessing {
             Process-CoerceAndRelayToMSSQL -SiteCode $sccmSiteNode.Id
             
             # Add CoerceAndRelayToSMB edges for all site system roles
-            Process-CoerceAndRelayToSMB -SiteCode $sccmSiteNode.Id
+        Process-CoerceAndRelayToSMB -SiteCode $sccmSiteNode.Id
         }
     
         # Get MSSQL_Server nodes for this site and add MSSQL_GetTGS edges from MSSQL service accounts to every server login
@@ -5889,7 +5889,7 @@ function Add-MSSQLServerNodesAndEdges {
                 return
             }
         } else {
-            Write-LogMessage Verbose "Assuming that $($SqlServerComputerNode.Properties.dNSHostName) is a site database server for site $($SiteNode.Properties.siteCode) due to lack of -DisablePossibleEdges flag, may produce false positives"
+            Write-LogMessage Warning "Assuming that $($SqlServerComputerNode.Properties.dNSHostName) is a site database server for site $($SiteNode.Properties.siteCode) due to lack of -DisablePossibleEdges flag, may produce false positives"
         }
 
         $siteDatabaseId = "$($siteDatabaseComputerSidAndPort)\$($SqlDatabaseName)"
@@ -5915,8 +5915,6 @@ function Add-MSSQLServerNodesAndEdges {
             SCCMSite = $SiteNode.Properties.siteCode
             SQLServer = $SqlServerComputerNode.Properties.dNSHostName
         }
-
-
 
         ### (MSSQL_Server) -[MSSQL_Contains]-> (MSSQL_Database)
         Upsert-Edge -Start $siteDatabaseComputerSidAndPort -Kind "MSSQL_Contains" -End $siteDatabaseId -Properties @{
@@ -6491,7 +6489,7 @@ function Process-CoerceAndRelayToSMB {
     )
 
     # Get all site systems where SMB signing is not set to Required and RestrictReceivingNtlmTraffic set to Off for the specified site code
-    $siteSystemsWithoutSmbSigning = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -and $_.Properties.SMBSigningRequired -eq $false -and ($null -eq $_.Properties.restrictReceivingNtlmTraffic -or $_.Properties.restrictReceivingNtlmTraffic -eq "Off" ) }
+    $siteSystemsWithoutSmbSigning = $script:Nodes | Where-Object { $_.Kinds -contains "Computer" -and $_.Properties.SCCMSiteSystemRoles -like "*@$($SiteCode)" -and $_.Properties.SMBSigningRequired -eq $false -and ($null -eq $_.Properties.restrictReceivingNtlmTraffic -or $_.Properties.restrictReceivingNtlmTraffic -eq "Off" ) }
 
     if (-not $siteSystemsWithoutSmbSigning) {
         Write-LogMessage Verbose "No site systems found with SMB Signing not required and RestrictReceivingNtlmTraffic set to Off in site code $SiteCode to relay coerced authentication to SMB"
@@ -6515,7 +6513,7 @@ function Process-CoerceAndRelayToSMB {
         foreach ($siteServer in $siteServers) {
 
             # Can't relay back to the same server
-            if ($siteSystemsWithoutSmbSigning.Id -eq $siteServer.Id) {
+            if ($siteSystemWithoutSmbSigning.Id -eq $siteServer.Id) {
                 Write-LogMessage Verbose "Skipping coerce and relay to SMB edge from $($siteServer.Properties.dNSHostName) to itself"
                 continue
             }
@@ -6534,7 +6532,7 @@ function Process-CoerceAndRelayToSMB {
             
             Upsert-Edge -Start $authedUsersObjectId -Kind "CoerceAndRelayToSMB" -End $siteSystemWithoutSmbSigning.Id -Properties @{
                 collectionSource = @($collectionSource)
-                coercionVictimHostname = $siteServer.Properties.dNSHostName
+                coercionVictimHostnames = @($siteServer.Properties.dNSHostName)
             }
         }
     }
@@ -9450,14 +9448,14 @@ function Start-SCCMCollection {
     }
 
     # Fail if no targets after seeding and no once phases specified
-    if ($script:CollectionTargets.Count -eq 0 -and -not ($script:SelectedPhases | Where-Object { $_ -in @('LDAP','DHCP','Local','DNS') } )) {
-        Write-LogMessage Warning "No targets identified for collection. Discover using ""-CollectionMethods 'All|LDAP|DHCP|Local|DNS'"" or provide targets via ""-Computers"", ""-ComputerFile"", or ""-SMSProvider"" parameters."
+    if ($script:CollectionTargets.Count -eq 0 -and -not ($script:SelectedPhases | Where-Object { $_ -in @('LDAP','Local','DNS','DHCP') } )) {
+        Write-LogMessage Warning "No targets identified for collection. Discover using ""-CollectionMethods 'All|LDAP|Local|DNS|DHCP'"" or provide targets via ""-Computers"", ""-ComputerFile"", or ""-SMSProvider"" parameters."
         return
     }
 
     # 4) SMSProvider-only convenience (keep just AdminService/WMI unless once-phases explicitly requested)
     if ($SMSProvider) {
-        $onceRequested = @('LDAP','Local','DNS') | Where-Object { $_ -in $script:SelectedPhases }
+        $onceRequested = @('LDAP','Local','DNS','DHCP') | Where-Object { $_ -in $script:SelectedPhases }
         if (-not $onceRequested) {
             $script:SelectedPhases = @('AdminService','WMI') | Where-Object { $_ -in $script:SelectedPhases } 
             if (-not $script:SelectedPhases) { $script:SelectedPhases = @('AdminService','WMI') }
@@ -9693,9 +9691,9 @@ try {
     # Collection phases to run
     $collectionMethodsSplit = $CollectionMethods -split "," | ForEach-Object { $_.Trim().ToUpper() }
     $enableLDAP = $false
-    $enableDHCP = $false
     $enableLocal = $false
     $enableDNS = $false
+    $enableDHCP = $false
     $enableRemoteRegistry = $false
     $enableMSSQL = $false
     $enableAdminService = $false
@@ -9708,9 +9706,9 @@ try {
         switch ($method) {
             "ALL" {
                 $enableLDAP = $true
-                $enableDHCP = $true
                 $enableLocal = $true
                 $enableDNS = $true
+                $enableDHCP = $true
                 $enableRemoteRegistry = $true
                 $enableMSSQL = $true
                 $enableAdminService = $true
@@ -9719,9 +9717,9 @@ try {
                 $enableSMB = $true
             }
             "LDAP" { $enableLDAP = $true }
-            "DHCP" { $enableDHCP = $true }
             "LOCAL" { $enableLocal = $true }
             "DNS" { $enableDNS = $true }
+            "DHCP" { $enableDHCP = $true }
             "REMOTEREGISTRY" { $enableRemoteRegistry = $true }
             "MSSQL" { $enableMSSQL = $true }
             "ADMINSERVICE" { $enableAdminService = $true }

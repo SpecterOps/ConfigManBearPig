@@ -1,0 +1,1 @@
+{"query":"MATCH p = (a:Group)-[:CoerceAndRelayToSMB|:SCCM_AssignAllPermissions|:SCCM_AdminsReplicatedTo*..]-\u003e(b:SCCM_Site)\nWHERE a.name CONTAINS 'AUTHENTICATED USERS'\nRETURN p","name":"SCCM Hierarchy TAKEOVER-6","description":""}

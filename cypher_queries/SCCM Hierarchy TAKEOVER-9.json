@@ -1,0 +1,1 @@
+{"query":"MATCH p = (:MSSQL_Server)-[:MSSQL_LinkedAsAdmin]-\u003e(:MSSQL_Server)-[:MSSQL_Contains]-\u003e(:MSSQL_Database)-[:SCCM_AssignAllPermissions]-\u003e(:SCCM_Site)\nRETURN p","name":"SCCM Hierarchy TAKEOVER-9","description":""}

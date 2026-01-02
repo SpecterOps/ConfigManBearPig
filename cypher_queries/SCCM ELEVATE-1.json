@@ -1,0 +1,1 @@
+{"query":"MATCH p =\n  (a:Group)-[:CoerceAndRelayToSMB]-\u003e(b:Computer)\nWHERE a.name CONTAINS 'AUTHENTICATED USERS'\nAND b.SMBSigningRequired = false\nRETURN p","name":"SCCM ELEVATE-1","description":""}

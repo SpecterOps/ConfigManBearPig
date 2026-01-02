@@ -25,7 +25,7 @@ param(
     #[string]$CollectionMethods = 'AdminService',
 
     [Parameter(Mandatory=$false)]
-    [switch]$IncludePossibleEdges,
+    [switch]$DisablePossibleEdges,
 
     # SMS Provider FQDN
     [Parameter(Mandatory=$false)]
@@ -372,6 +372,7 @@ $script:ExpectedEdges = @(
             coercionVictimAndRelayTargetPairs = @("Coerce cas-pss.mayyhem.com, relay to cas-db.mayyhem.com:1433")
         }
     },
+
     @{
         Kind = "CoerceAndRelayToMSSQL"
         Count = 1
@@ -438,12 +439,12 @@ $script:ExpectedEdges = @(
     ###########################
     @{
         Kind = "CoerceAndRelayToSMB"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 SMS Provider"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
@@ -456,12 +457,12 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "CoerceAndRelayToSMB"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 site database server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
@@ -474,12 +475,12 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "CoerceAndRelayToSMB"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 primary site server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
@@ -492,12 +493,12 @@ $script:ExpectedEdges = @(
     },
     @{
         Kind = "CoerceAndRelayToSMB"
+        Count = 1
         Description = "Authenticated Users group can coerce and relay authentication to the SMB service on the PS1 passive site server"
         Source = @{
             Kinds = @("Group", "Base")
             Properties = @{
-                id = "S-1-5-21-*"
-                samAccountName = "Authenticated Users"
+                id = "*-S-1-5-11"
             }
         }
         Target = @{
@@ -1555,8 +1556,8 @@ function Invoke-Collection {
     }
     
     # Add switch parameters only if they are set
-    if ($IncludePossibleEdges) {
-        $scriptParams['IncludePossibleEdges'] = $true
+    if ($DisablePossibleEdges) {
+        $scriptParams['DisablePossibleEdges'] = $true
     }
     
     # Run the enumeration script
