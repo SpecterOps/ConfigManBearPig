@@ -10,12 +10,12 @@ Purpose:
     1.  LDAP (identify sites, site servers, fallback status points, and management points in System Management container)
     2.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
     3.  DNS (identify management points published to DNS)
-    4.  *DHCP (identify PXE-enabled distribution points)
+    4.  *DHCP (identify PXE-enabled distribution points and management points in boot media)
     5.  Remote Registry (identify site servers, site databases, and current users on targets)
     6.  MSSQL (check database servers for Extended Protection for Authentication)
     7.  AdminService (collect information from SMS Providers with privileges to query site information)
     8.  *WMI (if AdminService collection fails)
-    9.  HTTP (identify management points and distribution points via exposed web services)
+    9.  HTTP (identify management points, distribution points, and SMS Providers via exposed web services)
     10. SMB (identify site servers and distribution points via file shares)
       
 System Requirements:
@@ -8497,6 +8497,7 @@ function Invoke-HTTPCollection {
         $isDP = $false
         $isMP = $false
         $isSMS = $false
+        $clientCertRequired = $false
         $connectionFailed = $false
                     
         # Test Management Point HTTP endpoints (try HTTP first, then HTTPS)
@@ -8506,12 +8507,18 @@ function Invoke-HTTPCollection {
 
             Write-LogMessage Verbose "Trying connections via $protocol"
             try {
+
                 # Management Point .sms_aut endpoints
-                $mpEndpoints = @(
-                    "$protocol`://$target/SMS_MP/.sms_aut?MPKEYINFORMATION", # Parse MPKEYINFORMATION response first to get site code
-                    "$protocol`://$target/SMS_MP/.sms_aut?MPLIST"
-                )
-                
+                $mpEndpoints = @()
+                $mpEndpoints += "$protocol`://$target/SMS_MP/.sms_aut?MPKEYINFORMATION" # Parse MPKEYINFORMATION response first to get site code
+                $mpEndpoints += "$protocol`://$target/SMS_MP/.sms_aut?MPLIST" # Enumerate management points in the same site
+                $mpEndpoints += "$protocol`://$target/SMS_MP/.sms_aut?SMSTRC" # Check whether client certificate is required
+
+                foreach ($siteNode in $script:Nodes | Where-Object { $_.kinds -contains "SCCM_Site" }) {
+                    $siteCode = $siteNode.Id
+                    $mpEndpoints += "$protocol`://$target/SMS_MP/.sms_aut?MPLIST1&$siteCode" # Enumerate management points for other sites in the same hierarchy
+                }
+
                 foreach ($endpoint in $mpEndpoints) {
                     # Skip if we've already discovered the MP role on this target
                     if ($isMP -ne $true) {
@@ -8524,11 +8531,18 @@ function Invoke-HTTPCollection {
                                 $connectionFailed = $true
                                 break
                             }
-                            
-                            if ($response.StatusCode -eq 200 -and $response.Content) {
+
+                            if ($response.StatusCode -eq 403 -or ($response.StatusCode -eq 200 -and $response.Content)) {
                                 Write-LogMessage Success "Found management point role on $target"
                                 $isMP = $true
-                                
+                                if ($response.StatusCode -eq 403) {
+                                    $clientCertRequired = $true
+                                }
+                            } else {
+                                Write-LogMessage Verbose "    Received $($response.StatusCode)"
+                            }
+                            
+                            if ($isMP) {                           
                                 if ($endpoint -like "*MPKEYINFORMATION*") {
                                     try {
                                         $xmlContent = [xml]$response.Content
@@ -8563,6 +8577,7 @@ function Invoke-HTTPCollection {
                                         name = $managementPoint.ADObject.samAccountName
                                         SCCMInfra = $true
                                         SCCMSiteSystemRoles = @("SMS Management Point$(if ($siteCode) { "@$siteCode" })")
+                                        SCCMClientCertificateRequired = $clientCertRequired
                                     }
                                 }
 
@@ -8599,8 +8614,6 @@ function Invoke-HTTPCollection {
                                         Write-LogMessage Error "Failed to parse MPLIST XML response: $_"
                                     }
                                 }                              
-                            } else {
-                                Write-LogMessage Verbose "    Received $($response.StatusCode)"
                             }
                         } catch {
                             # Other errors (e.g., parsing issues) - continue trying other endpoints
@@ -8640,8 +8653,11 @@ function Invoke-HTTPCollection {
                         # Specific response codes indicate presence of distribution point role
                         if ($response) {
                             # 401 (auth required) and 200 indicate DP presence
-                            if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
+                            if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200 -or $response.StatusCode -eq 403) {
                                 $isDP = $true
+                                if ($response.StatusCode -eq 403) {
+                                    $clientCertRequired = $true
+                                }
                             } else {
                                 Write-LogMessage Verbose "    Received $($response.StatusCode)"
                             }
@@ -8666,6 +8682,7 @@ function Invoke-HTTPCollection {
                                     name = $distributionPoint.ADObject.samAccountName
                                     SCCMInfra = $true
                                     SCCMSiteSystemRoles = @("SMS Distribution Point$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
+                                    SCCMClientCertificateRequired = $clientCertRequired
                                 }
                             }
                         }
@@ -8692,8 +8709,11 @@ function Invoke-HTTPCollection {
                     # Specific response codes indicate presence of distribution point role
                     if ($response) {
                         # 401 (auth required) and 200 indicate DP presence
-                        if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200) {
+                        if ($response.StatusCode -eq 401 -or $response.StatusCode -eq 200 -or $response.StatusCode -eq 403) {
                             $isSMS = $true
+                            if ($response.StatusCode -eq 403) {
+                                $clientCertRequired = $true
+                            }
                         } else {
                             Write-LogMessage Verbose "    Received $($response.StatusCode)"
                         }
@@ -8718,6 +8738,7 @@ function Invoke-HTTPCollection {
                                 name = $smsProvider.ADObject.samAccountName
                                 SCCMInfra = $true
                                 SCCMSiteSystemRoles = @("SMS Provider$(if ($siteCode) { "@$siteCode" })") # We can't get the site code via HTTP unless the target is also a MP but might be able to later via SMB
+                                SCCMClientCertificateRequired = $clientCertRequired
                             }
                         }
                     }
