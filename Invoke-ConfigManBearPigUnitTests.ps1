@@ -113,6 +113,7 @@ $script:EdgeTypes = @(
     "SCCM_HasMember",
     "SCCM_HasNetworkAccessAccount",
     "SCCM_HasPrimaryUser",
+    "SCCM_HasStoredAccount",
     "SCCM_IsAssigned",
     "SCCM_IsMappedTo"
 )

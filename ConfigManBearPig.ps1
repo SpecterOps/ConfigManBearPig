@@ -6745,6 +6745,13 @@ function Invoke-AdminServiceCollection {
             Write-LogMessage Warning "Failed to collect sites via AdminService"
         }
                 
+        # Stored Accounts (SMS_SCI_Reserved) - this will tell us all the stored accounts in the hierarchy
+        if (Get-StoredAccountsViaAdminService -Target $target) {
+            Write-LogMessage Success "Successfully collected stored accounts via AdminService"
+        } else {
+            Write-LogMessage Warning "Failed to collect stored accounts via AdminService"
+        }
+
         # Client Devices (SMS_CombinedDeviceResources or SMS_R_System)
         if (Get-CombinedDeviceResourcesViaAdminService -Target $target -SiteCode $siteCode) {
             Write-LogMessage Success "Successfully collected combined device resources via AdminService"
@@ -7019,6 +7026,75 @@ function Get-SitesViaAdminService {
 
     } catch {
         Write-LogMessage Error "Failed to collect sites via AdminService from $Target`: $_"
+        return $false
+    }
+}
+
+function Get-StoredAccountsViaAdminService {
+    param(
+        [string]$Target
+    )
+
+    try {
+        Write-LogMessage Info "Collecting stored accounts via AdminService from $Target"
+        $url = "https://$Target/AdminService/wmi/SMS_SCI_Reserved"
+    
+        try {
+            $response = Invoke-WebRequest -Uri $url -Method Get -UseDefaultCredentials -TimeoutSec 10 -ErrorAction Stop -UseBasicParsing
+        } catch {
+            Write-LogMessage Error "Failed to collect stored accounts via SMS_SCI_Reserved from $Target`: $_"
+            return $false
+        }
+    
+        if (-not $response -or -not $response.Content) {
+            Write-LogMessage Warning "No stored accounts returned from SMS_SCI_Reserved query on $Target"
+            return $false
+        }
+    
+        try {
+            $response = $response.Content | ConvertFrom-Json
+            Write-LogMessage Info "Collected $($response.value.Count) stored accounts via SMS_SCI_Reserved"
+        } catch {
+            Write-LogMessage Error "Failed to convert stored accounts response content to JSON from $Target`: $_"
+            return $false
+        }
+        foreach ($account in $response.value) {
+            # Parse UserName
+            $storedAccountDomainObject = Resolve-PrincipalInDomain -Name $account.UserName -Domain $script:Domain
+            if (-not $storedAccountDomainObject) {
+                Write-LogMessage Warning "Failed to resolve stored account $($account.UserName) to AD object"
+                continue
+            }
+
+            # Parse site code
+            $storedAccountSiteNode = $null
+            if ($account.SiteCode) {
+                $storedAccountSiteNode = $script:Nodes | Where-Object { $_.Kinds -contains "SCCM_Site" -and $_.Id -eq $account.SiteCode }
+            }
+
+            # Create or update node for stored account
+            $null = Upsert-Node -Id $storedAccountDomainObject.SID -Kinds @("User", "Base") -PSObject $storedAccountDomainObject -Properties @{
+                collectionSource = @("AdminService-SMS_SCI_Reserved")
+                name = $storedAccountDomainObject.samAccountName
+                storedInSCCMSite = if ($storedAccountSiteNode) { $storedAccountSiteNode.Id } else { $null }
+            }
+
+            # Update site node
+            if ($storedAccountSiteNode) {
+                $storedAccountSiteNode = Upsert-Node -Id $storedAccountSiteNode.Id -Kinds @("SCCM_Site") -Properties @{
+                    collectionSource = @("AdminService-SMS_SCI_Reserved")
+                    storedAccounts = @("$($storedAccountDomainObject.name) ($($storedAccountDomainObject.SID))")
+                }
+
+                # Create edge from site to stored account
+                $null = Upsert-Edge -Start $storedAccountSiteNode.Id -Kind "SCCM_HasStoredAccount" -End $storedAccountDomainObject.SID -Properties @{
+                    collectionSource = @("AdminService-SMS_SCI_Reserved")
+                }
+            }
+        }
+        return $true
+    } catch {
+        Write-LogMessage Error "Failed to collect stored accounts via AdminService from $Target`: $_"
         return $false
     }
 }
@@ -8535,8 +8611,14 @@ function Invoke-HTTPCollection {
                             if ($response.StatusCode -eq 403 -or ($response.StatusCode -eq 200 -and $response.Content)) {
                                 Write-LogMessage Success "Found management point role on $target"
                                 $isMP = $true
-                                if ($response.StatusCode -eq 403) {
+                                if ($endpoint -like "*SMSTRC*" -and $response.StatusCode -eq 403) {
                                     $clientCertRequired = $true
+
+                                    # Update site node
+                                    $null = Upsert-Node -Id $siteCode -Kinds @("SCCM_Site") -Properties @{
+                                        collectionSource = @("HTTP-SMSTRC")
+                                        ClientCertificateRequired = $true
+                                    }
                                 }
                             } else {
                                 Write-LogMessage Verbose "    Received $($response.StatusCode)"
