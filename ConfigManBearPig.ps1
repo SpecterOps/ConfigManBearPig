@@ -81,8 +81,6 @@ Increases success rate of querying of DNS for management point records for the s
 .PARAMETER OutputFormat
 Supported values:
     - Zip (default): OpenGraph implementation, outputs .zip containing .json file
-    - JSON: OpenGraph implementation, outputs uncompressed .json file
-    - StdOut: OpenGraph implementation, outputs JSON to console (can be piped to BHOperator)
     - CustomNodes: Outputs only custom nodes to .json file for BloodHound API
 
 .PARAMETER FileSizeLimit
@@ -100,6 +98,9 @@ Specify the path to a temporary directory where .json files will be stored befor
 
 .PARAMETER ZipDir
 Specify the path to a directory where the final .zip file will be stored (default: current directory)
+
+.PARAMETER MemoryThresholdPercent
+Stop execution when memory consumption exceeds this threshold (default: 90)
 
 .PARAMETER LogFile
 Specify the path to a log file to write script log to
@@ -159,6 +160,8 @@ param(
     [string]$TempDir,
     
     [string]$ZipDir,
+    
+    [int]$MemoryThresholdPercent = 90,
 
     [string]$LogFile,
     
@@ -364,6 +367,7 @@ function Invoke-DiscoveryPipeline {
 
   # 2) Run PER-HOST phases until none remain Pending
   while ($true) {
+    if ($script:stopProcessing) { break }
     Ensure-PerHostPhaseStatus -SelectedPhases $SelectedPhases
 
     $didWorkThisPass = $false
@@ -383,11 +387,27 @@ function Invoke-DiscoveryPipeline {
         try {
           & $script:PhaseActionsPerHost[$phase] -Target $t
           $t.PhaseStatus[$phase] = 'Success'
+
+                    # Periodic maintenance: run every 10 seconds during collection
+                    if (-not $script:LastMaintenanceCheck) { $script:LastMaintenanceCheck = Get-Date }
+                    if ((Get-Date) -ge $script:LastMaintenanceCheck.AddSeconds(10)) {
+                        if (-not (Test-MemoryUsage -Threshold $MemoryThresholdPercent)) {
+                            Write-LogMessage Error "Stopping enumeration due to high memory usage"
+                            $script:stopProcessing = $true
+                            break
+                        }
+                        [System.GC]::Collect()
+                        [System.GC]::WaitForPendingFinalizers()
+                        [System.GC]::Collect()
+                        $script:LastMaintenanceCheck = Get-Date
+                    }
+                    if ($script:stopProcessing) { break }
         } catch {
           $t.PhaseStatus[$phase] = 'Failed'
           Write-LogMessage Error "$phase phase failed on $($t.Hostname): $_"
         }
       }
+            if ($script:stopProcessing) { break }
     }
 
     if (-not $didWorkThisPass) { break }  # no pending work left for any per-host phase
@@ -9357,7 +9377,7 @@ function Test-FileSizeLimit {
 # Memory monitoring function
 function Test-MemoryUsage {
     param(
-        [int]$Threshold = 80
+        [int]$Threshold = 90
     )
     
     $os = Get-CimInstance Win32_OperatingSystem
