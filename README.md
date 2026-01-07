@@ -173,6 +173,32 @@ To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -Ou
 }
 ```
 
+# Command Line Options
+For the latest and most reliable information, please execute ConfigManBearPig with the `-Help` flag.
+
+| Option<br>______________________________________________ | Values<br>_______________________________________________________________________________________________ |
+|--------|--------|
+| **-Help** `<switch>` | Display usage information |
+| **-CollectionMethods** `<string>` | Collection methods to use (comma-separated):<br>&nbsp;&nbsp;&nbsp;&nbsp; • **All** (default): All SCCM collection methods<br>&nbsp;&nbsp;&nbsp;&nbsp; • LDAP<br>&nbsp;&nbsp;&nbsp;&nbsp; • Local<br>&nbsp;&nbsp;&nbsp;&nbsp; • DNS<br>&nbsp;&nbsp;&nbsp;&nbsp; • DHCP<br>&nbsp;&nbsp;&nbsp;&nbsp; • RemoteRegistry<br>&nbsp;&nbsp;&nbsp;&nbsp; • MSSQL<br>&nbsp;&nbsp;&nbsp;&nbsp; • AdminService<br>&nbsp;&nbsp;&nbsp;&nbsp; • WMI<br>&nbsp;&nbsp;&nbsp;&nbsp; • HTTP<br>&nbsp;&nbsp;&nbsp;&nbsp; • SMB |
+| **-ComputerFile** `<string>` | Specify the path to a file containing computer targets (limits to Remote Registry, MSSQL, AdminService, HTTP, SMB) |
+| **-Computers** `<string>` | List of computer targets (comma-separated) |
+| **-SMSProvider** `<string>` | Specify a specific SMS Provider to collect from (limits to AdminService, WMI) |
+| **-SiteCodes** `<string>` | Specify site codes to use for DNS collection (file path or comma-separated string) |
+| **-OutputFormat** `<string>` | • **Zip**: OpenGraph implementation that collects data in separate files for each MSSQL server, then zips them up and deletes the originals. The zip can be uploaded to BloodHound by navigating to `Administration` > `File Ingest`<br>• **CustomNodes**: Generate JSON to POST to `custom-nodes` API endpoint<br> |
+| **-TempDir** `<string>` | Specify the path to a temporary directory where .json files will be stored before being zipped<br>Default: new directory created with `[System.IO.Path]::GetTempPath()` |
+| **-ZipDir** `<string>` | Specify the path to a directory where the final .zip file will be stored<br>• Default: current directory |
+| **-LogFile** `<string>` | Specify the path to a log file to write script log to |
+| **-MemoryThresholdPercent** `<uint>` | Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `90` |
+| **-Domain** `<string>` | Specify a **domain** to use for name and SID resolution |
+| **-DomainController** `<string>` | Specify a **domain controller** FQDN/IP to use for name and SID resolution |
+| **-DisablePossibleEdges** (switch) | • **Off**: Collect the following edges (useful for offensive engagements but prone to false positive edges that may not be abusable):<br>&nbsp;&nbsp;&nbsp;&nbsp;• **CoerceAndRelayToMSSQL** By default, EPA setting is assumed to be Off if the MSSQL server can't be reached<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SameHostAs/SCCM_HasClient** By default, domain computers with the CmRcService SPN are assumed to be SCCM client devices<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SCCM_HasNetworkAccessAccount** By default, the NAA is assumed to be an enabled account with a valid password<br>&nbsp;&nbsp;&nbsp;&nbsp;• **MSSQL_*** By default, any targeted MSSQL Server instances are assumed to be site database server<br>• **Off**: The edges above are not collected |
+| **-FileSizeLimit** `<string>` | Stop enumeration after all collected files exceed this size on disk<br> • Supports MB, GB<br> • Default: `1GB` |
+| **-FileSizeUpdateInterval** `<uint>` | Receive periodic size updates as files are being written for each server<br>• Default: `5` seconds |
+| **-EnableBadOpsec** `<switch>` | •  **Off** (default): Do not create edges that launch cmd.exe/powershell.exe or access SYSTEM DPAPI keys on the system where ConfigManBearPig is executed (e.g., to dump and decrypt the NAA username)<br> • On: Create the edges above (WILL be detected by EDR/AV solutions) |
+| **-ShowCleartextPasswords** `<switch>` | •  **Off** (default): Do not decrypt or display cleartext passwords<br> • On: Display cleartext passwords when they are discovered |
+| **-Help** `<switch>` | Display usage information |
+| **-Version** `<switch>` | Display version information and exit 
+
 # SCCM Nodes Reference
 ## New Node Classes
 ### SCCM_AdminUser Node
@@ -182,14 +208,14 @@ To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -Ou
 |----------|------------|
 | **Name/Label**: string | • Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
 | **Object ID**: string | • Format: `<domainShortname>\<samAccountName>@<rootSiteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN@CAS` |
-| **Collection Source**: List<string> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
 | **Admin ID**: uint | • The admin identifier in SCCM<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `16777218` |
 | **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
-| **Collection IDs**: List<string> | • The collections this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@CAS','SMS00004@CAS']` |
+| **Collection IDs**: List\<string\> | • The collections this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@CAS','SMS00004@CAS']` |
 | **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
 | **Last Modified By**: string | • The admin user that last modified this admin user<br>• Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
 | **Last Modified Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2025-11-26T15:52:46.24Z` |
-| **Member Of**: List<string> | • The security roles this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS0001R@CAS (Full Administrator)']` |
+| **Member Of**: List\<string\> | • The security roles this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS0001R@CAS (Full Administrator)']` |
 
 ### SCCM_ClientDevice Node
 <img width="176" height="175" alt="image" src="https://github.com/user-attachments/assets/57b39743-1115-4b17-8af5-65257560a1b3" />
@@ -197,17 +223,50 @@ To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -Ou
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
 | **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
-| **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |
-| **Collection Source**: List<string> | |
+| **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |\
+| **AAD Device ID** | |
+| **AAD Tenant ID** | |
 | **AD Domain SID** | |
+| **AD Last Logon Time** | |
+| **AD Last Logon User** | |
+| **AD Last Logon User Domain** | |
+| **AD Last Logon User SID** | |
+| **CN** | |
+| **Collection IDs** | |
+| **Collection Names** | |
+| **CoManaged** | |
+| **Collection Source**: List<string> | |
+| **Current Logon User** | |
+| **Current Logon User SID** | |
 | **Current Management Point** | |
 | **Current Management Point SID** | |
+| **Device OS** | |
+| **Device OS Build** | |
 | **Distinguished Name** | |
 | **DNS Hostname** | |
+| **Domain** | |
+| **Domain** | |
 | **Previous SMSID** | |
 | **Previous SMSID Change Date** | |
 | **Site Code** | |
 | **SMSID** | |
+
+                        isVirtualMachine = if ($device.IsVirtualMachine) { $device.IsVirtualMachine } else { $null }
+                        lastActiveTime = if ($device.LastActiveTime) { $device.LastActiveTime } else { $null }
+                        lastOfflineTime = if ($device.CNLastOfflineTime) { $device.CNLastOfflineTime } else { $null }
+                        lastOnlineTime = if ($device.CNLastOnlineTime) { $device.CNLastOnlineTime } else { $null }
+                        lastReportedMPServerName = if ($device.LastMPServerName) { $device.LastMPServerName } else { $null }
+                        lastReportedMPServerSID = if ($lastReportedMPServerObject.SID) { $lastReportedMPServerObject.SID } else { $null }
+                        name = "$($device.Name)@$($device.SiteCode)"
+                        primaryUser = $device.PrimaryUser
+                        primaryUserSID = if ($primaryUserObject.SID) { $primaryUserObject.SID } else { $null }
+                        resourceID = if ($device.ResourceID) { "$($device.ResourceID)@$($device.SiteCode)" } else { $null }
+                        siteCode = if ($device.SiteCode) { $device.SiteCode } else { $null }
+                        SMSID = if ($device.SMSID) { $device.SMSID } else { $null }
+                        sourceSiteCode = $SiteCode
+                        userName = if ($device.UserName) { $device.UserName } else { $null }
+                        userDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
+                    }
 
 ### SCCM_Collection Node
 <img width="195" height="196" alt="image" src="https://github.com/user-attachments/assets/5db15cfd-c708-498c-b1f8-c727e230b7f6" />
