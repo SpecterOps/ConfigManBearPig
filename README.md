@@ -178,17 +178,26 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 
 | Option<br>______________________________________________ | Values<br>_______________________________________________________________________________________________ |
 |--------|--------|
-| **-Help** `<switch>` | • Display usage information |
+| **-Help** `<switch>` | Display usage information |
+| **-CollectionMethods** `<string>` | Collection methods to use (comma-separated):<br>&nbsp;&nbsp;&nbsp;&nbsp; • **All** (default): All SCCM collection methods<br>&nbsp;&nbsp;&nbsp;&nbsp; • LDAP<br>&nbsp;&nbsp;&nbsp;&nbsp; • Local<br>&nbsp;&nbsp;&nbsp;&nbsp; • DNS<br>&nbsp;&nbsp;&nbsp;&nbsp; • DHCP<br>&nbsp;&nbsp;&nbsp;&nbsp; • RemoteRegistry<br>&nbsp;&nbsp;&nbsp;&nbsp; • MSSQL<br>&nbsp;&nbsp;&nbsp;&nbsp; • AdminService<br>&nbsp;&nbsp;&nbsp;&nbsp; • WMI<br>&nbsp;&nbsp;&nbsp;&nbsp; • HTTP<br>&nbsp;&nbsp;&nbsp;&nbsp; • SMB |
+| **-ComputerFile** `<string>` | Specify the path to a file containing computer targets (limits to Remote Registry, MSSQL, AdminService, HTTP, SMB) |
+| **-Computers** `<string>` | List of computer targets (comma-separated) |
+| **-SMSProvider** `<string>` | Specify a specific SMS Provider to collect from (limits to AdminService, WMI) |
+| **-SiteCodes** `<string>` | Specify site codes to use for DNS collection (file path or comma-separated string) |
 | **-OutputFormat** `<string>` | • **Zip**: OpenGraph implementation that collects data in separate files for each MSSQL server, then zips them up and deletes the originals. The zip can be uploaded to BloodHound by navigating to `Administration` > `File Ingest`<br>• **CustomNodes**: Generate JSON to POST to `custom-nodes` API endpoint<br> |
-| **-TempDir** `<string>` | • Specify the path to a temporary directory where .json files will be stored before being zipped<br>Default: new directory created with `[System.IO.Path]::GetTempPath()` |
-| **-ZipDir** `<string>` | • Specify the path to a directory where the final .zip file will be stored<br>• Default: current directory |
-| **-MemoryThresholdPercent** `<uint>` | • Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `90` |
-| **-Domain** `<string>` | • Specify a **domain** to use for name and SID resolution |
-| **-DomainController** `<string>` | • Specify a **domain controller** FQDN/IP to use for name and SID resolution |
+| **-TempDir** `<string>` | Specify the path to a temporary directory where .json files will be stored before being zipped<br>Default: new directory created with `[System.IO.Path]::GetTempPath()` |
+| **-ZipDir** `<string>` | Specify the path to a directory where the final .zip file will be stored<br>• Default: current directory |
+| **-LogFile** `<string>` | Specify the path to a log file to write script log to |
+| **-MemoryThresholdPercent** `<uint>` | Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `90` |
+| **-Domain** `<string>` | Specify a **domain** to use for name and SID resolution |
+| **-DomainController** `<string>` | Specify a **domain controller** FQDN/IP to use for name and SID resolution |
 | **-DisablePossibleEdges** (switch) | • **Off**: Collect the following edges (useful for offensive engagements but prone to false positive edges that may not be abusable):<br>&nbsp;&nbsp;&nbsp;&nbsp;• **CoerceAndRelayToMSSQL** By default, EPA setting is assumed to be Off if the MSSQL server can't be reached<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SameHostAs/SCCM_HasClient** By default, domain computers with the CmRcService SPN are assumed to be SCCM client devices<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SCCM_HasNetworkAccessAccount** By default, the NAA is assumed to be an enabled account with a valid password<br>&nbsp;&nbsp;&nbsp;&nbsp;• **MSSQL_*** By default, any targeted MSSQL Server instances are assumed to be site database server<br>• **Off**: The edges above are not collected |
-| **-FileSizeLimit** `<string>` | • Stop enumeration after all collected files exceed this size on disk<br> • Supports MB, GB<br> • Default: `1GB` |
-| **-FileSizeUpdateInterval** `<uint>` | • Receive periodic size updates as files are being written for each server<br>• Default: `5` seconds |
-| **-Version** `<switch>` | • Display version information and exit 
+| **-FileSizeLimit** `<string>` | Stop enumeration after all collected files exceed this size on disk<br> • Supports MB, GB<br> • Default: `1GB` |
+| **-FileSizeUpdateInterval** `<uint>` | Receive periodic size updates as files are being written for each server<br>• Default: `5` seconds |
+| **-EnableBadOpsec** `<switch>` | •  **Off** (default): Do not create edges that launch cmd.exe/powershell.exe or access SYSTEM DPAPI keys on the system where ConfigManBearPig is executed (e.g., to dump and decrypt the NAA username)<br> • On: Create the edges above (WILL be detected by EDR/AV solutions) |
+| **-ShowCleartextPasswords** `<switch>` | •  **Off** (default): Do not decrypt or display cleartext passwords<br> • On: Display cleartext passwords when they are discovered |
+| **-Help** `<switch>` | Display usage information |
+| **-Version** `<switch>` | Display version information and exit 
 
 # SCCM Nodes Reference
 ## New Node Classes
