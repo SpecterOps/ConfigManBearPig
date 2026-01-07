@@ -10,60 +10,57 @@ Please hit me up on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem), T
 
 - [Overview](#overview)
   - [System Requirements](#system-requirements)
-  - [Minimum Permissions](#minimum-permissions)
-  - [Recommended Permissions](#recommended-permissions)
   - [Usage Info](#usage-info)
 - [Command Line Options](#command-line-options)
 - [Limitations](#limitations)
 - [Future Development](#future-development)
 - [SCCM Graph Model](#sccm-graph-model)
 - [SCCM Nodes Reference](#sccm-nodes-reference)
-    - [SCCM_AdminUser](#sccm-adminuser-node)
-    - [SCCM_ClientDevice](#sccm-clientdevice-node)
-    - [SCCM_Collection](#sccm-collection-node)
-    - [SCCM_SecurityRole](#sccm-securityrole-node)
-    - [SCCM_Site](#sccm-site-node)
+  - [SCCM_AdminUser](#sccm-adminuser-node)
+  - [SCCM_ClientDevice](#sccm-clientdevice-node)
+  - [SCCM_Collection](#sccm-collection-node)
+  - [SCCM_SecurityRole](#sccm-securityrole-node)
+  - [SCCM_Site](#sccm-site-node)
 - [SCCM Edges Reference](#sccm-edges-reference)
-  - [Edge Classes and Properties](#edge-classes-and-properties)
-    - [LocalAdminRequired](#localadminrequired)
-    - [CoerceAndRelayToAdminService](#coerceandrelaytoadminservice)
-    - [CoerceAndRelayToMSSQL](#coerceandrelaytomssql)
-    - [CoerceAndRelaytoSMB](#coerceandrelaytosmb)
-    - [HasSession](#hassession)
-    - [MSSQL_Contains](#mssql_contains)
-    - [MSSQL_ControlDB](#mssql_controldb)
-    - [MSSQL_ControlServer](#mssql_controlserver)
-    - [MSSQL_ExecuteOnHost](#mssql_executeonhost)
-    - [MSSQL_GetAdminTGS](#mssql_getadmintgs)
-    - [MSSQL_GetTGS](#mssql_gettgs)
-    - [MSSQL_HasLogin](#mssql_haslogin)
-    - [MSSQL_HostFor](#mssql_hostfor)
-    - [MSSQL_IsMappedTo](#mssql_ismappedto)
-    - [MSSQL_MemberOf](#mssql_memberof)
-    - [MSSQL_ServiceAccountFor](#mssql_serviceaccountfor)
-    - [SameHostAs](#samehostas)
-    - [SCCM_AdminsReplicatedTo](#sccm_adminsreplicatedto)
-    - [SCCM_AllPermissions](#sccm_allpermissions)
-    - [SCCM_ApplicationAdministrator](#sccm_applicationadministrator)
-    - [SCCM_AssignAllPermissions](#sccm_assignallpermissions)
-    - [SCCM_AssignSpecificPermissions](#sccm_assignspecificpermissions)
-    - [SCCM_Contains](#sccm_contains)
-    - [SCCM_FullAdministrator](#sccm_fulladministrator)
-    - [SCCM_HasADLastLogonUser](#sccm_hasadlastlogonuser)
-    - [SCCM_HasClient](#sccm_hasclient)
-    - [SCCM_HasCurrentUser](#sccm_hascurrentuser)
-    - [SCCM_HasMember](#sccm_hasmember)
-    - [SCCM_HasNetworkAccessAccount](#sccm_hasnetworkaccessaccount)
-    - [SCCM_HasPrimaryUser](#sccm_hasprimaryuser)
-    - [SCCM_HasStoredAccount](#sccm_hasstoredaccount)
-    - [SCCM_IsAssigned](#sccm_isassigned)
-    - [SCCM_IsMappedTo](#sccm_ismappedto)
+  - [LocalAdminRequired](#localadminrequired)
+  - [CoerceAndRelayToAdminService](#coerceandrelaytoadminservice)
+  - [CoerceAndRelayToMSSQL](#coerceandrelaytomssql)
+  - [CoerceAndRelaytoSMB](#coerceandrelaytosmb)
+  - [HasSession](#hassession)
+  - [MSSQL_Contains](#mssql_contains)
+  - [MSSQL_ControlDB](#mssql_controldb)
+  - [MSSQL_ControlServer](#mssql_controlserver)
+  - [MSSQL_ExecuteOnHost](#mssql_executeonhost)
+  - [MSSQL_GetAdminTGS](#mssql_getadmintgs)
+  - [MSSQL_GetTGS](#mssql_gettgs)
+  - [MSSQL_HasLogin](#mssql_haslogin)
+  - [MSSQL_HostFor](#mssql_hostfor)
+  - [MSSQL_IsMappedTo](#mssql_ismappedto)
+  - [MSSQL_MemberOf](#mssql_memberof)
+  - [MSSQL_ServiceAccountFor](#mssql_serviceaccountfor)
+  - [SameHostAs](#samehostas)
+  - [SCCM_AdminsReplicatedTo](#sccm_adminsreplicatedto)
+  - [SCCM_AllPermissions](#sccm_allpermissions)
+  - [SCCM_ApplicationAdministrator](#sccm_applicationadministrator)
+  - [SCCM_AssignAllPermissions](#sccm_assignallpermissions)
+  - [SCCM_AssignSpecificPermissions](#sccm_assignspecificpermissions)
+  - [SCCM_Contains](#sccm_contains)
+  - [SCCM_FullAdministrator](#sccm_fulladministrator)
+  - [SCCM_HasADLastLogonUser](#sccm_hasadlastlogonuser)
+  - [SCCM_HasClient](#sccm_hasclient)
+  - [SCCM_HasCurrentUser](#sccm_hascurrentuser)
+  - [SCCM_HasMember](#sccm_hasmember)
+  - [SCCM_HasNetworkAccessAccount](#sccm_hasnetworkaccessaccount)
+  - [SCCM_HasPrimaryUser](#sccm_hasprimaryuser)
+  - [SCCM_HasStoredAccount](#sccm_hasstoredaccount)
+  - [SCCM_IsAssigned](#sccm_isassigned)
+  - [SCCM_IsMappedTo](#sccm_ismappedto)
 
 # Overview
 Collects BloodHound OpenGraph compatible data and creates a zip in the current directory
   - Example: `sccm-bloodhound-20251020-115610.zip`
 
-Collects BloodHound OpenGraph compatible SCCM data following these ordered steps:
+ConfigManBearPig follows these ordered steps when run without arguments:
   1.  LDAP (identify sites, site servers, fallback status points, and management points in System Management container)
   2.  Local (identify management points and distribution points in logs when running this script on an SCCM client)
   3.  DNS (identify management points published to DNS)
@@ -77,12 +74,12 @@ Collects BloodHound OpenGraph compatible SCCM data following these ordered steps
 
 *Work in progress
 
-# System Requirements
+## System Requirements
   - PowerShell 4.0 or higher
   - Active Directory domain context with line of sight to a domain controller
   - Various permissions based on collection methods used
 
-# Limitations
+## Limitations
   - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
   - SCCM hierarchies don't have their own unique identifier, so the site code for the site that data is collected from is used in the identifier for objects (e.g., SMS00001@PS1), preventing merging of objects if there are more than one hierarchy in the same graph database (e.g., both hierarchies will have the SMS00001 collection but different members), but causing duplicate objects if collecting from two sites within the same hierarchy.
   - If the same site code exists more than once in the environment (Microsoft recommends against this, so it shouldn't), the nodes and edges for those sites will be merged, causing false positives in the graph. This is not recommended within the same forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
@@ -91,19 +88,115 @@ Collects BloodHound OpenGraph compatible SCCM data following these ordered steps
   - MSSQL collection assumes that any collection target hosting a SQL Server instance is a site database server. If there are other SQL Servers in the environment, false positives may occur.
   - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
+## Usage Info
+To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -OutputFormat CustomNodes (or copy the following) and use the API Explorer page to submit the JSON to the custom-nodes endpoint.
+```
+{
+    "custom_types":  {
+                         "SCCM_ClientDevice":  {
+                                                   "icon":  {
+                                                                "color":  "#f59b42",
+                                                                "name":  "desktop",
+                                                                "type":  "font-awesome"
+                                                            }
+                                               },
+                         "SCCM_Collection":  {
+                                                 "icon":  {
+                                                              "color":  "#fff82e",
+                                                              "name":  "sitemap",
+                                                              "type":  "font-awesome"
+                                                          }
+                                             },
+                         "MSSQL_Database":  {
+                                                "icon":  {
+                                                             "color":  "#f54242",
+                                                             "name":  "database",
+                                                             "type":  "font-awesome"
+                                                         }
+                                            },
+                         "MSSQL_ServerRole":  {
+                                                  "icon":  {
+                                                               "color":  "#6942f5",
+                                                               "name":  "users-gear",
+                                                               "type":  "font-awesome"
+                                                           }
+                                              },
+                         "SCCM_AdminUser":  {
+                                                "icon":  {
+                                                             "color":  "#558eea",
+                                                             "name":  "user-gear",
+                                                             "type":  "font-awesome"
+                                                         }
+                                            },
+                         "MSSQL_DatabaseUser":  {
+                                                    "icon":  {
+                                                                 "color":  "#f5ef42",
+                                                                 "name":  "user",
+                                                                 "type":  "font-awesome"
+                                                             }
+                                                },
+                         "MSSQL_DatabaseRole":  {
+                                                    "icon":  {
+                                                                 "color":  "#f5a142",
+                                                                 "name":  "users",
+                                                                 "type":  "font-awesome"
+                                                             }
+                                                },
+                         "MSSQL_Server":  {
+                                              "icon":  {
+                                                           "color":  "#42b9f5",
+                                                           "name":  "server",
+                                                           "type":  "font-awesome"
+                                                       }
+                                          },
+                         "MSSQL_Login":  {
+                                             "icon":  {
+                                                          "color":  "#dd42f5",
+                                                          "name":  "user-gear",
+                                                          "type":  "font-awesome"
+                                                      }
+                                         },
+                         "SCCM_Site":  {
+                                           "icon":  {
+                                                        "color":  "#67ebf0",
+                                                        "name":  "city", 
+                                                        "type":  "font-awesome"
+                                                    }
+                                       },
+                         "SCCM_SecurityRole":  {
+                                                   "icon":  {
+                                                                "color":  "#9852ed",
+                                                                "name":  "users-gear",
+                                                                "type":  "font-awesome"
+                                                            }
+                                               }
+                     }
+}
+```
+
 # SCCM Nodes Reference
 ## New Node Classes
+### SCCM_AdminUser Node
+<img width="191" height="194" alt="image" src="https://github.com/user-attachments/assets/1adc848c-3340-4c3c-920f-4fad15d5f99e" />
 
-### Host
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
-| **Name/Label**: string | • Format: `<dNSHostName>_<guid>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-pss.mayyhem.com_` |
+| **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
 | **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |
-
-### SCCM_AdminUser Node
-
+| **Collection Source**: List<string> | |
+| **AD Domain SID** | |
+| **Current Management Point** | |
+| **Current Management Point SID** | |
+| **Distinguished Name** | |
+| **DNS Hostname** | |
+| **Previous SMSID** | |
+| **Previous SMSID Change Date** | |
+| **Site Code** | |
+| **SMSID** | |
 
 ### SCCM_ClientDevice Node
+<img width="176" height="175" alt="image" src="https://github.com/user-attachments/assets/57b39743-1115-4b17-8af5-65257560a1b3" />
+
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
 | **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
@@ -120,14 +213,20 @@ Collects BloodHound OpenGraph compatible SCCM data following these ordered steps
 | **SMSID** | |
 
 ### SCCM_Collection Node
+<img width="195" height="196" alt="image" src="https://github.com/user-attachments/assets/5db15cfd-c708-498c-b1f8-c727e230b7f6" />
+
 
 ### SCCM_SecurityRole Node
+<img width="194" height="198" alt="image" src="https://github.com/user-attachments/assets/2bceaf16-0bca-4401-8fb8-0bbdeef516d4" />
+
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
 | **Name/Label** | |
 | **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
 
 ### SCCM_Site Node
+<img width="201" height="202" alt="image" src="https://github.com/user-attachments/assets/e50dfb9c-e213-4ecb-8da2-4087fa39f660" />
+
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
 | **Name/Label** | |
