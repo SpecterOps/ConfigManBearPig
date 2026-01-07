@@ -173,6 +173,23 @@ To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -Ou
 }
 ```
 
+# Command Line Options
+For the latest and most reliable information, please execute ConfigManBearPig with the `-Help` flag.
+
+| Option<br>______________________________________________ | Values<br>_______________________________________________________________________________________________ |
+|--------|--------|
+| **-Help** `<switch>` | • Display usage information |
+| **-OutputFormat** `<string>` | • **Zip**: OpenGraph implementation that collects data in separate files for each MSSQL server, then zips them up and deletes the originals. The zip can be uploaded to BloodHound by navigating to `Administration` > `File Ingest`<br>• **CustomNodes**: Generate JSON to POST to `custom-nodes` API endpoint<br> |
+| **-TempDir** `<string>` | • Specify the path to a temporary directory where .json files will be stored before being zipped<br>Default: new directory created with `[System.IO.Path]::GetTempPath()` |
+| **-ZipDir** `<string>` | • Specify the path to a directory where the final .zip file will be stored<br>• Default: current directory |
+| **-MemoryThresholdPercent** `<uint>` | • Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `90` |
+| **-Domain** `<string>` | • Specify a **domain** to use for name and SID resolution |
+| **-DomainController** `<string>` | • Specify a **domain controller** FQDN/IP to use for name and SID resolution |
+| **-DisablePossibleEdges** (switch) | • **Off**: Collect the following edges (useful for offensive engagements but prone to false positive edges that may not be abusable):<br>&nbsp;&nbsp;&nbsp;&nbsp;• **CoerceAndRelayToMSSQL** By default, EPA setting is assumed to be Off if the MSSQL server can't be reached<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SameHostAs/SCCM_HasClient** By default, domain computers with the CmRcService SPN are assumed to be SCCM client devices<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SCCM_HasNetworkAccessAccount** By default, the NAA is assumed to be an enabled account with a valid password<br>&nbsp;&nbsp;&nbsp;&nbsp;• **MSSQL_*** By default, any targeted MSSQL Server instances are assumed to be site database server<br>• **Off**: The edges above are not collected |
+| **-FileSizeLimit** `<string>` | • Stop enumeration after all collected files exceed this size on disk<br> • Supports MB, GB<br> • Default: `1GB` |
+| **-FileSizeUpdateInterval** `<uint>` | • Receive periodic size updates as files are being written for each server<br>• Default: `5` seconds |
+| **-Version** `<switch>` | • Display version information and exit 
+
 # SCCM Nodes Reference
 ## New Node Classes
 ### SCCM_AdminUser Node
