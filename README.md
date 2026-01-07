@@ -208,14 +208,14 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 |----------|------------|
 | **Name/Label**: string | • Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
 | **Object ID**: string | • Format: `<domainShortname>\<samAccountName>@<rootSiteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN@CAS` |
-| **Collection Source**: List<string> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
 | **Admin ID**: uint | • The admin identifier in SCCM<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `16777218` |
 | **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
-| **Collection IDs**: List<string> | • The collections this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@CAS','SMS00004@CAS']` |
+| **Collection IDs**: List\<string\> | • The collections this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@CAS','SMS00004@CAS']` |
 | **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
 | **Last Modified By**: string | • The admin user that last modified this admin user<br>• Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
 | **Last Modified Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2025-11-26T15:52:46.24Z` |
-| **Member Of**: List<string> | • The security roles this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS0001R@CAS (Full Administrator)']` |
+| **Member Of**: List\<string\> | • The security roles this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS0001R@CAS (Full Administrator)']` |
 
 ### SCCM_ClientDevice Node
 <img width="176" height="175" alt="image" src="https://github.com/user-attachments/assets/57b39743-1115-4b17-8af5-65257560a1b3" />
@@ -223,17 +223,50 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
 | **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
-| **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |
-| **Collection Source**: List<string> | |
+| **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |\
+| **AAD Device ID** | |
+| **AAD Tenant ID** | |
 | **AD Domain SID** | |
+| **AD Last Logon Time** | |
+| **AD Last Logon User** | |
+| **AD Last Logon User Domain** | |
+| **AD Last Logon User SID** | |
+| **CN** | |
+| **Collection IDs** | |
+| **Collection Names** | |
+| **CoManaged** | |
+| **Collection Source**: List<string> | |
+| **Current Logon User** | |
+| **Current Logon User SID** | |
 | **Current Management Point** | |
 | **Current Management Point SID** | |
+| **Device OS** | |
+| **Device OS Build** | |
 | **Distinguished Name** | |
 | **DNS Hostname** | |
+| **Domain** | |
+| **Domain** | |
 | **Previous SMSID** | |
 | **Previous SMSID Change Date** | |
 | **Site Code** | |
 | **SMSID** | |
+
+                        isVirtualMachine = if ($device.IsVirtualMachine) { $device.IsVirtualMachine } else { $null }
+                        lastActiveTime = if ($device.LastActiveTime) { $device.LastActiveTime } else { $null }
+                        lastOfflineTime = if ($device.CNLastOfflineTime) { $device.CNLastOfflineTime } else { $null }
+                        lastOnlineTime = if ($device.CNLastOnlineTime) { $device.CNLastOnlineTime } else { $null }
+                        lastReportedMPServerName = if ($device.LastMPServerName) { $device.LastMPServerName } else { $null }
+                        lastReportedMPServerSID = if ($lastReportedMPServerObject.SID) { $lastReportedMPServerObject.SID } else { $null }
+                        name = "$($device.Name)@$($device.SiteCode)"
+                        primaryUser = $device.PrimaryUser
+                        primaryUserSID = if ($primaryUserObject.SID) { $primaryUserObject.SID } else { $null }
+                        resourceID = if ($device.ResourceID) { "$($device.ResourceID)@$($device.SiteCode)" } else { $null }
+                        siteCode = if ($device.SiteCode) { $device.SiteCode } else { $null }
+                        SMSID = if ($device.SMSID) { $device.SMSID } else { $null }
+                        sourceSiteCode = $SiteCode
+                        userName = if ($device.UserName) { $device.UserName } else { $null }
+                        userDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
+                    }
 
 ### SCCM_Collection Node
 <img width="195" height="196" alt="image" src="https://github.com/user-attachments/assets/5db15cfd-c708-498c-b1f8-c727e230b7f6" />
