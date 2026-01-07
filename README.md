@@ -9,12 +9,11 @@ Please hit me up on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem), T
 # Table of Contents
 
 - [Overview](#overview)
-  - [System Requirements](#system-requirements)
-  - [Usage Info](#usage-info)
-- [Command Line Options](#command-line-options)
+- [System Requirements](#system-requirements)
 - [Limitations](#limitations)
+- [Usage Info](#usage-info)
+- [Command Line Options](#command-line-options)
 - [Future Development](#future-development)
-- [SCCM Graph Model](#sccm-graph-model)
 - [SCCM Nodes Reference](#sccm-nodes-reference)
   - [SCCM_AdminUser](#sccm-adminuser-node)
   - [SCCM_ClientDevice](#sccm-clientdevice-node)
@@ -181,18 +180,16 @@ To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -Ou
 
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
-| **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
-| **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |
-| **Collection Source**: List<string> | |
-| **AD Domain SID** | |
-| **Current Management Point** | |
-| **Current Management Point SID** | |
-| **Distinguished Name** | |
-| **DNS Hostname** | |
-| **Previous SMSID** | |
-| **Previous SMSID Change Date** | |
-| **Site Code** | |
-| **SMSID** | |
+| **Name/Label**: string | • Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
+| **Object ID**: string | • Format: `<domainShortname>\<samAccountName>@<rootSiteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN@CAS` |
+| **Collection Source**: List<string> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Admin ID**: uint | • The admin identifier in SCCM<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `16777218` |
+| **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
+| **Collection IDs**: List<string> | • The collections this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@CAS','SMS00004@CAS']` |
+| **Admin SID**: string | • The domain SID of the admin user<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1105` |
+| **Last Modified By**: string | • The admin user that last modified this admin user<br>• Format: `<domainShortname>\<samAccountName>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `MAYYHEM\DOMAINADMIN` |
+| **Last Modified Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2025-11-26T15:52:46.24Z` |
+| **Member Of**: List<string> | • The security roles this admin user is assigned<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS0001R@CAS (Full Administrator)']` |
 
 ### SCCM_ClientDevice Node
 <img width="176" height="175" alt="image" src="https://github.com/user-attachments/assets/57b39743-1115-4b17-8af5-65257560a1b3" />
