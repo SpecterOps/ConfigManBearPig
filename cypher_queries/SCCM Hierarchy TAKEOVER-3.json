@@ -1,1 +1,1 @@
-{"query":"MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]-\u003e(ct:CertTemplate)-[:PublishedTo]-\u003e(eca:EnterpriseCA)\nWHERE eca.hasvulnerableendpoint = True\nRETURN p\nLIMIT 1000","name":"SCCM Hierarchy TAKEOVER-3","description":""}
+{"query":"MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]-\u003e(ct:CertTemplate)-[:PublishedTo]-\u003e(eca:EnterpriseCA)\nWHERE eca.hasvulnerableendpoint = True\nRETURN p\nLIMIT 1000","name":"SCCM Hierarchy TAKEOVER-3","description":"NTLM coercion and relay to HTTP on AD CS"}
