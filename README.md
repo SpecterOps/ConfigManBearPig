@@ -90,6 +90,11 @@ ConfigManBearPig follows these ordered steps when run without arguments:
   - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
 ## Usage Info
+By default, ConfigManBearPig attempts to run all collection phases against all discovered systems that may be related to SCCM, so you can run the script without any arguments and get as much data as it is capable of collecting in your authentication context. However, I recommend the following options for troubleshooting any issues that might come up:
+```
+.\ConfigManBearPig.ps1 -LogFile ConfigManBearPig_output.log -Verbose
+```
+
 To populate the SCCM node glyphs in BloodHound, execute `ConfigManBearPig.ps1 -OutputFormat CustomNodes` (or copy the following) and use the API Explorer page to submit the JSON to the custom-nodes endpoint.
 ```
 {
