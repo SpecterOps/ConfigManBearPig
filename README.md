@@ -88,7 +88,7 @@ ConfigManBearPig follows these ordered steps when run without arguments:
   - I'm not a hooking expert, so if you see crashes during MSSQL collection due to the InitializeSecurityContextW hooking method that's totally vibe-coded, disable it. The hooking function doesn't work in PowerShell v7+ due to lack of support for certain APIs.
 
 ## Usage Info
-To populate the SCCM node glyphs in BloodHound, execute ConfigManBearPig.ps1 -OutputFormat CustomNodes (or copy the following) and use the API Explorer page to submit the JSON to the custom-nodes endpoint.
+To populate the SCCM node glyphs in BloodHound, execute `ConfigManBearPig.ps1 -OutputFormat CustomNodes` (or copy the following) and use the API Explorer page to submit the JSON to the custom-nodes endpoint.
 ```
 {
     "custom_types":  {
@@ -224,49 +224,44 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 |----------|------------|
 | **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
 | **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |\
-| **AAD Device ID** | |
-| **AAD Tenant ID** | |
-| **AD Domain SID** | |
-| **AD Last Logon Time** | |
-| **AD Last Logon User** | |
-| **AD Last Logon User Domain** | |
-| **AD Last Logon User SID** | |
-| **CN** | |
-| **Collection IDs** | |
-| **Collection Names** | |
-| **CoManaged** | |
+| **AAD Device ID**: string | |
+| **AAD Tenant ID**: string | |
+| **AD Domain SID**: string | |
+| **AD Last Logon Time**: datetime | |
+| **AD Last Logon User**: string | |
+| **AD Last Logon User Domain**: string | |
+| **AD Last Logon User SID**: string | |
+| **CN**: string | |
+| **Collection IDs**: List<string> | |
+| **Collection Names**: List<string> | |
+| **CoManaged**: bool | |
 | **Collection Source**: List<string> | |
-| **Current Logon User** | |
-| **Current Logon User SID** | |
-| **Current Management Point** | |
-| **Current Management Point SID** | |
-| **Device OS** | |
-| **Device OS Build** | |
-| **Distinguished Name** | |
-| **DNS Hostname** | |
-| **Domain** | |
-| **Domain** | |
-| **Previous SMSID** | |
-| **Previous SMSID Change Date** | |
-| **Site Code** | |
-| **SMSID** | |
+| **Current Logon User**: string | |
+| **Current Logon User SID**: string | |
+| **Current Management Point**: string | |
+| **Current Management Point SID**: string | |
+| **Device OS**: string | |
+| **Device OS Build**: string | |
+| **Distinguished Name**: string | |
+| **DNS Hostname**: string | |
+| **Domain**: string | |
+| **Is Virtual Machine**: bool | |
+| **Last Active Time**: datetime | |
+| **Last Offline Time**: datetime | |
+| **Last Online Time**: datetime | |
+| **Last Reported MP Server Name**: string | |
+| **Last Reported MP Server SID**: string | |
+| **Previous SMSID**: string | |
+| **Previous SMSID Change Date**: datetime | |
+| **Primary User**: string | |
+| **Primary User SID**: string | |
+| **Resource ID**: uint | |
+| **Site Code**: string | |
+| **SMSID**: string | |
+| **Source Site Code**: string | |
+| **User Name**: string | |
+| **User Domain Name**: string | |
 
-                        isVirtualMachine = if ($device.IsVirtualMachine) { $device.IsVirtualMachine } else { $null }
-                        lastActiveTime = if ($device.LastActiveTime) { $device.LastActiveTime } else { $null }
-                        lastOfflineTime = if ($device.CNLastOfflineTime) { $device.CNLastOfflineTime } else { $null }
-                        lastOnlineTime = if ($device.CNLastOnlineTime) { $device.CNLastOnlineTime } else { $null }
-                        lastReportedMPServerName = if ($device.LastMPServerName) { $device.LastMPServerName } else { $null }
-                        lastReportedMPServerSID = if ($lastReportedMPServerObject.SID) { $lastReportedMPServerObject.SID } else { $null }
-                        name = "$($device.Name)@$($device.SiteCode)"
-                        primaryUser = $device.PrimaryUser
-                        primaryUserSID = if ($primaryUserObject.SID) { $primaryUserObject.SID } else { $null }
-                        resourceID = if ($device.ResourceID) { "$($device.ResourceID)@$($device.SiteCode)" } else { $null }
-                        siteCode = if ($device.SiteCode) { $device.SiteCode } else { $null }
-                        SMSID = if ($device.SMSID) { $device.SMSID } else { $null }
-                        sourceSiteCode = $SiteCode
-                        userName = if ($device.UserName) { $device.UserName } else { $null }
-                        userDomainName = if ($device.UserDomainName) { $device.UserDomainName } else { $null }
-                    }
 
 ### SCCM_Collection Node
 <img width="195" height="196" alt="image" src="https://github.com/user-attachments/assets/5db15cfd-c708-498c-b1f8-c727e230b7f6" />
