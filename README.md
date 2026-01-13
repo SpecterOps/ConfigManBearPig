@@ -307,31 +307,107 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **SQL Service Account Name** | |
 | **Version** | |
 
-## Updated Node Classes
-### Computer
-| Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
-|----------|------------|
-| **Collection Source**: List<string> | |
-| **Network Boot Server**: bool | |
-| **SCCM Site System Roles**: List<string>| |
-| **SCCM Has Client Remote Control SPN**: bool | |
+# SCCM Edges Reference
+### LocalAdminRequired
+This edge is drawn from SCCM site server `Computer` nodes to `Computer` nodes hosting site system roles in the same site because the site server's domain computer account MUST be in the local Administrators group on these systems.
 
-### Group
-| Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
-|----------|------------|
-| **Collection Source**: List<string> | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
+This edge has no unique properties.
 
-### User
-| Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
-|----------|------------|
-| **Collection Source**: List<string> | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
+### CoerceAndRelayToAdminService
+This edge is drawn from the `Authenticated Users` group to `SCCM_Site` nodes that have an SMS Provider that is remote from a site server.
+
+The `Coercion Victim and Relay Target Pairs` property specifies site servers that can be coerced and remote SMS Providers that can be relayed to in order to conduct the TAKEOVER-5 attack technique.
+
+### CoerceAndRelayToMSSQL
+This edge is drawn from the `Authenticated Users` group to `MSSQL_Login` nodes that belong to an SCCM site server that is hosted remotely from the site database when the site database MSSQL server does NOT have EPA set to Required/Allowed.
+
+The `Coercion Victim and Relay Target Pairs` property specifies site servers that can be coerced and remote site database servers that can be relayed to in order to conduct the TAKEOVER-1 attack technique.
+
+### CoerceAndRelaytoSMB
+This edge is drawn from the `Authenticated Users` group to `Computer` nodes that belong to an SCCM site database or SMS Provider that is hosted remotely from the site server when the system does NOT have SMB signing set to Required.
+
+The `Coercion Victim Hostnames` property specifies site servers that can be coerced and remote site database and SMS Provider servers that can be relayed to in order to conduct the TAKEOVER-2, TAKEOVER-6, and TAKEOVER-7 attack techniques.
+
+### SameHostAs
+This edge is drawn between `Computer` and `SCCM_ClientDevice` nodes that represent the same machine.
+
+This edge has no unique properties.
+
+### SCCM_AdminsReplicatedTo
+This edge is drawn between primary sites in the same hierarchy in both directions because global data, including administrative users and security roles, are replicated throughout the hierarchy. Own one site, own them all. It is also drawn from primary sites to their child secondary sites, but only in that direction.
+
+This edge has no unique properties.
+
+### SCCM_AllPermissions
+This edge is drawn from `SCCM_AdminUser` nodes that are assigned the `All Systems` and `All Users and User Groups` collections and the `Full Administrator` security role to all `SCCM_Site` nodes in that hierarchy.
+
+This edge has no unique properties.
+
+### SCCM_ApplicationAdministrator
+This edge is drawn from `SCCM_AdminUser` nodes that are assigned the `Application Administrator` security role and any device collection containing the target `SCCM_ClientDevice` node.
+
+This edge has no unique properties.
+
+### SCCM_AssignAllPermissions
+This edge is drawn in two places. 
+
+First, it is drawn from the site database `MSSQL_Database` node to the `SCCM_Site` node for the site it controls.
+
+Second, it is drawn from the `Computer` node to the `SCCM_Site` node for each site system role that allows an attacker to compromise the hierarchy by adding an administrative user role assignment, including SMS Providers and site database servers.
+
+This edge has no unique properties.
+
+### SCCM_Contains
+This edge is drawn from `SCCM_Site` nodes to `SCCM_AdminUser`, `SCCM_Collection`, and `SCCM_SecurityRole` nodes in the same hierarchy.
+
+This edge has no unique properties.
+
+### SCCM_FullAdministrator
+This edge is drawn from `SCCM_AdminUser` nodes that are assigned the `Full Administrator` security role and any device collection containing the target `SCCM_ClientDevice` node.
+
+This edge has no unique properties.
+
+### SCCM_HasADLastLogonUser
+This edge is drawn from an `SCCM_ClientDevice` node to the `User` node representing the principal who was last to log into the device according to Active Directory the last time SCCM ran Active Directory discovery.
+
+This edge has no unique properties.
+
+### SCCM_HasClient
+This edge is drawn from an `SCCM_Site` node to ALL `SCCM_ClientDevice` nodes that are members of that primary site.
+
+This edge has no unique properties.
+
+### SCCM_HasCurrentUser
+This edge is drawn from an `SCCM_ClientDevice` node to the `User` node representing the principal who is currently logged in according to the fast notification service that connects client devices to their management point.
+
+This edge has no unique properties.
+
+### SCCM_HasMember
+This edge is drawn from an `SCCM_Collection` to the `SCCM_ClientDevice` nodes it contains.
+
+This edge has no unique properties.
+
+### SCCM_HasNetworkAccessAccount
+This edge is drawn from a `Computer` node to each `User` node representing a network access account that has saved credentials on the host.
+
+This edge has no unique properties.
+
+### SCCM_HasPrimaryUser
+This edge is drawn from an `SCCM_ClientDevice` node to the `User` node representing the principal who is the primary user according to user device affinity relationships in SCCM, which may be manually assigned by an SCCM administrator or automatically assigned when a user is logged on for >40 hours in a month.
+
+This edge has no unique properties.
+
+### SCCM_HasStoredAccount
+This edge is drawn from an `SCCM_Site` node to each `User` node representing a credential saved in SCCM.
+
+This edge has no unique properties.
+
+### SCCM_IsAssigned
+This edge is drawn from an `SCCM_AdminUser` node to the `SCCM_Collection` and `SCCM_SecurityRole` nodes it is assigned.
+
+This edge has no unique properties.
+
+### SCCM_IsMappedTo
+This edge is drawn from an AD principal (i.e., a `Base` node) to the `SCCM_AdminUser` node it corresponds to in SCCM.
+
+This edge has no unique properties.
