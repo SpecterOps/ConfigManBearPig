@@ -201,6 +201,20 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **-Help** `<switch>` | Display usage information |
 | **-Version** `<switch>` | Display version information and exit 
 
+# Future Development
+- Edge entity panels with abuse info
+- altauth to allow collection when client cert is required
+- Get members of groups with permissions on System Management container
+- Parse task sequences and collection variables for usernames and passwords during Local collection
+- Automatic client push installation detection (ELEVATE-2)
+- Identify site database service account via RemoteRegistry + SPNs
+- Relay management point computer accounts to site databases
+- Secondary site databases
+- Group and user collection members
+- DHCP Collection (requires unauthenticated network access)
+- WMI Collection (requires an SCCM admin account)
+- CMPivot Collection (requires an SCCM admin account)
+
 # SCCM Nodes Reference
 ## New Node Classes
 ### SCCM_AdminUser Node
