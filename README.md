@@ -4,6 +4,8 @@
 
 A PowerShell collector for adding SCCM attack paths to [BloodHound](https://github.com/SpecterOps/BloodHound) with OpenGraph by Chris Thompson at [SpecterOps](https://x.com/SpecterOps)
 
+Check out the introductory blog post here: https://specterops.io/blog/2026/01/13/introducing-configmanbearpig-a-bloodhound-opengraph-collector-for-sccm/
+
 Please hit me up on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem), Twitter ([@_Mayyhem](https://x.com/_Mayyhem)), or open an issue if you have any questions I can help with!
 
 # Table of Contents
@@ -224,6 +226,7 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 |----------|------------|
 | **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-dev@ps1` |
 | **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |\
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
 | **AAD Device ID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `20ac5936-4b2f-46a7-8b70-db08ef1f99cd` |
 | **AAD Tenant ID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `6c12b0b0-b2cc-4a73-8252-0b94bfca2145` |
 | **AD Domain SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1119` |
@@ -232,9 +235,8 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **AD Last Logon User Domain**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem` |
 | **AD Last Logon User SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1104` |
 | **CN**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1-DEV` |
-| **Collection IDs**: List<string> | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@PS1','SMS000KM@PS1']` |
-| **CoManaged**: bool | |
-| **Collection Source**: List<string> | |
+| **Collection IDs**: List\<string\> | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@PS1','SMS000KM@PS1']` |
+| **CoManaged**: bool | true/false |
 | **Current Logon User**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem\domainuser` |
 | **Current Logon User SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1104` |
 | **Current Management Point**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-mp.mayyhem.com` |
@@ -244,7 +246,7 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **Distinguished Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CN=PS1-DEV,OU=Workstations,DC=mayyhem,DC=com` |
 | **DNS Hostname**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-dev.mayyhem.com` |
 | **Domain**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `10.0.22621.525` |
-| **Is Virtual Machine**: bool | |
+| **Is Virtual Machine**: bool | true/false |
 | **Last Active Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
 | **Last Offline Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2025-12-09T09:02:06.13Z` |
 | **Last Online Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T22:50:28.293Z` |
@@ -269,14 +271,39 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 |----------|------------|
 | **Name/Label**: string | • Format: `<collectionId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS00001` |
 | **Object ID**: string | • Format: `<collectionId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS00001@PS1` |
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Collection Type**: uint | • 1: User Collection<br>• 2: Device Collection |
+| **Collection Variables Count**: uint | Number of collection variables for this collection |
+| **Comment**: string | Admin-provided comment or description |
+| **Is Built In**: bool | Does the collection ship with SCCM or was it added by the organization? |
+| **Last Change Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
+| **Last Member Change Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
+| **Member Count**: uint | Number of members in this collection |
+| **Members**: List\<string\> | • Format: `<resourceId>@<siteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['16777226@PS1','16777219@PS1']` |
+| **Source Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
+
 
 ### SCCM_SecurityRole Node
 <img width="194" height="198" alt="image" src="https://github.com/user-attachments/assets/2bceaf16-0bca-4401-8fb8-0bbdeef516d4" />
 
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
-| **Name/Label**: string | • Format: `<roleId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R` |
-| **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R@PS1` |
+| **Name/Label**: string | • Format: `<roleId>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R` |
+| **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R@PS1` |
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Created By**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem\domainadmin` |
+| **Created Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
+| **Is Built In**: bool | Does the security role ship with SCCM or was it added by the organization? |
+| **Is Sec Admin Role**: bool | Does the security role allow assignment of any security role to users? |
+| **Last Modified By**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem\domainadmin` |
+| **Last Modified Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
+| **Members**: List\<string\> | • Format: `<name>@<rootSiteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['mayyhem\domainuser@PS1','mayyhem\domainadmin@PS1']` |
+| **Number of Admins**: uint | Number of admins assigned this role |
+| **Role Description**: string | Admin-provided comment or description |
+| **Role ID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R` |
+| **Role Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `Full Administrator` |
+| **Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CAS` |
+
 
 ### SCCM_Site Node
 <img width="201" height="202" alt="image" src="https://github.com/user-attachments/assets/e50dfb9c-e213-4ecb-8da2-4087fa39f660" />
@@ -285,27 +312,30 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 |----------|------------|
 | **Name/Label** | |
 | **Object ID**: string | • Format: `<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
-| **Collection Source**: List<string> | |
-| **Build Number** | |
-| **Display Name** | |
-| **Distinguished Name** | |
-| **Install Dir** | |
-| **Parent Site Code** | |
-| **Site Code** | |
-| **Site GUID** | |
-| **Site Server Domain SID** | |
-| **Site Server FQDN** | |
-| **Site Server Name** | |
-| **Site Type** | |
-| **Source Forest** | |
-| **SQL Database Name** | |
-| **SQL Server Domain SID** | |
-| **SQL Server FQDN** | |
-| **SQL Server Name** | |
-| **SQL Service Port** | |
-| **SQL Service Account Domain SID** | |
-| **SQL Service Account Name** | |
-| **Version** | |
+| **Collection Source**: List\<string\> | • The collection phase(s) used to populate this entity panel<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `AdminService-SMS_Admin` |
+| **Build Number**: uint | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `9106` |
+| **Display Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `Primary Site One` |
+| **Distinguished Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CN=SMS-Site-PS1,CN=System Management,CN=System,DC=mayyhem,DC=com` |
+| **Install Dir**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `C:\Program Files\Microsoft Configuration Manager` |
+| **Parent Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CAS` |
+| **Root Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CAS` |
+| **Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
+| **Site GUID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `{5BBD28B5-EF88-44EB-BCC8-725ED8DA08C8}` |
+| **Site Server Domain SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1112` |
+| **Site Server FQDN**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-pss.mayyhem.com` |
+| **Site Server Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-pss.mayyhem.com` |
+| **Site System Roles**: List\<string\> | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `[ps1-mp.mayyhem.com: SMS Management Point@PS1, ps1-dp.mayyhem.com: SMS Distribution Point@PS1]` |
+| **Site Type**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `Primary Site` |
+| **Source Forest**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem.com` |
+| **SQL Database Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CM_PS1` |
+| **SQL Server Domain SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1109` |
+| **SQL Server FQDN**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-db.mayyhem.com` |
+| **SQL Server Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-db.mayyhem.com` |
+| **SQL Service Port**: uint | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `1433` |
+| **SQL Service Account Domain SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1116` |
+| **SQL Service Account Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `sqlsccmsvc` |
+| **Stored Accounts**: List\<string\> | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `[networkaccess (S-1-5-21-3242052782-1287495003-4091326449-1120), sccm_push (S-1-5-21-3242052782-1287495003-4091326449-1121)]` |
+| **Version**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `5.00.9106.1000` |
 
 # SCCM Edges Reference
 ### LocalAdminRequired
