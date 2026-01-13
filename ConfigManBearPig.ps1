@@ -100,7 +100,7 @@ Specify the path to a temporary directory where .json files will be stored befor
 Specify the path to a directory where the final .zip file will be stored (default: current directory)
 
 .PARAMETER MemoryThresholdPercent
-Stop execution when memory consumption exceeds this threshold (default: 90)
+Stop execution when memory consumption exceeds this threshold (default: 95)
 
 .PARAMETER LogFile
 Specify the path to a log file to write script log to
@@ -111,15 +111,13 @@ Specify a domain to use for LDAP queries and name resolution
 .PARAMETER DomainController
 Specify a domain controller to use for DNS and AD object resolution
 
-.PARAMETER Credential
-Specify a PSCredential object for authentication
-
 .PARAMETER DisablePossibleEdges
 Switch/Flag:
     - Off (default): Make the following edges traversable (useful for offensive engagements but extends duration and is prone to false positive edges that may not be abusable):
         - CoerceAndRelayToMSSQL: EPA setting is assumed to be Off if the MSSQL server can't be reached
         - MSSQL_*: Assume any targeted MSSQL Server instances are site database servers, which may create false positives if MSSQL is installed on SCCM-related targets for other purposes, otherwise use Remote Registry collection to confirm
-        - SameHostAs: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
+        - SameHostAs/SCCM_HasClient: Systems with the CmRcService SPN are treated as client devices in the root site for the forest (may be false positive if SCCM client was removed after remote control was used)
+        - SCCM_HasNetworkAccessAccount: the NAA password may not be valid
     - On: The edges above are not created or are created as non-traversable to reduce false positives at the expense of possible edges
 
 .PARAMETER EnableBadOpsec
@@ -161,7 +159,7 @@ param(
     
     [string]$ZipDir,
     
-    [int]$MemoryThresholdPercent = 90,
+    [int]$MemoryThresholdPercent = 95,
 
     [string]$LogFile,
     
@@ -9377,7 +9375,7 @@ function Test-FileSizeLimit {
 # Memory monitoring function
 function Test-MemoryUsage {
     param(
-        [int]$Threshold = 90
+        [int]$Threshold = 95
     )
     
     $os = Get-CimInstance Win32_OperatingSystem
