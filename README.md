@@ -188,7 +188,7 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **-TempDir** `<string>` | Specify the path to a temporary directory where .json files will be stored before being zipped<br>Default: new directory created with `[System.IO.Path]::GetTempPath()` |
 | **-ZipDir** `<string>` | Specify the path to a directory where the final .zip file will be stored<br>• Default: current directory |
 | **-LogFile** `<string>` | Specify the path to a log file to write script log to |
-| **-MemoryThresholdPercent** `<uint>` | Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `90` |
+| **-MemoryThresholdPercent** `<uint>` | Maximum memory allocation limit, after which the script will exit to prevent availability issues<br>• Default: `95` |
 | **-Domain** `<string>` | Specify a **domain** to use for name and SID resolution |
 | **-DomainController** `<string>` | Specify a **domain controller** FQDN/IP to use for name and SID resolution |
 | **-DisablePossibleEdges** (switch) | • **Off**: Collect the following edges (useful for offensive engagements but prone to false positive edges that may not be abusable):<br>&nbsp;&nbsp;&nbsp;&nbsp;• **CoerceAndRelayToMSSQL** By default, EPA setting is assumed to be Off if the MSSQL server can't be reached<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SameHostAs/SCCM_HasClient** By default, domain computers with the CmRcService SPN are assumed to be SCCM client devices<br>&nbsp;&nbsp;&nbsp;&nbsp;• **SCCM_HasNetworkAccessAccount** By default, the NAA is assumed to be an enabled account with a valid password<br>&nbsp;&nbsp;&nbsp;&nbsp;• **MSSQL_*** By default, any targeted MSSQL Server instances are assumed to be site database server<br>• **Off**: The edges above are not collected |
@@ -222,58 +222,61 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
-| **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `dev-pc@ps1` |
+| **Name/Label**: string | • Format: `<samAccountName>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-dev@ps1` |
 | **Object ID**: string | • Format: `<smsId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |\
-| **AAD Device ID**: string | |
-| **AAD Tenant ID**: string | |
-| **AD Domain SID**: string | |
-| **AD Last Logon Time**: datetime | |
-| **AD Last Logon User**: string | |
-| **AD Last Logon User Domain**: string | |
-| **AD Last Logon User SID**: string | |
-| **CN**: string | |
-| **Collection IDs**: List<string> | |
-| **Collection Names**: List<string> | |
+| **AAD Device ID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `20ac5936-4b2f-46a7-8b70-db08ef1f99cd` |
+| **AAD Tenant ID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `6c12b0b0-b2cc-4a73-8252-0b94bfca2145` |
+| **AD Domain SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1119` |
+| **AD Last Logon Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-09T02:37:28Z` |
+| **AD Last Logon User**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `domainuser` |
+| **AD Last Logon User Domain**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem` |
+| **AD Last Logon User SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1104` |
+| **CN**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1-DEV` |
+| **Collection IDs**: List<string> | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `['SMS00001@PS1','SMS000KM@PS1']` |
 | **CoManaged**: bool | |
 | **Collection Source**: List<string> | |
-| **Current Logon User**: string | |
-| **Current Logon User SID**: string | |
-| **Current Management Point**: string | |
-| **Current Management Point SID**: string | |
-| **Device OS**: string | |
-| **Device OS Build**: string | |
-| **Distinguished Name**: string | |
-| **DNS Hostname**: string | |
-| **Domain**: string | |
+| **Current Logon User**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem\domainuser` |
+| **Current Logon User SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1104` |
+| **Current Management Point**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-mp.mayyhem.com` |
+| **Current Management Point SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1118` |
+| **Device OS**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `Microsoft Windows NT Workstation 10.0 (Tablet Edition)` |
+| **Device OS Build**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `10.0.22621.525` |
+| **Distinguished Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `CN=PS1-DEV,OU=Workstations,DC=mayyhem,DC=com` |
+| **DNS Hostname**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `ps1-dev.mayyhem.com` |
+| **Domain**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `10.0.22621.525` |
 | **Is Virtual Machine**: bool | |
-| **Last Active Time**: datetime | |
-| **Last Offline Time**: datetime | |
-| **Last Online Time**: datetime | |
-| **Last Reported MP Server Name**: string | |
-| **Last Reported MP Server SID**: string | |
-| **Previous SMSID**: string | |
-| **Previous SMSID Change Date**: datetime | |
-| **Primary User**: string | |
-| **Primary User SID**: string | |
-| **Resource ID**: uint | |
-| **Site Code**: string | |
-| **SMSID**: string | |
-| **Source Site Code**: string | |
-| **User Name**: string | |
-| **User Domain Name**: string | |
+| **Last Active Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T23:14:34Z` |
+| **Last Offline Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2025-12-09T09:02:06.13Z` |
+| **Last Online Time**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `2026-01-13T22:50:28.293Z` |
+| **Last Reported MP Server Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1-MP.MAYYHEM.COM` |
+| **Last Reported MP Server SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1118` |
+| **Previous SMSID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:6C25F505-E982-4A0D-8C6E-BFC74992D581` |
+| **Previous SMSID Change Date**: datetime | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `11/26/2025 19:32:13` |
+| **Primary User**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem\domainuser` |
+| **Primary User SID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `S-1-5-21-3242052782-1287495003-4091326449-1104` |
+| **Resource ID**: uint | • Format: `<resourceId>@<siteCode>`<br>• Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `16777231@PS1` |
+| **Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
+| **SMSID**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `GUID:8BCADD46-7EAD-4767-9D54-06AE64756026` |
+| **Source Site Code**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
+| **User Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `domainuser` |
+| **User Domain Name**: string | • Example:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `mayyhem` |
 
 
 ### SCCM_Collection Node
 <img width="195" height="196" alt="image" src="https://github.com/user-attachments/assets/5db15cfd-c708-498c-b1f8-c727e230b7f6" />
 
+| Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
+|----------|------------|
+| **Name/Label**: string | • Format: `<collectionId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS00001` |
+| **Object ID**: string | • Format: `<collectionId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS00001@PS1` |
 
 ### SCCM_SecurityRole Node
 <img width="194" height="198" alt="image" src="https://github.com/user-attachments/assets/2bceaf16-0bca-4401-8fb8-0bbdeef516d4" />
 
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
 |----------|------------|
-| **Name/Label** | |
-| **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `PS1` |
+| **Name/Label**: string | • Format: `<roleId>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R` |
+| **Object ID**: string | • Format: `<roleId>@<siteCode>`<br>• Examples:<br>&nbsp;&nbsp;&nbsp;&nbsp;• `SMS0001R@PS1` |
 
 ### SCCM_Site Node
 <img width="201" height="202" alt="image" src="https://github.com/user-attachments/assets/e50dfb9c-e213-4ecb-8da2-4087fa39f660" />
@@ -312,11 +315,6 @@ For the latest and most reliable information, please execute ConfigManBearPig wi
 | **Network Boot Server**: bool | |
 | **SCCM Site System Roles**: List<string>| |
 | **SCCM Has Client Remote Control SPN**: bool | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
-| **** | |
 
 ### Group
 | Property<br>______________________________________________ | Definition<br>_______________________________________________________________________________________________ |
