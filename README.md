@@ -2,7 +2,7 @@
 
 <img width="256" height="384" alt="ChatGPT Image Dec 22, 2025, 01_24_18 PM" src="https://github.com/user-attachments/assets/f40c4268-431d-4dbc-9134-ed6d0e7309a0" />
 
-A PowerShell collector for adding SCCM attack paths to [BloodHound](https://github.com/SpecterOps/BloodHound) with OpenGraph by Chris Thompson at [SpecterOps](https://x.com/SpecterOps)
+A PowerShell collector for adding SCCM attack paths to [BloodHound](https://github.com/SpecterOps/BloodHound) with [OpenGraph](https://specterops.io/opengraph) by Chris Thompson at [SpecterOps](https://x.com/SpecterOps)
 
 Check out the introductory blog post here: https://specterops.io/blog/2026/01/13/introducing-configmanbearpig-a-bloodhound-opengraph-collector-for-sccm/
 
