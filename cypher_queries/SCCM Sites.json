@@ -1,1 +1,1 @@
-{"query":"MATCH p = (:SCCM_Site)-[]-(:SCCM_Site)\nRETURN p","name":"SCCM Sites","description":""}
+{"query":"MATCH (n:SCCM_Site)\nOPTIONAL MATCH p = (n:SCCM_Site)-[]-(:SCCM_Site)\nRETURN n,p","name":"SCCM Sites","description":""}
