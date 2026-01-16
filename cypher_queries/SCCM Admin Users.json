@@ -1,1 +1,1 @@
-{"query":"MATCH p = ()-[:SCCM_AllPermissions|SCCM_IsMappedTo|SCCM_IsAssigned]-() RETURN p","name":"SCCM Admin Users","description":""}
+{"query":"MATCH p0 = (:Base)-[:SCCM_IsMappedTo]-\u003e()\nMATCH p1 = (:SCCM_AdminUser)-[:SCCM_AllPermissions|SCCM_IsAssigned]-\u003e()\nRETURN p0,p1","name":"SCCM Admin Users (Requires AdminService Collection w/ SCCM Admin User)","description":"Display domain accounts mapped to SCCM administrative users and the roles and collections they are assigned"}

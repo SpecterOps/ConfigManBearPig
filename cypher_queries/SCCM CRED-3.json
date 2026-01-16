@@ -1,1 +1,1 @@
-{"query":"MATCH p = (:Computer)-[:SCCM_HasNetworkAccessAccount]-(:User)\nRETURN p","name":"SCCM CRED-3","description":""}
+{"query":"MATCH p = (:Computer)-[:SCCM_HasNetworkAccessAccount]-(:User)\nRETURN p","name":"SCCM CRED-3 (Requires Collection w/ -EnableBadOpsec and not -DisablePossibleEdges)","description":"Display domain Computer nodes that have a network access account credential stored in the local WMI repository"}

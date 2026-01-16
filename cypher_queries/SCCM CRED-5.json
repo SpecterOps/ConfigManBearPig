@@ -1,1 +1,1 @@
-{"query":"MATCH p = (:SCCM_Site)-[:SCCM_HasStoredAccount]-\u003e(:User)\nRETURN p","name":"SCCM CRED-5","description":""}
+{"query":"MATCH p = (:SCCM_Site)-[:SCCM_HasStoredAccount]-\u003e(:User)\nRETURN p","name":"SCCM CRED-5 (Requires AdminService Collection w/ SCCM Admin User)","description":"Display all accounts with credentials stored in the site database"}

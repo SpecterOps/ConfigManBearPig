@@ -1,1 +1,1 @@
-{"query":"MATCH p = ()-[:SCCM_HasADLastLogonUser|:SCCM_HasCurrentUser|:SCCM_HasPrimaryUser]-(c:SCCM_ClientDevice) WHERE c.name CONTAINS 'PS1-DEV' RETURN p","name":"SCCM Client Device Users","description":""}
+{"query":"MATCH p = ()-[:SCCM_HasADLastLogonUser|:SCCM_HasCurrentUser|:SCCM_HasPrimaryUser]-(c:SCCM_ClientDevice) WHERE c.name CONTAINS 'PS1-DEV' RETURN p","name":"SCCM Client Device Users (Requires AdminService Collection w/ SCCM Admin User)","description":"Display the current user, primary user, and AD last logon user for a specified client device"}
