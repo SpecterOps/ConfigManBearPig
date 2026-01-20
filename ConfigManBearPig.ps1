@@ -228,11 +228,13 @@ function Test-Prerequisites {
     }
     
     # Check permissions
-    $isAdmin = Test-AdminPrivileges
-    if (-not $isAdmin) {
-        Write-LogMessage Warning "Not running as administrator. Some collection methods may fail."
-    }
-    
+    if ($CollectionMethods -contains 'Local' -or $CollectionMethods -contains 'All' -or $CollectionMethods -eq '') {
+        $isAdmin = Test-AdminPrivileges
+        if (-not $isAdmin) {
+            Write-LogMessage Warning "Not running as administrator. Local collection method may fail."
+        }
+    } 
+
     # Validate ComputerFile if specified
     if ($ComputerFile -and -not (Test-Path $ComputerFile)) {
         $issues += "ComputerFile not found: $ComputerFile"
