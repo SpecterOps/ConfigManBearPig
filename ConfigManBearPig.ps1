@@ -2987,7 +2987,7 @@ function Invoke-LDAPCollection {
                 collectionSource = @("LDAP-mSSMSSite")
                 displayName = $null
                 distinguishedName = $mSSMSSiteObj.DistinguishedName
-                parentSiteCode = $null # Will be determined by mSSMSManagementPoint
+                parentSiteCode = "Undetermined" # Will be determined by mSSMSManagementPoint
                 SCCMInfra = $true
                 siteCode = $siteCode
                 siteGUID = $siteGuid
@@ -3081,7 +3081,7 @@ function Invoke-LDAPCollection {
                     
                 # Determine site type based on design specification
                 $siteType = "Secondary Site"  # Default assumption
-                $parentSiteCode = $null
+                $parentSiteCode = "Undetermined"
 
                 # Check if this MP's CommandLine site code matches the site code we're analyzing
                 if ($commandLineSiteCode -eq $mpSiteCode) {
@@ -10270,6 +10270,5 @@ try {
     Write-Host "ConfigManBearPig execution completed" -ForegroundColor Cyan
     Write-Host ("=" * 80) -ForegroundColor Cyan
 }
-
 
 #endregion
