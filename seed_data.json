@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "source_kind": "SCCM_Seed"
+  },
+  "graph": {
+    "nodes": [
+      {
+        "kinds": ["IgnoreMe"],
+        "id": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01",
+        "properties": { "name": "IgnoreMe" }
+      }
+    ],
+    "edges": [
+      { "kind": "LocalAdminRequired", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "CoerceAndRelayToAdminService", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "CoerceAndRelayToMSSQL", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "CoerceAndRelaytoSMB", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "HasSession", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_Contains", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_ControlDB", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_ControlServer", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_ExecuteOnHost", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_GetAdminTGS", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_GetTGS", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_HasLogin", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_HostFor", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_IsMappedTo", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_LinkedAsAdmin", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_MemberOf", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "MSSQL_ServiceAccountFor", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SameHostAs", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_AdminsReplicatedTo", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_AllPermissions", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_ApplicationAdministrator", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_AssignAllPermissions", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_AssignSpecificPermissions", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_Contains", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_FullAdministrator", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasADLastLogonUser", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasClient", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasCurrentUser", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasMember", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasNetworkAccessAccount", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasPrimaryUser", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_HasStoredAccount", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_IsAssigned", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "SCCM_IsMappedTo", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } }
+    ]
+  }
+}
