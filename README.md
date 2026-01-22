@@ -180,6 +180,8 @@ To populate the SCCM node glyphs in BloodHound, execute `ConfigManBearPig.ps1 -O
 }
 ```
 
+If the [prebuilt Cypher queries](cypher_queries) are returning `failed to translate kinds: unable to map kinds:` errors, upload [seed_data.json](seed_data.json) to populate a single fake instance of each new edge class so they can be queried.
+
 # Command Line Options
 For the latest and most reliable information, please execute ConfigManBearPig with the `-Help` flag.
 
