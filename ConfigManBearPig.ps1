@@ -161,7 +161,7 @@ param(
     
     [int]$MemoryThresholdPercent = 95,
 
-    [string]$LogFile,
+    [string]$LogFile = "ConfigManBearPig_output.log",
     
     [string]$Domain = $env:USERDNSDOMAIN,
 
@@ -467,7 +467,20 @@ function Resolve-PrincipalInDomain {
     
     # Initialize and check cache to avoid repeated lookups
     if (-not $script:ResolvedPrincipalCache) { $script:ResolvedPrincipalCache = @{} }
-    
+
+    # Handle DOMAIN\username format by normalizing to just the username portion
+    if ($Name -match '^([^\\]+)\\(.+)$') {
+        $usernamePart = $matches[2]
+        Write-LogMessage Verbose "Detected DOMAIN\username format for '$Name'; resolving username '$usernamePart'"
+        $Name = $usernamePart
+    }
+
+    # Short-circuit immediately if all domains have already been tried for this name
+    if ($script:ResolvedPrincipalCache.ContainsKey("ALL|$($Name.ToLower())")) {
+        Write-LogMessage Verbose "All domains already attempted for '$Name', returning cached failure"
+        return $null
+    }
+
     # Extract domain suffix from FQDN if present
     $domainsToTry = @()
     if ($Name -match '\.') {
@@ -658,10 +671,9 @@ function Resolve-PrincipalInDomain {
             if ($adsiResult) {
                 $props = $adsiResult.Properties
                 $objectClass = if ($props["objectclass"]) { $props["objectclass"][$props["objectclass"].Count - 1] } else { "unknown" }
-                $objectSid = if ($props["objectsid"]) { 
-                    (New-Object System.Security.Principal.SecurityIdentifier($props["objectsid"][0], 0)).Value 
-                } else { 
-                    $null 
+                $objectSid = $null
+                if ($props["objectsid"] -and $props["objectsid"][0]) {
+                    try { $objectSid = [System.Security.Principal.SecurityIdentifier]::new([byte[]]$props["objectsid"][0], 0).Value } catch {}
                 }
                                 
                 $result = [PSCustomObject]@{
@@ -801,7 +813,10 @@ function Resolve-PrincipalInDomain {
                 $result = $searcher.FindOne()
                 if ($result) {
                     $objectClass = $result.Properties["objectclass"][$result.Properties["objectclass"].Count - 1]
-                    $objectSid = (New-Object System.Security.Principal.SecurityIdentifier($result.Properties["objectsid"][0], 0)).Value
+                    $objectSid = $null
+                    if ($result.Properties["objectsid"].Count -gt 0 -and $result.Properties["objectsid"][0]) {
+                        try { $objectSid = [System.Security.Principal.SecurityIdentifier]::new([byte[]]$result.Properties["objectsid"][0], 0).Value } catch {}
+                    }
                     
                     Write-LogMessage Verbose "Found object using DirectorySearcher: $($result.Properties["samaccountname"][0])"
                     
@@ -883,7 +898,8 @@ function Resolve-PrincipalInDomain {
         $script:ResolvedPrincipalCache[$cacheKey] = $null
     }
     
-    # All domains failed
+    # All domains failed — cache globally so subsequent calls skip all domain lookups
+    $script:ResolvedPrincipalCache["ALL|$($Name.ToLower())"] = $null
     Write-LogMessage Verbose "Failed to resolve '$Name' in all attempted domains"
     return $null
 }
@@ -896,13 +912,25 @@ function Get-ActiveDirectoryObject {
         [string[]]$Properties = @("objectSid", "DNSHostName", "distinguishedName", "samAccountName", "userPrincipalName", "objectClass")
     )
    
-    if ([string]::IsNullOrWhiteSpace($Name) -and [string]::IsNullOrWhiteSpace($Sid)) { 
-        return $null 
+    if ([string]::IsNullOrWhiteSpace($Name) -and [string]::IsNullOrWhiteSpace($Sid)) {
+        return $null
     }
-    
+
     $searchValue = if ($Sid) { $Sid } else { $Name }
     $isSearchBySid = -not [string]::IsNullOrWhiteSpace($Sid)
-    
+
+    # Cache check — avoid re-querying AD for objects that already failed to resolve
+    if (-not $script:ADObjectCache) { $script:ADObjectCache = @{} }
+    $adObjCacheKey = "$($searchValue.ToLower())|$($Domain.ToLower())"
+    if ($script:ADObjectCache.ContainsKey($adObjCacheKey)) {
+        if ($script:ADObjectCache[$adObjCacheKey]) {
+            Write-LogMessage Verbose "Returning cached AD object for '$searchValue' in '$Domain'"
+        } else {
+            Write-LogMessage Verbose "Already failed to resolve '$searchValue' in '$Domain', skipping"
+        }
+        return $script:ADObjectCache[$adObjCacheKey]
+    }
+
     if ($script:ADModuleAvailable) {
         try {
             $serverParam = @{}
@@ -923,7 +951,7 @@ function Get-ActiveDirectoryObject {
                             default { $adObject.objectClass[-1] }
                         }
                         
-                        return [PSCustomObject]@{
+                        $script:ADObjectCache[$adObjCacheKey] = [PSCustomObject]@{
                             name = if ($adObject.DNSHostName) { $adObject.DNSHostName } elseif ($adObject.samAccountName) { "$Domain\$($adObject.samAccountName)" } else { "$Domain\$($adObject.Name)" }
                             SID = $adObject.objectSid.Value
                             domain = $Domain
@@ -936,6 +964,7 @@ function Get-ActiveDirectoryObject {
                             enabled = if ($adObject.PSObject.Properties.Name -contains "Enabled") { $adObject.Enabled } else { $null }
                             isDomainPrincipal = $true
                         }
+                        return $script:ADObjectCache[$adObjCacheKey]
                     }
                 } catch {
                     Write-LogMessage Verbose "Failed to resolve SID '$Sid' using Get-ADObject: $_"
@@ -966,7 +995,7 @@ function Get-ActiveDirectoryObject {
                                 default { $adObject.objectClass[-1] }
                             }
                             
-                            return [PSCustomObject]@{
+                            $script:ADObjectCache[$adObjCacheKey] = [PSCustomObject]@{
                                 name = if ($adObject.DNSHostName) { $adObject.DNSHostName } elseif ($adObject.samAccountName) { "$Domain\$($adObject.samAccountName)" } else { "$Domain\$($adObject.Name)" }
                                 SID = if ($adObject.objectSid) { $adObject.objectSid.Value } else { $null }
                                 domain = $Domain
@@ -979,6 +1008,7 @@ function Get-ActiveDirectoryObject {
                                 enabled = if ($adObject.PSObject.Properties.Name -contains "Enabled") { $adObject.Enabled } else { $null }
                                 isDomainPrincipal = $true
                             }
+                            return $script:ADObjectCache[$adObjCacheKey]
                         }
                     } catch { 
                         # Continue to next filter
@@ -1028,7 +1058,7 @@ function Get-ActiveDirectoryObject {
             $resolvedName = if ($result.Properties["samaccountname"].Count -gt 0) { $result.Properties["samaccountname"][0] } else { $result.Properties["cn"][0] }
             $dnsHostName = if ($result.Properties["dnshostname"].Count -gt 0) { $result.Properties["dnshostname"][0] } else { $null }
             
-            return [PSCustomObject]@{
+            $script:ADObjectCache[$adObjCacheKey] = [PSCustomObject]@{
                 name = if ($dnsHostName) { $dnsHostName } else { "$Domain\$resolvedName" }
                 SID = $sid
                 Domain = $Domain
@@ -1041,22 +1071,23 @@ function Get-ActiveDirectoryObject {
                 Enabled = $null
                 IsDomainPrincipal = $true
             }
+            return $script:ADObjectCache[$adObjCacheKey]
         }
     } catch {
         Write-LogMessage Warning "DirectorySearcher failed for '$searchValue' in domain '$Domain': $_"
     }
-    
+
     # Try NTAccount translation as last resort
     try {
         Write-LogMessage Verbose "Attempting NTAccount translation for '$searchValue' in domain '$Domain'"
-        
+
         if ($isSearchBySid -or $Name -match "^S-\d+-\d+") {
             # SID to name translation
             $sidValue = if ($isSearchBySid) { $Sid } else { $Name }
             $sid = New-Object System.Security.Principal.SecurityIdentifier($sidValue)
             $resolvedName = $sid.Translate([System.Security.Principal.NTAccount]).Value
-            
-            return [PSCustomObject]@{
+
+            $script:ADObjectCache[$adObjCacheKey] = [PSCustomObject]@{
                 name = $resolvedName
                 SID = $sidValue
                 Domain = $Domain
@@ -1069,12 +1100,13 @@ function Get-ActiveDirectoryObject {
                 Enabled = $null
                 IsDomainPrincipal = $true
             }
+            return $script:ADObjectCache[$adObjCacheKey]
         } else {
             # Name to SID translation
             $ntAccount = New-Object System.Security.Principal.NTAccount($Domain, $Name)
             $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier])
-            
-            return [PSCustomObject]@{
+
+            $script:ADObjectCache[$adObjCacheKey] = [PSCustomObject]@{
                 name = "$Domain\$Name"
                 SID = $sid.Value
                 Domain = $Domain
@@ -1087,12 +1119,14 @@ function Get-ActiveDirectoryObject {
                 Enabled = $null
                 IsDomainPrincipal = $true
             }
+            return $script:ADObjectCache[$adObjCacheKey]
         }
     } catch {
         Write-LogMessage Verbose "NTAccount translation failed for '$searchValue' in domain '$Domain': $_"
     }
-    
-    # Return failure
+
+    # Cache and return failure
+    $script:ADObjectCache[$adObjCacheKey] = $null
     return $null
 }
 
@@ -2237,12 +2271,15 @@ function Add-SameHostAsEdges {
         # Merge SCCM_ClientDevice nodes with the same dNSHostName
         if ($matchingClientDeviceNodes.Count -gt 1) {
             Write-LogMessage Warning "Multiple SCCM_ClientDevice nodes found with ADDomainSID $computerId; merging nodes"
-            $primaryClientDeviceNode = $matchingClientDeviceNodes[0]
-            for ($i = 1; $i -lt $matchingClientDeviceNodes.Count; $i++) {
-                $duplicateNode = $matchingClientDeviceNodes[$i]
+            # Prefer the node whose Id carries the authoritative GUID: prefix from privileged collection
+            # over a random GUID generated during remote control SPN enumeration
+            $guidPrefixedNode = $matchingClientDeviceNodes | Where-Object { $_.Id -like "GUID:*" } | Select-Object -First 1
+            $primaryClientDeviceNode = if ($guidPrefixedNode) { $guidPrefixedNode } else { $matchingClientDeviceNodes[0] }
+            foreach ($duplicateNode in $matchingClientDeviceNodes) {
+                if ($duplicateNode.Id -eq $primaryClientDeviceNode.Id) { continue }
 
-                # Merge properties
-                foreach ($key in $duplicateNode.Properties.Keys) {
+                # Merge properties — snapshot keys to avoid enumerating a live collection
+                foreach ($key in @($duplicateNode.Properties.Keys)) {
                     if ($primaryClientDeviceNode.Properties.ContainsKey($key)) {
                         # Merge arrays
                         if ($primaryClientDeviceNode.Properties[$key] -is [Array] -and $duplicateNode.Properties[$key] -is [Array]) {
@@ -9485,29 +9522,32 @@ function Close-StreamingWriter {
 
 function New-StreamingBloodHoundWriter {
     param(
-        [string]$FilePath
+        [string]$FilePath,
+        [bool]$IncludeSourceKind = $true
     )
-    
+
     $writerObj = New-BaseStreamingWriter -FilePath $FilePath -WriterType "BloodHound"
-    
+
     # Add BloodHound-specific properties
     $writerObj | Add-Member -MemberType NoteProperty -Name "FirstNode" -Value $true
     $writerObj | Add-Member -MemberType NoteProperty -Name "FirstEdge" -Value $true
     $writerObj | Add-Member -MemberType NoteProperty -Name "NodeCount" -Value 0
     $writerObj | Add-Member -MemberType NoteProperty -Name "EdgeCount" -Value 0
-    
+
     # Start JSON structure
     $writerObj.Writer.WriteLine('{')
     # Removing until deletion issue is fixed
 
     $writerObj.Writer.WriteLine('  "$schema": "https://raw.githubusercontent.com/MichaelGrafnetter/EntraAuthPolicyHound/refs/heads/main/bloodhound-opengraph.schema.json",')
-    $writerObj.Writer.WriteLine('  "metadata": {')
-    $writerObj.Writer.WriteLine('    "source_kind": "SCCM_Base"')
-    $writerObj.Writer.WriteLine('  },')
+    if ($IncludeSourceKind) {
+        $writerObj.Writer.WriteLine('  "metadata": {')
+        $writerObj.Writer.WriteLine('    "source_kind": "SCCM_Base"')
+        $writerObj.Writer.WriteLine('  },')
+    }
     $writerObj.Writer.WriteLine('  "graph": {')
     $writerObj.Writer.WriteLine('    "nodes": [')
     $writerObj.Writer.Flush()
-    
+
     return $writerObj
 }
 
@@ -9669,27 +9709,69 @@ function Export-BloodHoundData {
     if (-not (Test-Path $TempDir)) {
         New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
     }
+    Write-LogMessage Info "Writing BloodHound data..."
+
+    # Separate base domain object nodes (Computer, Group, User) from SCCM-specific nodes
+    $computerNodes = @($script:Nodes | Where-Object { $_.kinds -contains "Computer" })
+    $groupNodes    = @($script:Nodes | Where-Object { $_.kinds -contains "Group" })
+    $userNodes     = @($script:Nodes | Where-Object { $_.kinds -contains "User" })
+    $sccmNodes     = @($script:Nodes | Where-Object {
+        -not ($_.kinds -contains "Computer") -and
+        -not ($_.kinds -contains "Group") -and
+        -not ($_.kinds -contains "User")
+    })
+
+    # Write base domain object files without source_kind
+    $baseObjectFiles = [ordered]@{
+        "computers.json" = $computerNodes
+        "groups.json"    = $groupNodes
+        "users.json"     = $userNodes
+    }
+
+    foreach ($entry in $baseObjectFiles.GetEnumerator()) {
+        $nodes = $entry.Value
+        if ($nodes.Count -eq 0) { continue }
+
+        $filePath = Join-Path $TempDir $entry.Key
+        $script:OutputFiles += $filePath
+
+        $writer = $null
+        try {
+            $writer = New-StreamingBloodHoundWriter -FilePath $filePath -IncludeSourceKind $false
+            Write-LogMessage Info "Writing $($nodes.Count) $($entry.Key -replace '\.json','') nodes to: $filePath"
+            foreach ($node in $nodes) {
+                Write-BloodHoundNode -WriterObj $writer -Node $node
+            }
+            Close-BloodHoundWriter -WriterObj $writer
+        }
+        catch {
+            Write-LogMessage Error "Failed to write $($entry.Key)`: $_"
+            if ($writer) {
+                try { Close-BloodHoundWriter -WriterObj $writer } catch {}
+            }
+        }
+    }
+
+    # Write SCCM-specific nodes and all edges to sccm.json
     $bloodhoundFile = Join-Path $TempDir "sccm.json"
     $script:OutputFiles += $bloodhoundFile
-    
-    Write-LogMessage Info "Writing BloodHound data..."
 
     try {
         $serverWriter = New-StreamingBloodHoundWriter -FilePath $bloodhoundFile
         Write-LogMessage Info "Writing to file: $bloodhoundFile"
-        
-        # Write all nodes for this server
-        foreach ($node in $script:Nodes) {
+
+        # Write SCCM-specific nodes (excludes Computer, Group, User base domain objects)
+        foreach ($node in $sccmNodes) {
             Write-BloodHoundNode -WriterObj $serverWriter -Node $node
         }
-        
-        # Write all edges for this server
+
+        # Write all edges
         foreach ($edge in $script:Edges) {
             Write-BloodHoundEdge -WriterObj $serverWriter -Edge $edge
         }
-        
-        Write-LogMessage Success "Wrote $(($script:Nodes).Count) nodes and $(($script:Edges).Count) edges"
-        
+
+        Write-LogMessage Success "Wrote $($sccmNodes.Count) SCCM nodes and $(($script:Edges).Count) edges"
+
         # Show final size before closing
         Show-CurrentFileSize -WriterObj $serverWriter -Context "finalizing"
 
@@ -9798,6 +9880,7 @@ try {
     $script:UseNetFallback = $false
     $script:FileSizeLimit = $FileSizeLimit
     $script:LastFileSizeCheck = Get-Date
+    $script:StartTime = Get-Date
     $script:FileSizeCheckInterval = $FileSizeUpdateInterval
 
     # Initialize output structures
@@ -9805,12 +9888,21 @@ try {
     $script:Edges = @()
 
     # Script version information
-    $script:ScriptVersion = "1.0"
+    $script:ScriptVersion = "1.1"
     $script:ScriptName = "ConfigManBearPig"
 
     if ($Version) {
         Write-Host "$script:ScriptName version $script:ScriptVersion" -ForegroundColor Green
         return
+    }
+
+    # If the log file already exists, append a timestamp to avoid appending to a prior run's log
+    if ($LogFile -and (Test-Path -LiteralPath $LogFile)) {
+        $logDir  = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($LogFile))
+        $logBase = [System.IO.Path]::GetFileNameWithoutExtension($LogFile)
+        $logExt  = [System.IO.Path]::GetExtension($LogFile)
+        $LogFile = Join-Path $logDir "$logBase-$(Get-Date -Format 'yyyyMMdd-HHmmss')$logExt"
+        Write-LogMessage Info "Log file already existed; writing to: $LogFile"
     }
 
     if ($OutputFormat -eq "CustomNodes") {
@@ -10266,6 +10358,20 @@ try {
     } else {
         Write-LogMessage Warning "No output files were created"
     }
+
+    $elapsed = (Get-Date) - $script:StartTime
+    $totalSec = [math]::Round($elapsed.TotalSeconds)
+    if ($totalSec -lt 60) {
+        $elapsedStr = "${totalSec}s"
+    } elseif ($totalSec -lt 3600) {
+        $elapsedStr = "$([math]::Floor($totalSec / 60))m $($totalSec % 60)s"
+    } else {
+        $h = [math]::Floor($totalSec / 3600)
+        $m = [math]::Floor(($totalSec % 3600) / 60)
+        $s = $totalSec % 60
+        $elapsedStr = "${h}h ${m}m ${s}s"
+    }
+    Write-LogMessage Success "ConfigManBearPig completed in $elapsedStr"
 
     Write-Host ""
     Write-Host ("=" * 80) -ForegroundColor Cyan

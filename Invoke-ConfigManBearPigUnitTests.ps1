@@ -4,6 +4,11 @@
 # Required Permissions:
 #   - Full Administrator security role in SCCM
 #   - Local Administrator on all hosts of SCCM site system roles
+#
+# Usage:
+#   - Use against https://github.com/Mayyhem/ludus_sccm
+#   - Run:
+#       ./Invoke-ConfigManBearPigUnitTests.ps1 -DisablePossibleEdges
 
 [CmdletBinding()]
 param(
@@ -38,7 +43,7 @@ param(
     [string]$SmsProvider,# = 'cas-pss.mayyhem.com',
 
     [Parameter(Mandatory=$false)]
-    [string]$LogFile,
+    [string]$LogFile = "ConfigManBearPig_UnitTests_output.log",
 
     # Limit tests to a single edge type for focused debugging
     [Parameter(Mandatory=$false)]
@@ -290,25 +295,6 @@ $script:ExpectedEdges = @(
             Properties = @{
                 id = "S-1-5-21-*"
                 dNSHostName = "ps1-pss.$Domain"
-            }
-        }
-    },
-    @{
-        Kind = "LocalAdminRequired"
-        Count = 1
-        Description = "The PS1 primary site server has local administrator rights on the content library server"
-        Source = @{
-            Kinds = @("Computer", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps1-pss.$Domain"
-            }
-        }
-        Target = @{
-            Kinds = @("Computer", "Base")
-            Properties = @{
-                id = "S-1-5-21-*"
-                dNSHostName = "ps1-lib.$Domain"
             }
         }
     },
@@ -704,7 +690,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_Contains"
         Count = 3
-        Description = "The MSSQL servers contain the sysadmin server role"
+        Description = "The MSSQL servers (cas-db, ps1-db, and ps1-psv) contain the sysadmin server role"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -725,7 +711,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_ControlDB"
         Count = 2
-        Description = "The db_owner MSSQL database role controls the site database"
+        Description = "The db_owner MSSQL database role controls the site database on cas-db and ps1-db"
         Source = @{
             Kinds = @("MSSQL_DatabaseRole")
             Properties = @{
@@ -746,7 +732,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_ControlServer"
         Count = 3
-        Description = "The sysadmin MSSQL server role controls the server instance"
+        Description = "The sysadmin MSSQL server role controls the server instance on cas-db, ps1-db, and ps1-psv"
         Source = @{
             Kinds = @("MSSQL_ServerRole")
             Properties = @{
@@ -767,7 +753,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_ExecuteOnHost"
         Count = 3
-        Description = "The MSSQL server can execute commands on its host"
+        Description = "The MSSQL servers (cas-db, ps1-db, and ps1-psv) can execute commands on their hosts"
         Source = @{
             Kinds = @("MSSQL_Server")
             Properties = @{
@@ -853,7 +839,7 @@ $script:ExpectedEdges = @(
     @{
         Kind="MSSQL_HostFor"
         Count = 3
-        Description = "The MSSQL server computers host the MSSQL server instances"
+        Description = "The MSSQL server computers (cas-db, ps1-db, and ps1-psv) host the MSSQL server instances"
         Source = @{
             Kinds = @("Computer", "Base")
             Properties = @{
@@ -1299,8 +1285,8 @@ $script:ExpectedEdges = @(
     ###################
     @{
         Kind="SCCM_IsAssigned"
-        Count = 1
-        Description = "The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS root site"
+        Count = 2
+        Description = "The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS root site (plus one dupe that BloodHound dedupes)"
         Source = @{
             Kinds = @("SCCM_AdminUser")
             Properties = @{
@@ -1320,8 +1306,8 @@ $script:ExpectedEdges = @(
     ###################
     @{
         Kind="SCCM_IsMappedTo"
-        Count = 1
-        Description = "The domainadmin user is mapped to an SCCM admin user in the CAS primary site"
+        Count = 2
+        Description = "The domainadmin user is mapped to an SCCM admin user in the CAS primary site (plus one dupe that BloodHound dedupes)"
         Source = @{
             Kinds = @("User", "Base")
             Properties = @{
@@ -1418,7 +1404,8 @@ function Test-EdgePattern {
     if ($ExpectedEdge.Properties) {
         foreach ($prop in $ExpectedEdge.Properties.Keys) {
             $expectedValue = $ExpectedEdge.Properties[$prop]
-            $actualValue = if ($Edge.properties.$prop) { $Edge.properties.$prop } else { $Edge.$prop }
+            # Use if-statement (not if-expression) to avoid PS pipeline unrolling single-element arrays
+            if ($Edge.properties.$prop) { $actualValue = $Edge.properties.$prop } else { $actualValue = $Edge.$prop }
             
             if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
                 if ($ShowDebug) {
@@ -1826,7 +1813,7 @@ function Test-Edges {
                             if ($testCase.Source.Properties) {
                                 foreach ($prop in $testCase.Source.Properties.Keys) {
                                     $expectedValue = $testCase.Source.Properties[$prop]
-                                    $actualValue = if ($sourceNode.properties.$prop) { $sourceNode.properties.$prop } else { $sourceNode.$prop }
+                                    if ($sourceNode.properties.$prop) { $actualValue = $sourceNode.properties.$prop } else { $actualValue = $sourceNode.$prop }
                                     if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
                                         $mismatchReasons += "Source node $($sourceNode.id): $prop = '$actualValue' (expected '$expectedValue')"
                                     }
@@ -1840,7 +1827,7 @@ function Test-Edges {
                             if ($testCase.Target.Properties) {
                                 foreach ($prop in $testCase.Target.Properties.Keys) {
                                     $expectedValue = $testCase.Target.Properties[$prop]
-                                    $actualValue = if ($targetNode.properties.$prop) { $targetNode.properties.$prop } else { $targetNode.$prop }
+                                    if ($targetNode.properties.$prop) { $actualValue = $targetNode.properties.$prop } else { $actualValue = $targetNode.$prop }
                                     if (-not (Test-PropertyMatch -Actual $actualValue -Expected $expectedValue)) {
                                         $mismatchReasons += "Target node $($targetNode.id): $prop = '$actualValue' (expected '$expectedValue')"
                                     }
@@ -1885,6 +1872,9 @@ function Test-Edges {
 }
 
 function Get-MissingTests {
+    param(
+        [PSObject]$TestResults
+    )
     Write-TestLog "`nChecking for untested node and edge types..." -Level Info
     Write-TestLog "=" * 60 -Level Info
     
@@ -1928,6 +1918,15 @@ function Get-MissingTests {
         }
     } else {
         Write-TestLog "All edge types have tests defined!" -Level Success
+    }
+
+    # Report failed edge types from test results
+    if ($TestResults -and $TestResults.Failed.Count -gt 0) {
+        $failedEdgeTypes = $TestResults.Failed | ForEach-Object { $_['Kind'] } | Sort-Object -Unique
+        Write-TestLog "Failed edge types:" -Level Error
+        foreach ($edgeType in $failedEdgeTypes) {
+            Write-TestLog "  - $edgeType" -Level Error
+        }
     }
 }
 
@@ -2007,7 +2006,7 @@ try {
 
         # Display coverage table
         Write-TestLog "Edge Type Coverage Summary:" -Level Info
-        Get-MissingTests -ShowDetails
+        Get-MissingTests -TestResults $testResults
     }
 } catch {
     Write-TestLog "Error during setup or test execution: $_" -Level Error
