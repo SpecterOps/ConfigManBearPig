@@ -9784,6 +9784,65 @@ function Export-BloodHoundData {
             try { Close-BloodHoundWriter -WriterObj $serverWriter } catch {}
         }
     }
+
+    # Write seed_data.json with edge kind declarations
+    $seedDataPath = Join-Path $TempDir "seed_data.json"
+    $seedId = "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01"
+    $seedRef = @{ value = $seedId }
+    $seedEdgeKinds = @(
+        "LocalAdminRequired",
+        "CoerceAndRelayToAdminService",
+        "CoerceAndRelayToMSSQL",
+        "CoerceAndRelaytoSMB",
+        "HasSession",
+        "MSSQL_Contains",
+        "MSSQL_ControlDB",
+        "MSSQL_ControlServer",
+        "MSSQL_ExecuteOnHost",
+        "MSSQL_GetAdminTGS",
+        "MSSQL_GetTGS",
+        "MSSQL_HasLogin",
+        "MSSQL_HostFor",
+        "MSSQL_IsMappedTo",
+        "MSSQL_LinkedAsAdmin",
+        "MSSQL_MemberOf",
+        "MSSQL_ServiceAccountFor",
+        "SameHostAs",
+        "SCCM_AdminsReplicatedTo",
+        "SCCM_AllPermissions",
+        "SCCM_ApplicationAdministrator",
+        "SCCM_AssignAllPermissions",
+        "SCCM_AssignSpecificPermissions",
+        "SCCM_Contains",
+        "SCCM_FullAdministrator",
+        "SCCM_HasADLastLogonUser",
+        "SCCM_HasClient",
+        "SCCM_HasCurrentUser",
+        "SCCM_HasMember",
+        "SCCM_HasNetworkAccessAccount",
+        "SCCM_HasPrimaryUser",
+        "SCCM_HasStoredAccount",
+        "SCCM_IsAssigned",
+        "SCCM_IsMappedTo"
+    )
+    $seedData = [ordered]@{
+        metadata = [ordered]@{ source_kind = "SCCM_Seed" }
+        graph = [ordered]@{
+            nodes = @(
+                [ordered]@{
+                    kinds      = @("IgnoreMe")
+                    id         = $seedId
+                    properties = [ordered]@{ name = "IgnoreMe" }
+                }
+            )
+            edges = @($seedEdgeKinds | ForEach-Object {
+                [ordered]@{ kind = $_; start = $seedRef; end = $seedRef }
+            })
+        }
+    }
+    $seedJson = $seedData | ConvertTo-Json -Depth 10 -Compress
+    [System.IO.File]::WriteAllText($seedDataPath, $seedJson)
+    $script:OutputFiles += $seedDataPath
 }
 
 #endregion
@@ -9888,7 +9947,7 @@ try {
     $script:Edges = @()
 
     # Script version information
-    $script:ScriptVersion = "1.1"
+    $script:ScriptVersion = "1.2"
     $script:ScriptName = "ConfigManBearPig"
 
     if ($Version) {
