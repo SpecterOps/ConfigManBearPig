@@ -180,7 +180,8 @@ To populate the SCCM node glyphs in BloodHound, execute `ConfigManBearPig.ps1 -O
 }
 ```
 
-If the [prebuilt Cypher queries](cypher_queries) are returning `failed to translate kinds: unable to map kinds:` errors, upload [seed_data.json](seed_data.json) to populate a single fake instance of each new edge class so they can be queried.
+
+If the [prebuilt Cypher queries](cypher_queries) are returning `failed to translate kinds: unable to map kinds:` errors, upload [seed_data.json](seed_data.json) to populate a single fake instance of each new edge class so they can be queried. Also, make sure you're using Postgres as the BloodHound backend graph database rather than Neo4j, or they will not return results: https://bloodhound.specterops.io/get-started/custom-installation#postgresql
 
 # Command Line Options
 For the latest and most reliable information, please execute ConfigManBearPig with the `-Help` flag.
