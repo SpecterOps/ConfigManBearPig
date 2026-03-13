@@ -79,6 +79,7 @@ ConfigManBearPig follows these ordered steps when run without arguments:
   - PowerShell 4.0 or higher
   - Active Directory domain context with line of sight to a domain controller
   - Various permissions based on collection methods used
+  - Postgres backend for BloodHound (to use prebuilt Cypher queries): https://bloodhound.specterops.io/get-started/custom-installation#postgresql
 
 ## Limitations
   - You MUST include the 'MSSQL' collection method to remotely identify EPA settings on site database servers with any domain user (or 'RemoteRegistry' to collect from the registry with admin privileges on the system hosting the database).
