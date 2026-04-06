@@ -1,0 +1,40 @@
+[project]
+name = "configmanbearpig"
+version = "0.1.0"
+description = "BloodHound OpenGraph collector for SCCM/ConfigMgr - Python port"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "SpecterOps", email = "research@specterops.io" }
+]
+keywords = ["bloodhound", "opengraph", "security", "sccm", "configmgr"]
+
+dependencies = [
+    "ldap3>=2.9.1",
+    "impacket>=0.11.0",
+    "requests>=2.28.0",
+    "requests-ntlm>=1.2.0",
+    "dnspython>=2.4.0",
+    "pycryptodome>=3.19.0",
+    "cryptography>=41.0.0",
+    "pyasn1>=0.5.0",
+    "pyasn1-modules>=0.3.0",
+    "pytest>=7.0.0",
+    "requests-toolbelt>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
