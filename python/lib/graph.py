@@ -15,10 +15,10 @@ logger = logging.getLogger("ConfigManBearPig")
 # Edge types that are traversable in BloodHound (from PowerShell source lines 2160-2225)
 TRAVERSABLE_EDGE_TYPES = {
     "AdminTo",
-    "CoerceAndRelayToAdminService",
-    "CoerceAndRelayToMSSQL",
-    "CoerceAndRelayToSMB",
-    "CoerceAndRelaytoSMB",
+    "SCCM_CoerceAndRelayToAdminService",
+    "MSSQL_CoerceAndRelayToMSSQL",
+    "SCCM_CoerceAndRelayToSMB",
+    "SCCM_CoerceAndRelayToSMB",
     "HasSession",
     "MSSQL_Contains",
     "MSSQL_ControlDB",
@@ -32,7 +32,7 @@ TRAVERSABLE_EDGE_TYPES = {
     "MSSQL_LinkedAsAdmin",
     "MSSQL_MemberOf",
     "MSSQL_ServiceAccountFor",
-    "SameHostAs",
+    "SCCM_SameHostAs",
     "SCCM_AdminsReplicatedTo",
     "SCCM_AllPermissions",
     "SCCM_ApplicationAdministrator",
@@ -52,7 +52,7 @@ TRAVERSABLE_EDGE_TYPES = {
     "SCCM_IsAssigned",
     "SCCM_IsMappedTo",
     "SCCM_ObtainCertFor",
-    "LocalAdminRequired",
+    "SCCM_LocalAdminRequired",
 }
 
 

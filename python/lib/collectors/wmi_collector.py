@@ -285,6 +285,16 @@ def invoke_wmi_collection(
             logger.warning(f"Could not connect to WMI namespace {namespace} on {hostname}")
             continue
 
+        # Probe query to verify the namespace is actually responsive
+        probe = client.query("SELECT SiteCode FROM SMS_Site WHERE SiteCode = '{}'".format(site_code))
+        if not probe:
+            logger.warning(
+                f"WMI namespace {namespace} connected but queries are failing on {hostname}, "
+                f"skipping WMI collections for site {site_code}"
+            )
+            client.disconnect()
+            continue
+
         try:
             collections_ok = 0
             collections_total = 0

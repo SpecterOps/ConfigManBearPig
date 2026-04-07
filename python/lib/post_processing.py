@@ -604,8 +604,8 @@ def _add_same_host_as_edges(graph: GraphStore) -> None:
             computer_id = matched_computer.get("id", "")
             if computer_id and device_id:
                 # Bidirectional SameHostAs
-                graph.upsert_edge(device_id, computer_id, "SameHostAs")
-                graph.upsert_edge(computer_id, device_id, "SameHostAs")
+                graph.upsert_edge(device_id, computer_id, "SCCM_SameHostAs")
+                graph.upsert_edge(computer_id, device_id, "SCCM_SameHostAs")
                 logger.debug(f"SameHostAs: {device_id} <-> {computer_id}")
 
 
@@ -675,10 +675,10 @@ def _process_computer_nodes(graph: GraphStore) -> None:
                         has_role_for_site = any(f"@{site_code}" in str(r) for r in other_roles)
                         is_site_server = f"SMS Site Server@{site_code}" in other_roles
                         if has_role_for_site and not is_site_server:
-                            graph.upsert_edge(comp_id, other_id, "LocalAdminRequired")
+                            graph.upsert_edge(comp_id, other_id, "SCCM_LocalAdminRequired")
                 else:
                     # This is NOT a site server - site server needs LocalAdminRequired to this host
-                    graph.upsert_edge(ss_id, comp_id, "LocalAdminRequired")
+                    graph.upsert_edge(ss_id, comp_id, "SCCM_LocalAdminRequired")
 
             # Skip secondary sites for MSSQL sysadmin and SCCM_AssignAllPermissions
             site_type = site_node.get("properties", {}).get("siteType", "")
@@ -923,8 +923,8 @@ def _add_coerce_and_relay_edges(
     """
     Add CoerceAndRelay edges.
 
-    Translated from PowerShell Process-CoerceAndRelayToAdminService,
-    Process-CoerceAndRelayToMSSQL, Process-CoerceAndRelayToSMB
+    Translated from PowerShell Process-SCCM_CoerceAndRelayToAdminService,
+    Process-MSSQL_CoerceAndRelayToMSSQL, Process-SCCM_CoerceAndRelayToSMB
     (lines 6572-6781).
     """
     logger.info("Processing CoerceAndRelay edges...")
@@ -936,13 +936,13 @@ def _add_coerce_and_relay_edges(
 
 def _process_coerce_and_relay_to_admin_service(graph: GraphStore, fallback_domain: str = "") -> None:
     """
-    Process CoerceAndRelayToAdminService edges.
+    Process SCCM_CoerceAndRelayToAdminService edges.
 
-    Translated from PowerShell Process-CoerceAndRelayToAdminService (lines 6572-6624).
+    Translated from PowerShell Process-SCCM_CoerceAndRelayToAdminService (lines 6572-6624).
 
     For each site, finds SMS Providers with restrictReceivingNtlmTraffic Off/null,
     and site servers. For each (site server, SMS provider) pair where they differ,
-    creates a CoerceAndRelayToAdminService edge from Authenticated Users to the site.
+    creates a SCCM_CoerceAndRelayToAdminService edge from Authenticated Users to the site.
     """
     site_nodes = graph.find_nodes_by_kind("SCCM_Site")
 
@@ -996,7 +996,7 @@ def _process_coerce_and_relay_to_admin_service(graph: GraphStore, fallback_domai
                     graph.upsert_edge(
                         auth_users_id,
                         site_code,
-                        "CoerceAndRelayToAdminService",
+                        "SCCM_CoerceAndRelayToAdminService",
                         properties={
                             "collectionSource": ["Post-processing"],
                             "coercionVictimAndRelayTargetPairs": [
@@ -1012,16 +1012,16 @@ def _process_coerce_and_relay_to_mssql(
     fallback_domain: str = "",
 ) -> None:
     """
-    Process CoerceAndRelayToMSSQL edges.
+    Process MSSQL_CoerceAndRelayToMSSQL edges.
 
-    Translated from PowerShell Process-CoerceAndRelayToMSSQL (lines 6626-6726).
+    Translated from PowerShell Process-MSSQL_CoerceAndRelayToMSSQL (lines 6626-6726).
 
     Finds site database servers with EPA Off/null and NTLM unrestricted,
-    then creates CoerceAndRelayToMSSQL edges from Authenticated Users to
+    then creates MSSQL_CoerceAndRelayToMSSQL edges from Authenticated Users to
     MSSQL_Login nodes for site servers, SMS providers, and management points.
     """
     site_nodes = graph.find_nodes_by_kind("SCCM_Site")
-    logger.debug(f"CoerceAndRelayToMSSQL: Processing {len(site_nodes)} sites")
+    logger.debug(f"MSSQL_CoerceAndRelayToMSSQL: Processing {len(site_nodes)} sites")
 
     for site in site_nodes:
         site_code = site.get("id")
@@ -1140,11 +1140,11 @@ def _process_coerce_and_relay_to_mssql(
                 pair = f"Coerce {victim_fqdn.lower()}, relay to {sql_fqdn.lower()}:{sql_port}"
                 auth_users_id = _find_or_create_authenticated_users(graph, victim_domain or fallback_domain)
                 if auth_users_id:
-                    logger.debug(f"  Creating CoerceAndRelayToMSSQL: {auth_users_id} -> {login_id}")
+                    logger.debug(f"  Creating MSSQL_CoerceAndRelayToMSSQL: {auth_users_id} -> {login_id}")
                     graph.upsert_edge(
                         auth_users_id,
                         login_id,
-                        "CoerceAndRelayToMSSQL",
+                        "MSSQL_CoerceAndRelayToMSSQL",
                         properties={
                             "coercionVictimAndRelayTargetPairs": [pair],
                         },
@@ -1153,12 +1153,12 @@ def _process_coerce_and_relay_to_mssql(
 
 def _process_coerce_and_relay_to_smb(graph: GraphStore, fallback_domain: str = "") -> None:
     """
-    Process CoerceAndRelaytoSMB edges.
+    Process SCCM_CoerceAndRelayToSMB edges.
 
-    Translated from PowerShell Process-CoerceAndRelayToSMB (lines 6728-6781).
+    Translated from PowerShell Process-SCCM_CoerceAndRelayToSMB (lines 6728-6781).
 
     For each site, finds site systems without SMB signing and NTLM unrestricted,
-    then creates CoerceAndRelaytoSMB edges from Authenticated Users to those computers.
+    then creates SCCM_CoerceAndRelayToSMB edges from Authenticated Users to those computers.
     """
     site_nodes = graph.find_nodes_by_kind("SCCM_Site")
 
@@ -1219,7 +1219,7 @@ def _process_coerce_and_relay_to_smb(graph: GraphStore, fallback_domain: str = "
                     graph.upsert_edge(
                         auth_users_id,
                         target_id,
-                        "CoerceAndRelayToSMB",
+                        "SCCM_CoerceAndRelayToSMB",
                         properties={
                             "coercionVictimHostnames": [srv_fqdn],
                         },

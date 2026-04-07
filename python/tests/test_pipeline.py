@@ -49,7 +49,7 @@ class TestPipelineOrchestrator:
     """Tests for PipelineOrchestrator."""
 
     def test_once_phase_runs(self):
-        pipeline = PipelineOrchestrator()
+        pipeline = PipelineOrchestrator(domain="test.local")
         ran = []
 
         pipeline.register_once_handler("LDAP", lambda: ran.append("LDAP"))
@@ -61,7 +61,7 @@ class TestPipelineOrchestrator:
         assert "DNS" in ran
 
     def test_once_phase_order(self):
-        pipeline = PipelineOrchestrator()
+        pipeline = PipelineOrchestrator(domain="test.local")
         order = []
 
         pipeline.register_once_handler("LDAP", lambda: order.append("LDAP"))
@@ -75,7 +75,7 @@ class TestPipelineOrchestrator:
     def test_per_host_phases(self):
         from lib.targets import CollectionTarget
 
-        pipeline = PipelineOrchestrator()
+        pipeline = PipelineOrchestrator(domain="test.local")
         calls = []
 
         target1 = CollectionTarget("host1.test.com")
@@ -91,7 +91,7 @@ class TestPipelineOrchestrator:
         assert ("SMB", "host2.test.com") in calls
 
     def test_failed_phase_continues(self):
-        pipeline = PipelineOrchestrator()
+        pipeline = PipelineOrchestrator(domain="test.local")
         ran = []
 
         def failing_handler():

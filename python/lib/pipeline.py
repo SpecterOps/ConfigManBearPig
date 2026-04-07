@@ -15,6 +15,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Optional
 
+from lib.logging_utils import set_phase_context, set_target_context
+
 logger = logging.getLogger("ConfigManBearPig")
 
 # Phase definitions matching PowerShell (lines 276-288)
@@ -65,7 +67,7 @@ class PipelineOrchestrator:
     sequential pipeline for output parity with PowerShell.
     """
 
-    def __init__(self, max_workers: int = 1):
+    def __init__(self, domain: str = "", max_workers: int = 1):
         # Phase status tracking
         self._global_phase_status: dict[str, str] = {}
         self._per_host_phase_status: dict[str, dict[str, str]] = {}
@@ -74,6 +76,9 @@ class PipelineOrchestrator:
         # Phase handlers: phase_name -> callable
         self._once_handlers: dict[str, Callable] = {}
         self._per_host_handlers: dict[str, Callable] = {}
+
+        # Domain used as target context for once-phases
+        self._domain = domain
 
         # Parallelism configuration
         self._max_workers = max(1, max_workers)
@@ -98,33 +103,41 @@ class PipelineOrchestrator:
         inter-phase dependencies (e.g., RemoteRegistry before MSSQL).
         """
         hostname = target.hostname
+        set_target_context(hostname)
 
-        for phase in per_host_phases:
-            if phase in self._per_host_handlers:
-                with self._status_lock:
-                    if hostname not in self._per_host_phase_status:
-                        self._per_host_phase_status[hostname] = {}
-                    if phase not in self._per_host_phase_status[hostname]:
-                        self._per_host_phase_status[hostname][phase] = "NotStarted"
-                    status = self._per_host_phase_status[hostname][phase]
+        try:
+            for phase in per_host_phases:
+                if phase in self._per_host_handlers:
+                    set_phase_context(phase)
+                    try:
+                        with self._status_lock:
+                            if hostname not in self._per_host_phase_status:
+                                self._per_host_phase_status[hostname] = {}
+                            if phase not in self._per_host_phase_status[hostname]:
+                                self._per_host_phase_status[hostname][phase] = "NotStarted"
+                            status = self._per_host_phase_status[hostname][phase]
 
-                if status == "Complete":
-                    logger.debug(f"Skipping {phase} for {hostname} (already complete)")
-                    continue
+                        if status == "Complete":
+                            logger.debug(f"Skipping {phase} for {hostname} (already complete)")
+                            continue
 
-                logger.info(f"Running {phase} on {hostname}")
-                with self._status_lock:
-                    self._per_host_phase_status[hostname][phase] = "InProgress"
-                try:
-                    self._per_host_handlers[phase](target)
-                    with self._status_lock:
-                        self._per_host_phase_status[hostname][phase] = "Complete"
-                except Exception as e:
-                    with self._status_lock:
-                        self._per_host_phase_status[hostname][phase] = "Failed"
-                    logger.error(f"Phase {phase} failed for {hostname}: {e}")
+                        logger.debug(f"Running {phase} on {hostname}")
+                        with self._status_lock:
+                            self._per_host_phase_status[hostname][phase] = "InProgress"
+                        try:
+                            self._per_host_handlers[phase](target)
+                            with self._status_lock:
+                                self._per_host_phase_status[hostname][phase] = "Complete"
+                        except Exception as e:
+                            with self._status_lock:
+                                self._per_host_phase_status[hostname][phase] = "Failed"
+                            logger.error(f"Phase {phase} failed for {hostname}: {e}")
+                    finally:
+                        set_phase_context(None)
 
-        target.collected = True
+            target.collected = True
+        finally:
+            set_target_context(None)
 
     def run(
         self,
@@ -150,22 +163,30 @@ class PipelineOrchestrator:
         per_host_phases = [p for p in selected_phases if p in PHASES_PER_HOST]
 
         # Run once-phases (always sequential)
+        if once_phases and self._domain:
+            set_target_context(self._domain)
         for phase in once_phases:
             if phase in self._once_handlers:
-                self._ensure_global_status(phase)
-                if self._global_phase_status[phase] == "Complete":
-                    logger.debug(f"Skipping already-complete phase: {phase}")
-                    continue
-
-                logger.info(f"Running once-phase: {phase}")
-                self._global_phase_status[phase] = "InProgress"
+                set_phase_context(phase)
                 try:
-                    self._once_handlers[phase]()
-                    self._global_phase_status[phase] = "Complete"
-                    logger.info(f"Phase {phase} completed successfully")
-                except Exception as e:
-                    self._global_phase_status[phase] = "Failed"
-                    logger.error(f"Phase {phase} failed: {e}")
+                    self._ensure_global_status(phase)
+                    if self._global_phase_status[phase] == "Complete":
+                        logger.debug(f"Skipping already-complete phase: {phase}")
+                        continue
+
+                    logger.info(f"Running once-phase: {phase}")
+                    self._global_phase_status[phase] = "InProgress"
+                    try:
+                        self._once_handlers[phase]()
+                        self._global_phase_status[phase] = "Complete"
+                        logger.info(f"Phase {phase} completed successfully")
+                    except Exception as e:
+                        self._global_phase_status[phase] = "Failed"
+                        logger.error(f"Phase {phase} failed: {e}")
+                finally:
+                    set_phase_context(None)
+        if once_phases and self._domain:
+            set_target_context(None)
 
         # Run per-host phases for each target
         if not per_host_phases:

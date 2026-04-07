@@ -190,14 +190,14 @@ class TestSeedData:
     def test_all_edge_kinds_present(self):
         """All declared edge kinds should be in seed data."""
         expected = [
-            "LocalAdminRequired", "CoerceAndRelayToAdminService",
-            "CoerceAndRelayToMSSQL", "CoerceAndRelayToSMB",
+            "SCCM_LocalAdminRequired", "SCCM_CoerceAndRelayToAdminService",
+            "MSSQL_CoerceAndRelayToMSSQL", "SCCM_CoerceAndRelayToSMB",
             "HasSession", "MSSQL_Contains", "MSSQL_ControlDB",
             "MSSQL_ControlServer", "MSSQL_ExecuteOnHost",
             "MSSQL_GetAdminTGS", "MSSQL_GetTGS", "MSSQL_HasLogin",
             "MSSQL_HostFor", "MSSQL_IsMappedTo", "MSSQL_LinkedAsAdmin",
             "MSSQL_MemberOf", "MSSQL_ServiceAccountFor",
-            "SameHostAs", "SCCM_AdminsReplicatedTo",
+            "SCCM_SameHostAs", "SCCM_AdminsReplicatedTo",
             "SCCM_AllPermissions", "SCCM_ApplicationAdministrator",
             "SCCM_AssignAllPermissions", "SCCM_AssignSpecificPermissions",
             "SCCM_Contains", "SCCM_FullAdministrator",

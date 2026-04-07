@@ -49,27 +49,22 @@
   ],
   "relationship_kinds": [
     {
-      "name": "CoerceAndRelayToAdminService",
+      "name": "SCCM_CoerceAndRelayToAdminService",
       "description": "",
       "is_traversable": true
     },
     {
-      "name": "CoerceAndRelayToMSSQL",
+      "name": "SCCM_CoerceAndRelayToSMB",
       "description": "",
       "is_traversable": true
     },
     {
-      "name": "CoerceAndRelayToSMB",
+      "name": "SCCM_LocalAdminRequired",
       "description": "",
       "is_traversable": true
     },
     {
-      "name": "LocalAdminRequired",
-      "description": "",
-      "is_traversable": true
-    },
-    {
-      "name": "SameHostAs",
+      "name": "SCCM_SameHostAs",
       "description": "",
       "is_traversable": true
     },

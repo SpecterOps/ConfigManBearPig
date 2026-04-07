@@ -190,8 +190,8 @@ class TestSameHostAs:
         invoke_post_processing(g, disable_possible_edges=True)
 
         # Bidirectional SameHostAs
-        assert g.has_edge("GUID:abc", "S-1-5-21-123", "SameHostAs")
-        assert g.has_edge("S-1-5-21-123", "GUID:abc", "SameHostAs")
+        assert g.has_edge("GUID:abc", "S-1-5-21-123", "SCCM_SameHostAs")
+        assert g.has_edge("S-1-5-21-123", "GUID:abc", "SCCM_SameHostAs")
 
 
 class TestLocalAdminRequired:
@@ -215,9 +215,9 @@ class TestLocalAdminRequired:
 
         invoke_post_processing(g, disable_possible_edges=True)
 
-        assert g.has_edge("S-1-PSS", "S-1-DB", "LocalAdminRequired")
+        assert g.has_edge("S-1-PSS", "S-1-DB", "SCCM_LocalAdminRequired")
         # Site server should NOT have LocalAdminRequired to itself
-        assert not g.has_edge("S-1-PSS", "S-1-PSS", "LocalAdminRequired")
+        assert not g.has_edge("S-1-PSS", "S-1-PSS", "SCCM_LocalAdminRequired")
 
 
 if __name__ == "__main__":

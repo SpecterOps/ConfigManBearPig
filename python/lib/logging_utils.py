@@ -6,23 +6,74 @@ Provides colored console output and file logging with timestamp/level formatting
 matching the PowerShell version's output format exactly.
 """
 
+import contextvars
 import logging
 import sys
-from datetime import datetime
+import threading
+from datetime import datetime, timezone
 from typing import Optional
 
 # ANSI color codes matching PowerShell ForegroundColor
 _COLORS = {
-    "Info": "\033[0m",        # Default/White
-    "Success": "\033[32m",    # Green
-    "Warning": "\033[33m",    # Yellow
-    "Error": "\033[31m",      # Red
-    "Verbose": "\033[36m",    # Cyan
+    "INFO": "\033[0m",        # Default/White
+    "SUCCESS": "\033[32m",    # Green
+    "WARNING": "\033[33m",    # Yellow
+    "ERROR": "\033[31m",      # Red
+    "VERBOSE": "\033[36m",    # Cyan
 }
 _RESET = "\033[0m"
 
-# Level width padding to match PowerShell output exactly
-_LEVEL_WIDTH = 7  # "Warning" is the longest at 7 chars
+# Level width padding — "VERBOSE" and "WARNING" are the longest at 7 chars
+_LEVEL_WIDTH = 7
+
+# ---------------------------------------------------------------------------
+# Per-target context and coloring
+# ---------------------------------------------------------------------------
+
+_current_target: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_target", default=None,
+)
+_current_phase: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_phase", default=None,
+)
+
+# Palette of distinct ANSI colors assigned round-robin to targets
+_TARGET_PALETTE = [
+    "\033[34m",   # Blue
+    "\033[35m",   # Magenta
+    "\033[92m",   # Bright Green
+    "\033[93m",   # Bright Yellow
+    "\033[94m",   # Bright Blue
+    "\033[95m",   # Bright Magenta
+    "\033[96m",   # Bright Cyan
+    "\033[91m",   # Bright Red
+    "\033[33m",   # Yellow
+    "\033[36m",   # Cyan
+    "\033[32m",   # Green
+    "\033[31m",   # Red
+]
+_target_color_map: dict[str, str] = {}
+_target_color_lock = threading.Lock()
+
+
+def set_target_context(target: Optional[str]) -> contextvars.Token:
+    """Set the current enumeration target for log formatting."""
+    return _current_target.set(target)
+
+
+def set_phase_context(phase: Optional[str]) -> contextvars.Token:
+    """Set the current collection phase for log formatting."""
+    return _current_phase.set(phase)
+
+
+def _get_target_color(target: str) -> str:
+    """Return a stable ANSI color code for *target*, assigning one on first sight."""
+    with _target_color_lock:
+        color = _target_color_map.get(target)
+        if color is None:
+            color = _TARGET_PALETTE[len(_target_color_map) % len(_TARGET_PALETTE)]
+            _target_color_map[target] = color
+        return color
 
 
 class ColoredFormatter(logging.Formatter):
@@ -37,22 +88,36 @@ class ColoredFormatter(logging.Formatter):
         level_name = getattr(record, "custom_level", None)
         if level_name is None:
             if record.levelno >= logging.ERROR:
-                level_name = "Error"
+                level_name = "ERROR"
             elif record.levelno >= logging.WARNING:
-                level_name = "Warning"
+                level_name = "WARNING"
             elif record.levelno >= logging.INFO:
-                level_name = "Info"
+                level_name = "INFO"
             else:
-                level_name = "Verbose"
+                level_name = "VERBOSE"
+        else:
+            level_name = level_name.upper()
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         padding = " " * (_LEVEL_WIDTH - len(level_name))
 
-        if self.use_color and sys.stdout.isatty():
-            color = _COLORS.get(level_name, _COLORS["Info"])
-            return f"{timestamp} [{color}{level_name}{_RESET}]{padding} {record.getMessage()}"
+        target = _current_target.get(None)
+        phase = _current_phase.get(None)
+        if target:
+            phase_part = f"[{phase}]" if phase else ""
+            if self.use_color and sys.stdout.isatty():
+                tcolor = _get_target_color(target)
+                target_part = f" {tcolor}[{target}]{phase_part}{_RESET}"
+            else:
+                target_part = f" [{target}]{phase_part}"
         else:
-            return f"{timestamp} [{level_name}]{padding} {record.getMessage()}"
+            target_part = ""
+
+        if self.use_color and sys.stdout.isatty():
+            color = _COLORS.get(level_name, _COLORS["INFO"])
+            return f"{color}{level_name}{_RESET}{padding} {timestamp}{target_part} {record.getMessage()}"
+        else:
+            return f"{level_name}{padding} {timestamp}{target_part} {record.getMessage()}"
 
 
 class FileFormatter(logging.Formatter):
@@ -62,17 +127,27 @@ class FileFormatter(logging.Formatter):
         level_name = getattr(record, "custom_level", None)
         if level_name is None:
             if record.levelno >= logging.ERROR:
-                level_name = "Error"
+                level_name = "ERROR"
             elif record.levelno >= logging.WARNING:
-                level_name = "Warning"
+                level_name = "WARNING"
             elif record.levelno >= logging.INFO:
-                level_name = "Info"
+                level_name = "INFO"
             else:
-                level_name = "Verbose"
+                level_name = "VERBOSE"
+        else:
+            level_name = level_name.upper()
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         padding = " " * (_LEVEL_WIDTH - len(level_name))
-        return f"{timestamp} [{level_name}]{padding} {record.getMessage()}"
+
+        target = _current_target.get(None)
+        phase = _current_phase.get(None)
+        if target:
+            phase_part = f"[{phase}]" if phase else ""
+            target_part = f" [{target}]{phase_part}"
+        else:
+            target_part = ""
+        return f"{level_name}{padding} {timestamp}{target_part} {record.getMessage()}"
 
 
 def setup_logging(log_file: Optional[str] = None, verbose: bool = False) -> logging.Logger:

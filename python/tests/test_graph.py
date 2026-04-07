@@ -147,9 +147,9 @@ class TestUpsertEdge:
 
     def test_merge_edge_properties(self):
         g = GraphStore()
-        g.upsert_edge("A", "B", "CoerceAndRelayToMSSQL",
+        g.upsert_edge("A", "B", "MSSQL_CoerceAndRelayToMSSQL",
                       properties={"pairs": ["pair1"]})
-        edge = g.upsert_edge("A", "B", "CoerceAndRelayToMSSQL",
+        edge = g.upsert_edge("A", "B", "MSSQL_CoerceAndRelayToMSSQL",
                             properties={"pairs": ["pair2"]})
         assert "pair1" in edge["properties"]["pairs"]
         assert "pair2" in edge["properties"]["pairs"]

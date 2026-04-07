@@ -33,10 +33,10 @@ SEED_ID = "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01"
 
 # All edge kinds for seed_data.json (matching PowerShell exactly, lines 9792-9827)
 SEED_EDGE_KINDS = [
-    "LocalAdminRequired",
-    "CoerceAndRelayToAdminService",
-    "CoerceAndRelayToMSSQL",
-    "CoerceAndRelayToSMB",
+    "SCCM_LocalAdminRequired",
+    "SCCM_CoerceAndRelayToAdminService",
+    "MSSQL_CoerceAndRelayToMSSQL",
+    "SCCM_CoerceAndRelayToSMB",
     "HasSession",
     "MSSQL_Contains",
     "MSSQL_ControlDB",
@@ -50,7 +50,7 @@ SEED_EDGE_KINDS = [
     "MSSQL_LinkedAsAdmin",
     "MSSQL_MemberOf",
     "MSSQL_ServiceAccountFor",
-    "SameHostAs",
+    "SCCM_SameHostAs",
     "SCCM_AdminsReplicatedTo",
     "SCCM_AllPermissions",
     "SCCM_ApplicationAdministrator",

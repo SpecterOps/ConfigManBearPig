@@ -428,7 +428,7 @@ def main() -> int:
     max_threads = max(1, args.threads)
     if max_threads > 1:
         log_message(logger, "Info", f"Parallel mode: {max_threads} threads")
-    pipeline = PipelineOrchestrator(max_workers=max_threads)
+    pipeline = PipelineOrchestrator(domain=domain, max_workers=max_threads)
 
     # Register once-phase handlers
     pipeline.register_once_handler(

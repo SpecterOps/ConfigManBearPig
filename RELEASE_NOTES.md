@@ -1,4 +1,8 @@
 # ConfigManBearPig Release Notes
+### Version 2.0
+##### Updates
+- Python merged into main
+- PowerShell deprecated
 ### Version 1.2 (February 27, 2026)
 ##### Updates
 - Add seed data to zip by default
