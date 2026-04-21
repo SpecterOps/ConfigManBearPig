@@ -28,6 +28,7 @@ import requests
 from requests_ntlm import HttpNtlmAuth
 
 from lib.ad_resolver import ADResolver
+from lib.collectors.version_fingerprint import fingerprint_sccm_version
 from lib.graph import GraphStore
 from lib.targets import CollectionTarget, TargetManager
 
@@ -97,6 +98,9 @@ def invoke_http_collection(
 
     if username and password:
         session.auth = HttpNtlmAuth(username, password)
+
+    # Unauthenticated build fingerprint via /CCM_CLIENT/ccmsetup.exe (Synacktiv technique).
+    detected_version, missing_cves = fingerprint_sccm_version(hostname, http_open)
 
     roles_detected: list[str] = []
     collection_sources: list[str] = []
@@ -203,14 +207,26 @@ def invoke_http_collection(
             )
 
         if site_code:
-            graph.upsert_node(
-                site_code,
-                ["SCCM_Site"],
-                properties={
-                    "collectionSource": collection_sources,
-                    "SCCMInfra": True,
-                    "siteCode": site_code,
-                },
+            site_props: dict[str, Any] = {
+                "collectionSource": collection_sources,
+                "SCCMInfra": True,
+                "siteCode": site_code,
+            }
+            # Defer to AdminService/WMI (which run earlier) for `version` —
+            # only set from HTTP fingerprint if no privileged collector has.
+            existing_site = graph.get_node(site_code)
+            existing_version = (
+                existing_site.get("properties", {}).get("version") if existing_site else None
+            )
+            if detected_version and not existing_version:
+                site_props["version"] = detected_version
+            if missing_cves:
+                site_props["versionCVEs"] = missing_cves
+            graph.upsert_node(site_code, ["SCCM_Site"], properties=site_props)
+        elif detected_version:
+            logger.info(
+                f"HTTP fingerprint on {hostname} detected version {detected_version} "
+                f"but no site code was resolved; not creating SCCM_Site node"
             )
 
     # CRED-2: Register machine account and extract policy secrets
