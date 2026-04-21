@@ -1,7 +1,7 @@
 {
   "schema": {
     "name": "SCCM",
-    "display_name": "SCCM",
+    "display_name": "SCCM (ConfigManBearPig)",
     "version": "0.0.1",
     "namespace": "SCCM"
   },
