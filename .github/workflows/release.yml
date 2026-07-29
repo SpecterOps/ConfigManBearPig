@@ -1,0 +1,91 @@
+name: Build and Publish
+
+# Publishing is driven entirely by tags: `git tag v2.0.0 && git push origin v2.0.0`.
+# hatch-vcs derives the package version from that tag, so the tag IS the release —
+# there is no version to bump by hand and nothing to upload manually.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token PyPI trades for a short-lived upload token
+
+jobs:
+  build:
+    # Must match the "Environment name" in the PyPI trusted-publisher config exactly.
+    # Add a required reviewer here to turn every release into a deliberate click.
+    environment: pypi
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # hatch-vcs reads git tags. A shallow clone has none, so it would silently
+          # stamp a fallback version and publish it under the wrong number — forever,
+          # since PyPI filenames are immutable.
+          fetch-depth: 0
+
+      # python-preference = "only-system" forbids uv from downloading a managed
+      # interpreter, so a Python satisfying requires-python (>=3.13) must already be on
+      # PATH before uv runs. ubuntu-latest's system Python is 3.12, and the tool-cache
+      # 3.13 is not on PATH until this step puts it there — without it `uv build` has no
+      # interpreter it is permitted to use and fails rather than falling back.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build package
+        run: uv build
+
+      - name: Verify the built version matches the tag
+        # Cheap insurance against the failure above: fail the job rather than burn a
+        # version number on PyPI.
+        run: |
+          set -euo pipefail
+          version="$(ls dist/*.whl | head -1 | cut -d- -f2)"
+          expected="${GITHUB_REF_NAME#v}"
+          echo "built=$version tag=$expected"
+          test "$version" = "$expected"
+
+      - name: Verify the collector's data files are in the wheel
+        # extension.yaml and the two schema JSONs live inside src/openhound_sccm/ because
+        # only that directory ships. If one goes missing, users hit FileNotFoundError at
+        # runtime while the developer's checkout keeps working — catch it here instead.
+        run: |
+          set -euo pipefail
+          for f in extension.yaml schema_SCCM.json schema_MSSQL.json; do
+            unzip -l dist/*.whl | grep -q "openhound_sccm/$f" || { echo "MISSING from wheel: $f"; exit 1; }
+          done
+          echo "all data files present"
+
+      - name: Verify the wheel's entry point and metadata
+        # Everything here runs BEFORE uv publish, so a bad wheel aborts the release
+        # instead of consuming a version number that can never be reused.
+        run: |
+          set -euo pipefail
+          whl="$(ls dist/*.whl)"
+          unzip -p "$whl" '*/entry_points.txt' | grep -q '^sccm = openhound_sccm.main:app$' \
+            || { echo "entry point missing or wrong"; exit 1; }
+          meta="$(unzip -p "$whl" '*/METADATA')"
+          grep -q '^Name: configmanbearpig$' <<<"$meta" || { echo "wrong distribution name"; exit 1; }
+          # Accepts either metadata spelling: hatchling emits License-Expression under
+          # PEP 639 and plain License on older metadata versions.
+          grep -qE '^License(-Expression)?: Apache-2.0$' <<<"$meta" || { echo "wrong license"; exit 1; }
+          grep -q '^Requires-Dist: openhound-collector-common' <<<"$meta" \
+            || { echo "shared library not declared"; exit 1; }
+          # The bracket class stops this matching openhound-collector-common.
+          grep -qE '^Requires-Dist: openhound[><=]' <<<"$meta" \
+            || { echo "framework not declared"; exit 1; }
+          ! grep -q 'file://' <<<"$meta" || { echo "a local path leaked into METADATA"; exit 1; }
+          echo "entry point + metadata OK"
+
+      - name: Publish package
+        # `--trusted-publishing always` fails loudly on a misconfigured publisher
+        # instead of silently falling back to looking for an API token.
+        run: uv publish --trusted-publishing always

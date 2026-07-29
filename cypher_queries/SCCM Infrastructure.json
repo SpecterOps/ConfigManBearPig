@@ -1,0 +1,1 @@
+{"query":"MATCH p = (a)-[]-(b)\nWHERE a.SCCMInfra = True\nAND b.SCCMInfra = True\nRETURN p","name":"SCCM Infrastructure","description":"Display all SCCM infrastructure nodes (sites, site systems, databases, admin users, security roles, collections) and the relationships between them"}

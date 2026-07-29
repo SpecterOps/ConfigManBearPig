@@ -1,0 +1,1 @@
+{"query":"MATCH p = shortestPath((n:Base)-[*0..1]->(s:SCCM_Site)) WHERE n.name CONTAINS 'AUTHENTICATED USERS' RETURN p","name":"SCCM Shortest TAKEOVER Path","description":"Shortest path (up to one hop) from Authenticated Users to an SCCM site"}

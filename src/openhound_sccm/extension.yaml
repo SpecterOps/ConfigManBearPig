@@ -1,0 +1,71 @@
+# Extension metadata. OpenHound parses this on EVERY run
+# (openhound/core/models/extension.py -> Extension.from_yaml) and logs an error if it is
+# missing or invalid, so it must ship inside the package directory and stay valid.
+# Every field below is required by that model except `tags`.
+name: "sccm"
+# Must be semver. This duplicates the packaging version, which comes from the git tag via
+# hatch-vcs — bump it in the same commit as a major/minor release tag.
+version: 2.0.0
+description: "ConfigManBearPig 2.0 — collects Microsoft Configuration Manager (SCCM/MECM) attack paths into BloodHound via OpenGraph"
+authors:
+  - name: "Chris Thompson (@_Mayyhem)"
+    email: "cthompson@specterops.io"
+
+type: local
+license: Apache-2.0
+homepage: https://github.com/SpecterOps/ConfigManBearPig
+references:
+  - name: ConfigManBearPig
+    url: https://github.com/SpecterOps/ConfigManBearPig
+  - name: OpenHound
+    url: https://github.com/SpecterOps/openhound
+  - name: BloodHound OpenGraph
+    url: https://bloodhound.specterops.io/opengraph/overview
+
+# All optional: with no credentials supplied, the collector authenticates as the current
+# Windows user via SSPI (Kerberos, falling back to NTLM).
+credentials:
+  - name: username
+    description: "Domain user to authenticate as (-u/--username), e.g. MAYYHEM\\lowpriv. Omit to use the current Windows user."
+    required: false
+  - name: password
+    description: "Password for the user supplied with -u (-p/--password)."
+    required: false
+  - name: nt-hash
+    description: "NT hash for pass-the-hash authentication (--nt-hash), instead of a password."
+    required: false
+  - name: ticket
+    description: "Base64-encoded Kerberos ticket (.kirbi) for pass-the-ticket authentication (--ticket)."
+    required: false
+  - name: machine-pass
+    description: "Machine account password for authenticating as the collector's computer account (--machine-pass)."
+    required: false
+  - name: bloodhound-token
+    description: "BloodHound CE API token for direct upload (-B/--bloodhound, or --token-id/--token-key and their BLOODHOUND_* env vars)."
+    required: false
+
+parameters:
+  - name: domain
+    description: "Active Directory domain to collect from (-d/--domain). Auto-detected on a domain-joined Windows host."
+    required: false
+  - name: domain-controller
+    description: "Domain controller to query over LDAP (--dc/--domain-controller). Auto-detected via DNS SRV records when omitted."
+    required: false
+  - name: collection-methods
+    description: "Comma-separated per-host phases to run (-m/--collection-methods), e.g. RemoteRegistry,MSSQL,SMB. All phases run when omitted."
+    required: false
+  - name: computers
+    description: "Limit per-host collection to these hosts (-c/--computers), or read them from a file with --computer-file."
+    required: false
+  - name: site-codes
+    description: "Limit collection to these SCCM site codes (--site-codes)."
+    required: false
+  - name: threads
+    description: "Concurrent per-host workers (-t/--threads)."
+    required: false
+  - name: disable-possible-edges
+    description: "Emit only confirmed coerce-and-relay edges, suppressing speculative ones (--disable-possible-edges)."
+    required: false
+    default: false
+
+tags: ["sccm", "mecm", "configmgr", "opengraph", "bloodhound", "openhound"]

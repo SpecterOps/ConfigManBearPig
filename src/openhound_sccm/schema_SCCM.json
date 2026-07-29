@@ -1,0 +1,184 @@
+{
+  "schema": {
+    "name": "SCCM",
+    "display_name": "SCCM (ConfigManBearPig)",
+    "version": "v0.0.1",
+    "namespace": "SCCM"
+  },
+  "node_kinds": [
+    {
+      "name": "SCCM_AdminUser",
+      "display_name": "",
+      "description": "",
+      "is_display_kind": true,
+      "icon": "user-gear",
+      "color": "#558eea"
+    },
+    {
+      "name": "SCCM_ClientDevice",
+      "display_name": "",
+      "description": "",
+      "is_display_kind": true,
+      "icon": "desktop",
+      "color": "#f59b42"
+    },
+    {
+      "name": "SCCM_Collection",
+      "display_name": "",
+      "description": "",
+      "is_display_kind": true,
+      "icon": "sitemap",
+      "color": "#fff82e"
+    },
+    {
+      "name": "SCCM_SecurityRole",
+      "display_name": "",
+      "description": "",
+      "is_display_kind": true,
+      "icon": "users-gear",
+      "color": "#9852ed"
+    },
+    {
+      "name": "SCCM_Site",
+      "display_name": "",
+      "description": "",
+      "is_display_kind": true,
+      "icon": "city",
+      "color": "#67ebf0"
+    }
+  ],
+  "relationship_kinds": [
+    {
+      "name": "SCCM_CoerceAndRelayToAdminService",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_CoerceAndRelayToSMB",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_LocalAdminRequired",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_SameHostAs",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_AllPermissions",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_ApplicationAdministrator",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_ApplicationAuthor",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_AssignAllPermissions",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_ComplianceSettingsManager",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_Contains",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_FullAdministrator",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasADLastLogonUser",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasClient",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasCurrentUser",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasMember",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "SCCM_HasNetworkAccessAccount",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasPrimaryUser",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_HasStoredAccount",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_IsAssigned",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "SCCM_IsMappedTo",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_OSDManager",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_OperationsAdministrator",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_AdminsReplicatedTo",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "SCCM_SecurityAdministrator",
+      "description": "",
+      "is_traversable": true
+    }
+  ],
+  "environments": [
+    {
+      "environment_kind": "SCCM_Site",
+      "source_kind": "SCCM",
+      "principal_kinds": [
+        "SCCM_AdminUser",
+        "SCCM_ClientDevice",
+        "SCCM_Collection",
+        "SCCM_SecurityRole"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"query":"MATCH p = (c:Computer)-[:HasSession]->(u:User)\nWHERE c.SCCMInfra = true\nRETURN p","name":"SCCM Infrastructure Logons","description":"Display users with active logon sessions on SCCM infrastructure hosts (credential-exposure surface for site-system compromise)"}

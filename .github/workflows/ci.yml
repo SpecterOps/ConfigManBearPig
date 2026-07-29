@@ -1,0 +1,40 @@
+name: CI
+
+# Tests-on-PR is what makes a contribution reviewable from someone who cannot run the
+# lab this collector was developed against. Most of the suite needs a live SCCM
+# hierarchy; the subset below does not.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # python-preference = "only-system" forbids uv from downloading an interpreter, so
+      # one satisfying requires-python (>=3.13) must already be on PATH. ubuntu-latest's
+      # system Python is 3.12. Same step as release.yml, and because this workflow runs
+      # on every pull request it proves the arrangement before any tag is pushed.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - run: uv sync --group dev
+
+      - run: uv run ruff check src tests
+
+      - run: uv run mypy src/openhound_sccm
+
+      # Deliberately a named list, not `pytest tests`: these are the files known to pass
+      # offline, with no lab, no live AdminService and no cached DuckDB. Widen it only
+      # after confirming the wider set is green on a clean machine — a red default branch
+      # teaches contributors to ignore CI.
+      - run: >
+          uv run pytest tests/extension_metadata_test.py
+          tests/integration_wiring_test.py tests/convert_pipeline_test.py
+          tests/integration_fixtures_test.py -q

@@ -1,0 +1,45 @@
+.md-typeset__table {
+  width: 100%;
+}
+
+.md-typeset__table table:not([class]) {
+  display: table
+}
+
+.bhNode circle {
+  stroke-width: 4px !important;
+  stroke: black !important;
+  fill: white !important;
+}
+
+.bhNode  rect {
+  stroke-width: 5px !important;
+  stroke: black !important;
+  fill: white !important;
+  /* rx: 25px !important; */
+  /* ry: 25px !important; */
+  rx: 40px !important;
+  ry: 40px !important;
+}
+
+.bhNode {
+  font-size: 30px;
+}
+
+.bhNode .label div:first-child {
+  padding-bottom: 14px !important;
+  padding-top: 14px !important;
+  /* padding: 15px; */
+  line-height: 0px !important;
+}
+
+.bhNode .nodeLabel svg {
+  transform: scale(2.8) !important;
+  vertical-align: 0px !important;
+}
+
+.flowchart-link {
+  stroke-width: 3px !important;  /* Default is usually 1.5px */
+}
+
+.mermaid { height: 400px; width: 100%; }

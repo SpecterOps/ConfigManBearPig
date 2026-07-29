@@ -1,0 +1,198 @@
+[project]
+# The PyPI distribution is "configmanbearpig" — this collector IS ConfigManBearPig 2.0,
+# the Python successor to ConfigManBearPig.ps1. Three names are in play, deliberately:
+#   distribution  configmanbearpig   what users install  (uv tool install openhound --with configmanbearpig)
+#   import pkg    openhound_sccm     what the code imports
+#   CLI verb      sccm               what users type     (openhound collect sccm)
+# The verb names the data source, matching every other OpenHound collector (jamf, okta, github).
+name = "configmanbearpig"
+# Version comes from the git tag via hatch-vcs (see [tool.hatch.version] below).
+dynamic = ["version"]
+description = "ConfigManBearPig 2.0 — OpenHound/BloodHound OpenGraph collector for Microsoft Configuration Manager (SCCM/MECM)"
+readme = "README.md"
+requires-python = "<3.15,>=3.13"
+authors = [
+  {name = "Chris Thompson (@_Mayyhem)", email = "cthompson@specterops.io"}
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["sccm", "mecm", "configmgr", "bloodhound", "opengraph", "openhound", "attack-paths"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+]
+# Declaring `openhound` diverges from openhound-jamf, which declares no dependencies at
+# all — deliberately: that collector uses only the public decorator surface, whereas this
+# one imports a dozen openhound modules, hand-registers commands on its Typer objects, and
+# assigns `app.converter`. Without the declaration, installing this package yields
+# something that cannot import.
+dependencies = [
+    # The OpenHound framework. The floor is the version this collector is validated
+    # against; there is no upper cap, because an invented bound guarantees a re-release
+    # the day 0.3.0 ships. If a future release breaks the hand-registration, a version
+    # check in main.py with a clear message is more honest than a guessed resolver bound.
+    "openhound>=0.2.12",
+    # Shared pure-Python collector infrastructure (TDS/NTLM/Kerberos/EPA, LDAP/AD,
+    # WMI, DNS discovery, duckdb-safe, DLT source bridge, logging, graph base).
+    # Carries impacket/ldap3/dnspython/pywin32/winkerberos/cryptography transitively.
+    # Published from https://github.com/Mayyhem/openhound-collector-common.
+    #
+    # Capped below 0.2 because a 0.x library makes no API-stability promise — an
+    # uncapped floor would let a breaking 0.2 land silently in users' installs.
+    "openhound-collector-common>=0.1.0,<0.2.0",
+    # LDAP client used by the LDAP collection phase (clients/ad.py).
+    # 2.10.2rc4 is the first ldap3 release that exports ENCRYPT and
+    # TLS_CHANNEL_BINDING constants, required for NTLM sign-and-seal and
+    # LDAP channel binding tokens against signing-required DCs.
+    "ldap3>=2.10.2rc4",
+    # Windows-only Kerberos backend for ldap3 SASL GSSAPI. Drives the
+    # "no explicit creds → bind with the current user's TGT via SSPI"
+    # path in clients/ad.py. Wheels exist for CPython 3.13/3.14 on Windows
+    # x64; on Linux/macOS this package is ignored (and ldap3 falls back to
+    # the `gssapi` package, which we don't bundle — Linux collectors that
+    # need integrated auth should `pip install gssapi[kerberos]`).
+    "winkerberos>=0.10.0; sys_platform == 'win32'",
+    # Windows SSPI bindings used for current-user NTLM fallback when no
+    # explicit password is provided and Kerberos cannot build an LDAP SPN
+    # (for example --dc is an IP address with no reverse DNS).
+    "pywin32>=306; sys_platform == 'win32'",
+    # DNS SRV / ADIDNS lookups for the DNS phase.
+    "dnspython>=2.4.0",
+    # Used by impacket-based per-host phases.
+    "impacket>=0.11.0",
+    # HTTP transport for the AdminService REST API and the HTTP role-probe
+    # collector (clients/http.py). Auth tokens are minted by impacket / pywin32
+    # SSPI and carried in the Authorization header; requests only moves bytes.
+    "requests>=2.31.0",
+    # X.509 parsing for the unauthenticated HTTP collector's sitesigncert probe
+    # (collectors/http.py): the management point's site-signing certificate is
+    # parsed to read its issuer CN ("Site Server") and SAN DNS name, identifying
+    # the site server. No stdlib X.509 parser exists; cryptography is the standard.
+    "cryptography>=42.0.0",
+]
+
+[tool.uv.sources]
+# Local development override. `[project.dependencies]` above carries the real,
+# published constraint (that is what lands in the wheel's METADATA); this table
+# redirects it to the live sibling checkout for local work. uv-only and never
+# built into the wheel, so it cannot affect what users resolve.
+#
+# Editable, so edits in the sibling checkout take effect with no reinstall.
+#
+# One level up, not two: this repo and the library are siblings on disk, where in the
+# development fork the library sat two levels above sccm/sccm/. uv resolves the path
+# relative to THIS file and reports a miss as "not found in the package registry",
+# which reads like a PyPI outage and is not.
+#
+# Contributors without a local library checkout can delete this table: the published
+# constraint in [project.dependencies] resolves from PyPI on its own.
+openhound-collector-common = { path = "../openhound-collector-common", editable = true }
+
+[tool.uv]
+# Never use a uv-managed (python-build-standalone) interpreter: on Windows its
+# libcrypto-3-x64.dll lacks the OPENSSL_Applink cross-CRT shim, so any TLS handshake
+# aborts the process — which is every AdminService, LDAPS, and MSSQL code path.
+#
+# The constraint this imposes is NOT Windows-only, and describing it as "harmless on
+# Linux" is what hid a CI failure: uv may not download an interpreter anywhere, so every
+# environment must already have one satisfying requires-python (>=3.13). That is why
+# .github/workflows/*.yml provision Python explicitly — ubuntu-latest's system Python is
+# 3.12 and uv fails outright rather than falling back.
+python-preference = "only-system"
+
+[build-system]
+requires = ['hatchling', 'hatch-vcs']
+build-backend = 'hatchling.build'
+
+[project.urls]
+Homepage = "https://github.com/SpecterOps/ConfigManBearPig"
+Repository = "https://github.com/SpecterOps/ConfigManBearPig"
+Issues = "https://github.com/SpecterOps/ConfigManBearPig/issues"
+
+# Only this directory ships in the wheel. Any data file the collector reads at runtime
+# (extension.yaml, schema_SCCM.json, schema_MSSQL.json) MUST live inside it — a path
+# resolved above the package works in a checkout and vanishes once installed.
+[tool.hatch.build.targets.wheel]
+packages = ["src/openhound_sccm"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+# PyPI rejects versions with a local segment (+g1a2b3c), which setuptools-scm adds by
+# default on any non-tag commit.
+local_scheme = "no-local-version"
+# Keeps `uv build` working in a tagless or shallow checkout. CI asserts the built version
+# matches the tag, so a stray 0.0.0 can never reach PyPI.
+fallback_version = "0.0.0"
+# Only consider MAJOR.MINOR.PATCH tags when deriving the version.
+#
+# This repository also carries `v1.2-powershell`, which archives the final PowerShell
+# release. Without this filter setuptools-scm picks that tag up, fails to parse it, and
+# raises -- so `uv lock`, `uv sync` and every build break outright. Note that
+# `fallback_version` does NOT cover this: it applies when there is no tag at all, not when
+# the nearest tag is unparseable.
+git_describe_command = [
+    "git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*.[0-9]*.[0-9]*",
+]
+
+[dependency-groups]
+# `openhound` is deliberately absent here: it is declared in [project.dependencies] as a
+# version range, and a direct git reference would outrank that range during resolution —
+# leaving local runs on an unpublished commit while users resolved the published version.
+# That divergence is what let a packaging bug ship once already.
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.1",
+    # Capped below 0.16: that release widened ruff's DEFAULT rule selection well past
+    # E4/E7/E9/F. The shared library went from clean to 173 findings on that bump with no
+    # code change, and this package has the same exposure — a fresh `uv lock` would turn
+    # CI red. Adopting the wider set is a deliberate modernization pass, not a surprise.
+    "ruff>=0.15.5,<0.16",
+    "mypy>=1.19.1",
+    "zensical>=0.0.27",
+    # Type stubs for the three untyped runtime deps that HAVE published stubs.
+    # (impacket, openhound and sspi have none — those get ignore_missing_imports
+    # overrides in [tool.mypy] instead.) Real signatures for ldap3 in particular
+    # are worth having: the LDAP phase is one of the most-used code paths here.
+    "types-ldap3>=2.9",
+    "types-pywin32>=306",
+    "types-pyasn1>=0.6",
+]
+
+[project.entry-points."openhound.sources"]
+sccm = "openhound_sccm.main:app"
+
+[tool.mypy]
+enable_error_code = ["possibly-undefined"]
+
+# pywin32 ships no type information, so importing win32com is otherwise flagged
+# as an untyped import. It's used only in the Windows-only local collector.
+[[tool.mypy.overrides]]
+module = ["win32com.*"]
+ignore_missing_imports = true
+
+# None of these ship a py.typed marker, so mypy can't see their signatures and
+# reports import-untyped for every module we import from them. That is a fact
+# about those distributions, not something fixable here — and the alternative
+# (writing stubs for the parts of impacket and the framework this collector
+# touches) is a far larger surface than the collector itself.
+#   impacket  — the auth/DCOM/TDS/Kerberos stack, imported across clients/
+#   openhound — the framework: Typer groups, assets, preproc/convert, destinations
+#   sspi      — pywin32's SSPI bindings, current-user Windows auth (win32 only)
+# Their call sites are exercised by the offline tests and the live lab run, which
+# is where a signature mismatch actually surfaces.
+[[tool.mypy.overrides]]
+module = ["impacket.*", "openhound.*", "sspi"]
+ignore_missing_imports = true
+
+# The shared library ships no py.typed marker yet (adding one would make mypy
+# type-check its API against both extensions' usage — a separate hygiene task with
+# its own validation). Until then, treat its imports as untyped so SCCM's mypy
+# doesn't accrue an import-untyped note for every shared module adopted per phase.
+[[tool.mypy.overrides]]
+module = ["openhound_collector_common.*"]
+ignore_missing_imports = true

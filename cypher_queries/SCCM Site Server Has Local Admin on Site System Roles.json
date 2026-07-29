@@ -1,0 +1,1 @@
+{"query":"MATCH p = (:Computer)-[:SCCM_LocalAdminRequired]->(:Computer)\nRETURN p","name":"SCCM Site Server Has Local Admin on Site System Roles","description":"Display site servers that have local administrator rights on other SCCM site system hosts"}
