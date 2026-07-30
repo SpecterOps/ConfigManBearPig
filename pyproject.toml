@@ -88,13 +88,25 @@ dependencies = [
 # so does a clone by anyone who only wants this repo. The library is on PyPI, so the
 # capped range in [project.dependencies] resolves on its own and needs no redirect.
 #
-# To develop against a live library checkout, override it WITHOUT committing the override:
+# To develop against a live library checkout, clone it as a SIBLING of this repo and add
+# the table back locally -- then keep git from ever staging it:
 #
+#     [tool.uv.sources]
+#     openhound-collector-common = { path = "../openhound-collector-common", editable = true }
+#
+#     git update-index --skip-worktree pyproject.toml    # so `git add -A` cannot pick it up
 #     uv sync --group dev
-#     uv pip install -e ../openhound-collector-common     # re-run after any `uv sync`
 #
-# or point uv at it per-invocation with UV_* environment variables. Keeping it out of the
-# tree is what stops a local convenience becoming everyone else's failed install.
+# To change this file legitimately: `git update-index --no-skip-worktree pyproject.toml`,
+# edit, commit, then re-apply the skip.
+#
+# Two things that do NOT work, both verified: `uv pip install -e ../openhound-collector-common`
+# installs a COPY, not a live editable -- edits to the library are invisible, and the next
+# `uv sync` reverts it to the PyPI version anyway. And `sources` in a `uv.toml` is rejected
+# outright ("only applicable in the context of a project"), besides shadowing [tool.uv] above.
+#
+# You only need any of this when editing the LIBRARY. For collector-only work, a plain
+# `uv sync --group dev` against the published library is the simpler and safer default.
 
 [tool.uv]
 # Never use a uv-managed (python-build-standalone) interpreter: on Windows its
