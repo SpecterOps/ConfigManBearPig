@@ -60,6 +60,31 @@ def test_container_node_model_emits_container_and_base_kinds():
     assert node.properties.environmentid == "S-1-5-21-1-2-3"
 
 
+def test_container_node_exposes_lowercase_distinguishedname():
+    # The DN is published as its own property, not just folded into the display name,
+    # so queries can filter the System Management container out of a graph that holds
+    # every SharpHound-collected Container. The key must be lowercase to match
+    # SharpHound's own node for this object (Cypher property lookups are
+    # case-sensitive) -- this is the one node kind that does not use CMBP's camelCase.
+    props = ContainerNode(
+        id="AAAA-GUID",
+        distinguished_name="CN=System Management,CN=System,DC=x",
+        fallback_domain_sid="S-1-5-21-1-2-3",
+    ).as_node.properties
+    assert props.distinguishedname == "CN=System Management,CN=System,DC=x"
+    assert not hasattr(props, "distinguishedName")
+    # Display name still mirrors the DN, as before.
+    assert props.name == "CN=System Management,CN=System,DC=x"
+
+
+def test_container_node_dn_property_is_null_when_dn_missing():
+    # Display degrades to the raw GUID, but the DN property stays null rather than
+    # repeating the GUID -- otherwise a STARTS WITH filter would see a GUID string.
+    props = ContainerNode(id="AAAA-GUID", fallback_domain_sid="S-1-5-21-1-2-3").as_node.properties
+    assert props.distinguishedname is None
+    assert props.name == "AAAA-GUID"
+
+
 def test_generic_all_edge_per_principal():
     con = _con()
     _graph_edges_init(con, SCHEMA)

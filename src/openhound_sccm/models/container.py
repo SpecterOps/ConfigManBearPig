@@ -11,10 +11,9 @@ same object so the two merge.
 import logging
 
 from openhound.core.asset import BaseAsset
-from openhound.core.models.entries_dataclass import NodeProperties
 from pydantic import ConfigDict
 
-from ..graph import SCCMNode, domain_environment_id
+from ..graph import ContainerProperties, SCCMNode, domain_environment_id
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +41,20 @@ class ContainerNode(BaseAsset):
             return None
         display = self.distinguished_name or self.id
         env = domain_environment_id(self.id, self.fallback_domain_sid) or self.fallback_domain_sid or self.id
+        if not self.distinguished_name:
+            # Only the display name degrades to the raw GUID; the DN property stays
+            # null so queries filtering on it don't match a GUID string by accident.
+            logger.debug("ContainerNode %s has no DN; falling back to the id for display", self.id)
         return SCCMNode(
             id=self.id,
             kinds=["Container", "Base"],
-            properties=NodeProperties(
+            properties=ContainerProperties(
                 name=display,
                 displayname=display,
                 environmentid=env,
+                # Lowercase key to match SharpHound's own Container node, which this
+                # node merges with by objectGUID -- see ContainerProperties in graph.py.
+                distinguishedname=self.distinguished_name,
             ),
         )
 

@@ -235,12 +235,19 @@ class UserProperties(NodeProperties):
         userPrincipalName: The user's AD logon name in email-address form (e.g.
             ``user1@corp.local``).
         samAccountName: The user's pre-Windows-2000 logon name (its AD "SAM account name",
-            e.g. ``sqlsccmsvc``). camelCase to match ``ComputerProperties.samAccountName`` —
-            OpenHound normalizes this LDAP attribute to camelCase (CMBP writes it PascalCase,
-            but BloodHound/Neo4j property lookup is case-insensitive). Needed so edges keyed on
-            the SQL service account or AD users (HasSession, MSSQL_GetTGS/GetAdminTGS/
-            ServiceAccountFor, SCCM_HasPrimaryUser/HasADLastLogonUser/IsMappedTo) can resolve
-            their User endpoint by ``samAccountName``.
+            e.g. ``sqlsccmsvc``). camelCase to match ``ComputerProperties.samAccountName``.
+            CMBP has no single casing to match here: ``Upsert-Node`` copies the resolver
+            object's property names verbatim (ConfigManBearPig.ps1:1464), and its two AD
+            resolution paths disagree -- the AD object cache writes lowercase
+            ``samAccountName`` while ``Resolve-PrincipalInDomain`` writes PascalCase
+            ``SamAccountName`` -- so the same key ships both ways depending on which path
+            resolved the principal. This port standardizes on camelCase for Computer and
+            User; Group keeps PascalCase (see ``GroupProperties.SamAccountName``). The
+            choice is load-bearing rather than cosmetic, because Cypher property lookups
+            are case-sensitive: a query has to spell this key exactly. Needed so edges
+            keyed on the SQL service account or AD users (HasSession, MSSQL_GetTGS/
+            GetAdminTGS/ServiceAccountFor, SCCM_HasPrimaryUser/HasADLastLogonUser/
+            IsMappedTo) can resolve their User endpoint by ``samAccountName``.
         Domain: The AD domain (e.g. ``lab.local``) this user's account belongs to, or
             null if the account was never resolved against AD.
         Enabled: Whether this user account is enabled in AD (True), disabled (False),
@@ -319,6 +326,27 @@ class GroupProperties(NodeProperties):
     CN: str | None = field(default=None, kw_only=True)
     SamAccountName: str | None = field(default=None, kw_only=True)
     distinguishedName: str | None = field(default=None, kw_only=True)
+
+
+@dataclass
+class ContainerProperties(NodeProperties):
+    """AD `Container` node — the System Management container.
+
+    The only node kind here whose DN key is lowercase `distinguishedname` rather than
+    CMBP's camelCase `distinguishedName`. That is deliberate: CMBP never emits a
+    Container node at all (it only reads the container's DACL to discover scan
+    targets), so there is no CMBP casing to match. What this node *does* have to match
+    is SharpHound, because it is keyed on the container's objectGUID specifically so
+    the two collections merge into one node — and SharpHound writes AD node properties
+    in lowercase. Cypher property lookups are case-sensitive, so a camelCase key here
+    would be invisible to any query written against a SharpHound-collected graph.
+
+    Attributes:
+        distinguishedname: The container's Active Directory distinguished name (e.g.
+            ``CN=System Management,CN=System,DC=corp,DC=local``), or null if the DN
+            wasn't captured. Also used as the node's display name.
+    """
+    distinguishedname: str | None = field(default=None, kw_only=True)
 
 
 @dataclass

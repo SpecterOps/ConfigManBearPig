@@ -24,13 +24,20 @@ def _roles(bases: list[str], site_code: Optional[str]) -> list[str]:
     return [f"{base}{suffix}" for base in bases]
 
 
-# Registry key paths for SCCM
+# Registry key paths for SCCM. The two groups differ in the access they need, which is
+# what makes RemoteRegistry useful at low privilege: everything that identifies the site
+# and its roles is readable without local admin, and only the host-hardening values are
+# gated. Keep the split when adding a key -- the README documents this distinction under
+# "Privileges needed per phase".
 SCCM_REG_KEYS = {
-    # Readable by any authenticated AD user with SMB access to the host
+    # Readable by any authenticated AD user with SMB access to the host.
     "triggers": r"SOFTWARE\Microsoft\SMS\Triggers",
     "component_servers": r"SOFTWARE\Microsoft\SMS\COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Component Servers",
     "multisite_component_servers": r"SOFTWARE\Microsoft\SMS\COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Multisite Component Servers",
     "current_user": r"SOFTWARE\Microsoft\SMS\CurrentUser",
+    # Require local Administrators on the target (see get_ntlm_settings /
+    # get_mssql_settings, which log an error and continue when denied). The SQL Server
+    # SuperSocketNetLib paths those functions build are admin-gated for the same reason.
     "lanmanserver_parameters": r"SYSTEM\CurrentControlSet\Services\LanManServer\Parameters",
     "msv10": r"SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0",
     "lsa": r"SYSTEM\CurrentControlSet\Control\Lsa"
