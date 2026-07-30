@@ -98,14 +98,24 @@ The collector is an OpenHound extension: it plugs into the `openhound` CLI as
 ### 1. Install
 
 ```powershell
-uv tool install openhound --with configmanbearpig
+uv tool install openhound --with configmanbearpig --prerelease=allow
 ```
 
 That is the whole install. It pulls the OpenHound framework, this collector, and the
 runtime dependencies (`ldap3`, `impacket`, `dnspython`, and — on Windows — `pywin32` and
-`winkerberos`), and puts `openhound` on your PATH. If you'd rather not use
-[`uv`](https://docs.astral.sh/uv/), `pip install openhound configmanbearpig` into a
-virtualenv works the same way.
+`winkerberos`), and puts `openhound` on your PATH.
+
+Prefer `pip`? `pip install openhound configmanbearpig` into a virtualenv, with no extra flag.
+
+> **Why `--prerelease=allow`?** The collector requires `ldap3>=2.10.2rc4`. That release
+> candidate is the first to export `ENCRYPT` and `TLS_CHANNEL_BINDING` and to accept
+> `session_security` on a `Connection` — the three things LDAP sign-and-seal and channel
+> binding are built on, and therefore what it takes to bind to a domain controller that
+> enforces signing or channel binding (increasingly the default). ldap3 has never shipped
+> them in a final release: its latest stable is 2.9.1 and 2.10.2 exists only as release
+> candidates. `pip` allows a pre-release automatically when the requirement itself names
+> one; `uv` asks you to opt in. Without the flag uv reports
+> *"only ldap3<2.10.2rc4 is available"*, which looks like a broken package and is not.
 
 **Working on the collector rather than using it?** Clone this repository and run
 `uv sync --group dev` from its root; every `uv run openhound …` below then exercises your
