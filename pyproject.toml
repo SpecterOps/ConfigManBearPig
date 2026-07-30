@@ -42,7 +42,7 @@ dependencies = [
     #
     # Capped below 0.2 because a 0.x library makes no API-stability promise — an
     # uncapped floor would let a breaking 0.2 land silently in users' installs.
-    "openhound-collector-common>=0.1.0,<0.2.0",
+    "openhound-collector-common>=0.1.1,<0.2.0",
     # LDAP client used by the LDAP collection phase (clients/ad.py).
     # 2.10.2rc4 is the first ldap3 release that exports ENCRYPT and
     # TLS_CHANNEL_BINDING constants, required for NTLM sign-and-seal and

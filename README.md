@@ -143,14 +143,17 @@ That writes everything into `.\out`:
 |---|---|
 | `sccm\<table>\*.jsonl` | The raw collected tables, one directory per table |
 | `lookup.duckdb` | The DuckDB lookup database `convert` reads |
-| `graph\sccm_nodes-*.json`, `graph\sccm_edges-*.json` | **SCCM payload** — every `SCCM_*` and `MSSQL_*` node and edge |
-| `graph\ad_nodes-*.json`, `graph\ad_edges-*.json` | **AD payload** — `Computer` / `User` / `Group` / `Container` nodes and every edge touching one |
+| `graph\sccm_nodes-*.json`, `graph\sccm_edges-*.json` | **SCCM payload** — every `SCCM_*` node, and every edge with at least one SCCM endpoint (including SCCM↔MSSQL) |
+| `graph\mssql_nodes-*.json`, `graph\mssql_edges-*.json` | **MSSQL payload** — every `MSSQL_*` node, and every edge whose endpoints are **both** MSSQL nodes |
+| `graph\ad_nodes-*.json`, `graph\ad_edges-*.json` | **AD payload** — `Computer` / `User` / `Group` / `Container` nodes and every edge touching one (including AD↔MSSQL) |
+| `graph\configmanbearpig_collection_<timestamp>.zip` | **Bundle** — every graph `.json` above, flat-zipped for one-shot upload (written by `--run-all` only) |
 | `collect_full_<timestamp>.log` | The complete DEBUG trace, grouped host-by-host and resource-by-resource |
 | `collect_issues_<timestamp>.log` | Warnings and errors with tracebacks — absent from a clean run |
 
-Upload **both** payloads together; they are two halves of one graph. Re-running into a directory that
-already holds a collection **merges** the two — pass `--clean` to start fresh, and see
-[Limitations](#limitations) for why that matters.
+Upload **all three** payloads together; they are three parts of one graph — or upload the single
+`configmanbearpig_collection_<timestamp>.zip` bundle in their place, which contains the same files
+flat-zipped for one-shot upload. Re-running into a directory that already holds a collection **merges**
+the two collections — pass `--clean` to start fresh, and see [Limitations](#limitations) for why that matters.
 
 If preprocess or convert fails, the raw data in `.\out` is left intact and the exact resume commands are
 logged, so you never have to recollect. To run the three stages yourself, see
@@ -403,7 +406,7 @@ zero domain credentials presented anywhere in the run.
 - **Graph output covers graph-pipeline Stages 1–6 plus the low-privilege additions.** (Those are the increments of the preprocess/convert port — plans [`2026-06-16-sccm-preproc-convert-stage0.md`](docs/superpowers/plans/2026-06-16-sccm-preproc-convert-stage0.md) … [`2026-07-01-sccm-preproc-convert-stage7.md`](docs/superpowers/plans/2026-07-01-sccm-preproc-convert-stage7.md); see the [Reference key](#reference-key).) `convert` now emits fifteen node kinds and thirty-eight edge kinds (see the [Node Reference](#node-reference) and [Edge Reference](#edge-reference)). Richer edges from NAA secrets await the NAA-secret collector.
 - **MSSQL logins, database users, and roles are inferred from SCCM topology, not enumerated from SQL.** The `MSSQL_Login` and `MSSQL_DatabaseUser` nodes (and the `sysadmin` / `db_owner` role nodes) are built from SCCM's knowledge of which computers are Primary Site Servers or SMS Providers for a given site — the same inference CMBP makes. No live SQL connection is opened during `preprocess` or `convert`; the collector's MSSQL phase only probes EPA. This means logins/users/roles are only created for SCCM-linked SQL servers, and only for the machine accounts SCCM architecturally grants `sysadmin` access.
 - **Non-SCCM SQL servers appear as bare `MSSQL_Server` nodes.** SQL servers discovered by the EPA scan or RemoteRegistry that are not referenced by any SCCM site produce an `MSSQL_Server` node (with `MSSQL_HostFor` / `MSSQL_ExecuteOnHost` edges) but no `MSSQL_Database`, `MSSQL_Login`, or role nodes — CMBP likewise skips these and the collector follows suit.
-- **MSSQL nodes land in the SCCM payload; AD-touching MSSQL edges land in the AD payload.** The six MSSQL node kinds are written to `sccm_nodes-*.json` / `sccm_edges-*.json` (tagged `source_kind = "SCCM"`). Edges that touch an AD node — `MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, and `MSSQL_GetAdminTGS` — are routed into `ad_edges-*.json` by the split step. Upload both file sets together.
+- **MSSQL nodes and MSSQL-only edges get their own `source_kind`.** The six MSSQL node kinds are written to `mssql_nodes-*.json` / `mssql_edges-*.json` (tagged `source_kind = "MSSQL"`, matching `schema_MSSQL.json`), together with every edge whose endpoints are **both** MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). Edges that touch an AD node — `MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, `MSSQL_GetAdminTGS`, and `MSSQL_CoerceAndRelayToMSSQL` — stay in `ad_edges-*.json`; the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) stays in `sccm_edges-*.json`. Upload all three file sets together.
 - **Some node properties are deferred to later collectors or stages.** The following properties appear in ConfigManBearPig but are not yet emitted because the required collector does not exist or the data is coupled to a later pipeline stage:
   - **DHCP/PXE fields on `Computer`** (`pxe_vendor_class`, `pxe_next_server`, `pxe_boot_file`, `tftp_reachable`, `is_dhcp_server`) — blocked on a DHCP/PXE collector (gtk tickets `Ope-o6bh` / `Ope-gqwo`). The collector can detect *whether* a host is PXE-enabled (SMB `REMINST` share → `SCCMIsPXESupportEnabled`) but not the DHCP/PXE configuration parameters.
   - **NAA flag on `User`** (`is_sccm_network_access_account`) — requires NAA secret decryption (`--enable-bad-opsec`) and a dedicated NAA collector, neither of which is implemented yet.
@@ -521,7 +524,7 @@ Use `-c`/`--computers <host>` to scope a run to specific hosts (e.g. an SMS Prov
 | Option | Description |
 |---|---|
 | `--clean` | Discard a previous collection in `OUTPUT_PATH` before collecting: removes the `sccm/` dataset dir, `graph/`, and `lookup.duckdb`. Timestamped per-run logs and integration/compare reports are always kept. See [below](#--clean-and-re-running-into-a-used-output-directory). |
-| `--run-all` | After collecting, automatically run **preprocess** and **convert** in-process, producing the OpenGraph files in a single command. All paths are derived from `OUTPUT_PATH`: `lookup.duckdb`, the `sccm/` dataset dir, and `graph/`. On completion it logs a consolidated list of the run's output files — raw JSONL, the lookup DB, each OpenGraph JSON, and the collect logs (`collect_full_*`, and `collect_issues_*` when a warning/error occurred) — so you don't have to scroll back through the run. Omit it to run the three stages manually (the default; a "next steps" hint is printed). |
+| `--run-all` | After collecting, automatically run **preprocess** and **convert** in-process, producing the OpenGraph files in a single command. All paths are derived from `OUTPUT_PATH`: `lookup.duckdb`, the `sccm/` dataset dir, and `graph/`. The run also writes `graph\configmanbearpig_collection_<timestamp>.zip` — a single upload-ready archive of the graph `.json` files for BloodHound File Ingest (the loose files are kept too; `<timestamp>` matches the run's `collect_full_<ts>.log`). On completion it logs a consolidated list of the run's output files — raw JSONL, the lookup DB, each OpenGraph JSON, and the collect logs (`collect_full_*`, and `collect_issues_*` when a warning/error occurred) — so you don't have to scroll back through the run. Omit it to run the three stages manually (the default; a "next steps" hint is printed). |
 | `--progress` | Progress backend. `off` (default) silences dlt's per-resource progress counters so only the collector's own `[target][phase]` logs print; pass `tqdm`, `log`, or `alive_progress` to re-enable a live tracker. |
 | `--disable-possible-edges` | Remove or tighten the *assumed* node/edge families (see [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content) and [below](#--disable-possible-edges-and-the-coerce-and-relay-edges)); never removes confirmed data. The flag is persisted at collect time in the `collection_settings` table and read by preprocess — it has no effect if set after collection. |
 | `--show-cleartext-passwords` | Display cleartext passwords when discovered *(consumed by not-yet-ported phases)*. |
@@ -748,14 +751,15 @@ The synthetic *Authenticated Users* node added by graph-pipeline Stage 6 — the
 
 **Convert-time enrichment.** Nodes are built from coalesced DuckDB tables (`node_computer`, `node_user`, `node_group`, `node_site`) computed by `preprocess`. Each table unions multiple raw collected sources (AdminService, WMI, LDAP, RemoteRegistry, SMB, HTTP) into one row per identity, so a node's richness grows as more collection phases come online, without changing the model.
 
-**Two output payloads.** `convert` writes the graph as **two file sets** into the same output directory:
+**Three output payloads.** `convert` writes the graph as **three file sets** into the same output directory:
 
 | Files | `metadata.source_kind` | Contents |
 |---|---|---|
-| `sccm_nodes-*.json`, `sccm_edges-*.json` | `"SCCM"` | SCCM-specific nodes (`SCCM_Site`, `SCCM_Collection`, `SCCM_AdminUser`, `SCCM_SecurityRole`, `SCCM_ClientDevice`) and MSSQL nodes (`MSSQL_Server`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`) and edges where **both** endpoints are SCCM/MSSQL nodes. |
+| `sccm_nodes-*.json`, `sccm_edges-*.json` | `"SCCM"` | SCCM-specific nodes (`SCCM_Site`, `SCCM_Collection`, `SCCM_AdminUser`, `SCCM_SecurityRole`, `SCCM_ClientDevice`) and edges where **at least one** endpoint is an SCCM node. |
+| `mssql_nodes-*.json`, `mssql_edges-*.json` | `"MSSQL"` | MSSQL nodes (`MSSQL_Server`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`) and edges where **both** endpoints are MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). |
 | `ad_nodes-*.json`, `ad_edges-*.json` | *(none — no `metadata` block)* | AD-native nodes (`Computer`, `User`, `Group`, `Container`, and backfill stubs) and every edge where **either** endpoint is an AD node (AD↔AD, AD↔SCCM, and AD↔MSSQL). |
 
-The AD payload deliberately carries **no `source_kind`** so BloodHound merges those nodes into its **native AD graph** by SID — augmenting existing SharpHound data rather than registering a separate SCCM-owned copy. An AD↔SCCM edge lives in the AD payload but references an `SCCM_*` node defined in the SCCM payload; BloodHound resolves the reference by id across both files at ingest, so **upload both file sets** (the whole output directory) to File Ingest.
+The AD payload deliberately carries **no `source_kind`** so BloodHound merges those nodes into its **native AD graph** by SID — augmenting existing SharpHound data rather than registering a separate SCCM-owned copy. The MSSQL payload carries its own `source_kind="MSSQL"` so re-ingesting or deleting the SCCM source never touches SQL topology, even though this collector emits it — the separate MSSQL OpenGraph schema (`schema_MSSQL.json`) owns it. An AD↔SCCM or AD↔MSSQL edge lives in the AD payload but references an `SCCM_*` or `MSSQL_*` node defined in a different payload; BloodHound resolves the reference by id across all ingested files, so **upload all three** file sets (the whole output directory) to File Ingest.
 
 ### Pipeline
 
@@ -782,8 +786,10 @@ flowchart LR
         RD["read node_* / graph_edges → typed OpenGraph models"]
     end
     V --> O1["sccm_nodes/edges-*.json<br/>source_kind = SCCM"]
+    V --> O3["mssql_nodes/edges-*.json<br/>source_kind = MSSQL"]
     V --> O2["ad_nodes/edges-*.json<br/>untagged — merges into AD graph"]
     O1 --> BH["BloodHound File Ingest"]
+    O3 --> BH
     O2 --> BH
 ```
 
@@ -1254,6 +1260,7 @@ The SCCM site database on an MSSQL_Server (always named `CM_<siteCode>`). One no
 - **`environmentid`:** the AD domain SID of the SQL host.
 - **Kinds:** `["MSSQL_Database"]`.
 - **`name` / `displayname`:** the database name (e.g. `CM_PS1`).
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1275,6 +1282,7 @@ The fixed `db_owner` database role in an MSSQL_Database. One node per SCCM site 
 - **`environmentid`:** the AD domain SID of the SQL host.
 - **Kinds:** `["MSSQL_DatabaseRole"]`.
 - **`name` / `displayname`:** `db_owner`.
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1297,6 +1305,7 @@ A database user mapped into the SCCM site database. **Inferred from SCCM topolog
 - **`environmentid`:** the AD domain SID of the SQL host.
 - **Kinds:** `["MSSQL_DatabaseUser"]`.
 - **`name` / `displayname`:** the database user name (same as the login name).
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1322,6 +1331,7 @@ A Windows machine-account login on the SCCM site database's SQL Server. **Inferr
 - **`environmentid`:** the AD domain SID of the SQL host.
 - **Kinds:** `["MSSQL_Login"]`.
 - **`name` / `displayname`:** the login name (e.g. `MAYYHEM\PS1-SMS$`).
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1346,6 +1356,7 @@ A SQL Server instance discovered by the MSSQL EPA scan, RemoteRegistry, or SCCM 
 - **`environmentid`:** the AD domain SID of the SQL host computer (`S-1-5-21-X-Y-Z` stripped from the host SID).
 - **Kinds:** `["MSSQL_Server"]`.
 - **`name` / `displayname`:** the DNS hostname, or the node id if no hostname is available.
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1374,6 +1385,7 @@ The fixed `sysadmin` server role on an SCCM-linked SQL Server. One node per SCCM
 - **`environmentid`:** the AD domain SID of the SQL host.
 - **Kinds:** `["MSSQL_ServerRole"]`.
 - **`name` / `displayname`:** `sysadmin`.
+- **Note:** Emitted to the **MSSQL payload** (`mssql_nodes-*.json`, `source_kind = "MSSQL"`).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1733,6 +1745,7 @@ Links a container node to the object it contains. Emitted in five distinct start
 | `MSSQL_Database` | `MSSQL_DatabaseUser` | Database contains the database user |
 
 - **Traversable:** yes
+- **Note:** Lands in the **MSSQL payload** (`mssql_edges-*.json`) — both endpoints are MSSQL nodes.
 
 ## MSSQL_ControlDB
 
@@ -1741,6 +1754,7 @@ Links the `db_owner` database role to the database it controls. Holding `db_owne
 - **Start:** `MSSQL_DatabaseRole` (`db_owner`)
 - **End:** `MSSQL_Database`
 - **Traversable:** yes
+- **Note:** Lands in the **MSSQL payload** (`mssql_edges-*.json`) — both endpoints are MSSQL nodes.
 
 ## MSSQL_ControlServer
 
@@ -1749,6 +1763,7 @@ Links the `sysadmin` server role to the SQL Server it controls. Holding `sysadmi
 - **Start:** `MSSQL_ServerRole` (`sysadmin`)
 - **End:** `MSSQL_Server`
 - **Traversable:** yes
+- **Note:** Lands in the **MSSQL payload** (`mssql_edges-*.json`) — both endpoints are MSSQL nodes.
 
 ## MSSQL_ExecuteOnHost
 
@@ -1772,7 +1787,7 @@ Links the SQL service account to the SQL Server it runs on. Represents the abili
 - **Emitted only when** the service account resolves to an existing AD node (privileged arm additionally requires it differ from the SQL host's own SID; the low-priv SPN-holder arm's identity is already a live AD lookup result, so it always resolves).
 - **Note:** Lands in the **AD payload** because the start node is an AD principal.
 
-> **`SCCM_AssignAllPermissions` (Database → Site variant):** An additional set of `SCCM_AssignAllPermissions` edges is emitted from each `MSSQL_Database` to every non-secondary `SCCM_Site` in the hierarchy — beyond the existing Computer (SMS Provider) → Site edges described [above](#sccm_assignallpermissions). A database that hosts an SCCM site (with `TRUSTWORTHY` on and `db_owner` membership) can execute CLR code that writes SCCM administrative data, giving the same effective control as an SMS Provider. These edges are tagged `["SCCM_Add-MSSQLServerNodesAndEdges"]` and are **traversable**. They land in the **SCCM payload** because both endpoints are SCCM-family nodes. Unlike the Computer variant above, this configuration does **not** currently carry the `assumed`/`assumptionBasis` stamp even when the database it's built from rests on the `SPN+SCCM` inference — see the known gap noted under [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content).
+> **`SCCM_AssignAllPermissions` (Database → Site variant):** An additional set of `SCCM_AssignAllPermissions` edges is emitted from each `MSSQL_Database` to every non-secondary `SCCM_Site` in the hierarchy — beyond the existing Computer (SMS Provider) → Site edges described [above](#sccm_assignallpermissions). A database that hosts an SCCM site (with `TRUSTWORTHY` on and `db_owner` membership) can execute CLR code that writes SCCM administrative data, giving the same effective control as an SMS Provider. These edges are tagged `["SCCM_Add-MSSQLServerNodesAndEdges"]` and are **traversable**. They land in the **SCCM payload** — the start node (`MSSQL_Database`) is an MSSQL node but the end node (`SCCM_Site`) is not, so the edge is not both-MSSQL and falls to the SCCM payload by the routing rule's complement (see [Limitations](#limitations)). Unlike the Computer variant above, this configuration does **not** currently carry the `assumed`/`assumptionBasis` stamp even when the database it's built from rests on the `SPN+SCCM` inference — see the known gap noted under [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content).
 
 ## MSSQL_GetTGS
 
@@ -1810,6 +1825,7 @@ Links an SQL login to its corresponding database user in the site database. A Wi
 - **Start:** `MSSQL_Login`
 - **End:** `MSSQL_DatabaseUser`
 - **Traversable:** yes
+- **Note:** Lands in the **MSSQL payload** (`mssql_edges-*.json`) — both endpoints are MSSQL nodes.
 
 ## MSSQL_MemberOf
 
@@ -1821,6 +1837,7 @@ Links a login or database user to the role it belongs to. Emitted in two configu
 | `MSSQL_DatabaseUser` | `MSSQL_DatabaseRole` | Database user is a member of the `db_owner` role |
 
 - **Traversable:** yes
+- **Note:** Lands in the **MSSQL payload** (`mssql_edges-*.json`) — both endpoints are MSSQL nodes.
 
 ## MSSQL_ServiceAccountFor
 

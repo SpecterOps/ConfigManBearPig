@@ -74,6 +74,12 @@ def test_sccm_infra_survives_split_into_both_payloads():
         "CREATE TABLE sccm.node_group AS SELECT 'S-1-5-21-1-2-3-1110'::VARCHAR AS sid"
     )
     con.execute("CREATE TABLE sccm.node_backfill AS SELECT NULL::VARCHAR AS id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_server AS SELECT NULL::VARCHAR AS server_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database AS SELECT NULL::VARCHAR AS database_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_login AS SELECT NULL::VARCHAR AS login_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database_user AS SELECT NULL::VARCHAR AS dbuser_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_server_role AS SELECT NULL::VARCHAR AS role_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database_role AS SELECT NULL::VARCHAR AS role_id WHERE false")
     _graph_edges_split(con, "sccm")
 
     ad_cols = [d[0] for d in con.execute("DESCRIBE sccm.graph_edges_ad").fetchall()]

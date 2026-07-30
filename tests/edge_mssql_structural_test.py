@@ -59,9 +59,16 @@ def test_mssql_edges_route_to_correct_split_table():
         ["S-1-5-21-1-2-3-1200"],
     ).fetchone()[0]
     assert ad == 1
-    # MSSQL_Contains (server -> sysadmin role) is pure-MSSQL -> SCCM payload.
-    sccm = con.execute(
-        "SELECT count(*) FROM sccm.graph_edges_sccm WHERE kind = 'MSSQL_Contains' AND start_id = ?",
+    # MSSQL_Contains (server -> sysadmin role) is both-MSSQL -> MSSQL payload.
+    mssql = con.execute(
+        "SELECT count(*) FROM sccm.graph_edges_mssql WHERE kind = 'MSSQL_Contains' AND start_id = ?",
         [srv],
     ).fetchone()[0]
-    assert sccm >= 1
+    assert mssql >= 1
+    # SCCM_AssignAllPermissions (database -> site) is MSSQL<->SCCM -> SCCM payload.
+    db = srv + "\\CM_PS1"
+    sccm = con.execute(
+        "SELECT count(*) FROM sccm.graph_edges_sccm WHERE kind = 'SCCM_AssignAllPermissions' AND start_id = ?",
+        [db],
+    ).fetchone()[0]
+    assert sccm == 1

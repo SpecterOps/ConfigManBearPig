@@ -15,7 +15,7 @@ from openhound_sccm.main import ProgressOption
 def test_progress_off_maps_to_none(monkeypatch):
     seen = {}
 
-    def fake_run_end_to_end(app, output_path, *, progress=None):
+    def fake_run_end_to_end(app, output_path, *, progress=None, graph_zip_name=None):
         seen["progress"] = progress
         seen["output_path"] = output_path
 
@@ -34,14 +34,14 @@ def test_progress_tqdm_maps_to_framework_progress(monkeypatch):
     seen = {}
     monkeypatch.setattr(
         "openhound_collector_common.orchestration.run_end_to_end",
-        lambda app, output_path, *, progress=None: seen.update(progress=progress),
+        lambda app, output_path, *, progress=None, graph_zip_name=None: seen.update(progress=progress),
     )
     m._run_e2e_after_collect(Path("/data/out"), ProgressOption.tqdm)
     assert seen["progress"] == Progress.tqdm
 
 
 def test_failure_reraises_and_logs_manual_steps(monkeypatch, caplog):
-    def boom(app, output_path, *, progress=None):
+    def boom(app, output_path, *, progress=None, graph_zip_name=None):
         raise RuntimeError("convert failed")
 
     monkeypatch.setattr(
@@ -73,7 +73,7 @@ def test_run_e2e_returns_stage_paths(monkeypatch):
     sentinel = object()
     monkeypatch.setattr(
         "openhound_collector_common.orchestration.run_end_to_end",
-        lambda app, output_path, *, progress=None: sentinel,
+        lambda app, output_path, *, progress=None, graph_zip_name=None: sentinel,
     )
     assert m._run_e2e_after_collect(Path("/data/out"), ProgressOption.off) is sentinel
 
@@ -162,3 +162,26 @@ def test_output_locations_summary_omits_absent_logs_and_flags_missing_graph(tmp_
     assert str(lookup) in info_text
     # A missing graph dir is flagged rather than silently skipped.
     assert any("directory is missing" in r.getMessage() for r in caplog.records)
+
+
+def test_run_e2e_forwards_configmanbearpig_zip_name(monkeypatch, tmp_path):
+    """--run-all must pass a timestamped configmanbearpig_collection_<ts>.zip through
+    to the shared run_end_to_end (which writes it into the graph dir)."""
+    import openhound_collector_common.orchestration as orch
+    from openhound_sccm.main import _run_e2e_after_collect, ProgressOption
+
+    captured = {}
+
+    def fake_run_end_to_end(app, output_path, *, progress=None, graph_zip_name=None):
+        captured["graph_zip_name"] = graph_zip_name
+        from openhound_collector_common.orchestration import derive_stage_paths
+        return derive_stage_paths(app, output_path)
+
+    # _run_e2e_after_collect does a function-local `from ... import run_end_to_end`,
+    # which resolves the attribute at call time, so patching the module attr takes effect.
+    monkeypatch.setattr(orch, "run_end_to_end", fake_run_end_to_end)
+    _run_e2e_after_collect(
+        tmp_path, ProgressOption.off,
+        graph_zip_name="configmanbearpig_collection_20260730_101112.zip",
+    )
+    assert captured["graph_zip_name"] == "configmanbearpig_collection_20260730_101112.zip"

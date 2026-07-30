@@ -170,7 +170,7 @@ became the shared one. What moved:
 | Per-target/-phase/-resource logging ([§7](#7-enhanced-logging-and-diagnostics-for-blind-remote-environments)) | `logging/log_context` (the full superset: `[target][phase]` tagging, `with_log_context`, completion-callback registry, `VERBOSE`, the debug exc-info filter, `cached_with_log`, `trace_node/edge/...`) | `log_context.py` re-exports the shared machinery and binds the two collector-specific helpers (`cached_with_log`, `trace_*`) to SCCM's own logger names |
 | Push→pull streaming bridge ([§1](#1-pull-based-dlt-resources--a-push-based-per-host-phased-pipeline)) | `dlt/source_bridge` (`StreamBridge`, `DONE`, `build_streams`, `broadcast_done`, `extract_workers_for`) | `phased_pipeline/streams.py` re-exports `DONE`/`build_streams`/`broadcast_done`; `source.py` plants a `StreamBridge` and its emit resources delegate their drain to it |
 | DNS resolution ([§5](#5-an-active-directory-cli-surface-and-context-auto-detection)) | `discovery/dns` (`make_resolver`) | `main.py::_resolve_dc_via_dns` calls the shared `make_resolver`, keeps the SCCM-specific SRV query |
-| End-to-end phase chaining ([§12](#12-one-command-end-to-end-a---run-all-flag-not-a-new-verb)) | `orchestration/run` (`run_end_to_end`, `derive_stage_paths`, `StagePaths`) | `main.py::_run_e2e_after_collect` maps `--progress` and delegates; the `--run-all` flag on `collect_sccm` triggers it |
+| End-to-end phase chaining ([§12](#12-one-command-end-to-end-a---run-all-flag-not-a-new-verb)) | `orchestration/run` (`run_end_to_end`, `derive_stage_paths`, `StagePaths`, `zip_graph_output`) | `main.py::_run_e2e_after_collect` maps `--progress` and delegates; the `--run-all` flag on `collect_sccm` triggers it, passing `configmanbearpig_collection_<ts>.zip` as `graph_zip_name` |
 | SOCKS5 pivot ([§13](#13-tunneling-all-collection-traffic-through-a-socks5-pivot)) | `proxy/patch.py` (process-wide `socket` interception), `proxy/socks.py` (dialer/handshake), `discovery/dns.py` (`force_tcp`) | `main.py` parse/validate (`_parse_proxy_or_exit`, `_require_dc_or_dns_for_proxy`) + the install-around-run wrap (`socks_proxy_installed`); the four proxy-aware DNS sites (`_resolve_dc_via_dns`, two sites in `collectors/dns.py`, `context.resolve_ip`) |
 | Integration testing / payload diff ([§14](#14-a-shared-integration-test-and-payload-diff-engine-invoked-off---run-all)) | `integration_testing` (`graph.load_graph`, `matcher`, `cases.EdgeCase`/`NodeCase`, `runner.run_suite`, `compare.compare_graphs`, `coverage.report`) | `openhound_sccm/integration/` — mayyhem.com `fixtures/edges.py`+`fixtures/nodes.py` (61 `EdgeCase`, `NodeCase`s, two whole-graph invariants) and the `__init__.py` wiring (`run_integration_tests`, `compare_to_zip`) called from the two `collect sccm` **Testing** flags |
 
@@ -1136,29 +1136,35 @@ SCCM source would touch AD data it shouldn't. We want the AD nodes (and the edge
 to merge into BloodHound's **native AD graph** by SID, augmenting SharpHound rather than shadowing
 it — which means emitting them with **no `source_kind` at all**.
 
-#### The add-on: a second emit pass + an untagged extension destination
+#### The add-on: three emit passes + an untagged extension destination
 
 - **Node routing needs no preproc step.** The coalesced `node_*` tables are already segregated by type, so the
   convert spec list is just split into `SCCM_NODE_SPECS` (`node_site`/`collection`/`security_role`/
-  `admin_user`/`client_device`) and `AD_NODE_SPECS` (`node_computer`/`user`/`group`/`backfill`) in
+  `admin_user`/`client_device`), `MSSQL_NODE_SPECS` (the six `node_mssql_*` tables, `source_kind="MSSQL"`,
+  `resource_prefix="mssql"`), and `AD_NODE_SPECS` (`node_computer`/`user`/`group`/`backfill`) in
   [main.py](src/openhound_sccm/main.py).
-- **Edge routing is one preproc step.** `transforms._graph_edges_split` runs *after*
-  `_node_backfill` and partitions `graph_edges` into `graph_edges_ad` (either endpoint id is in
-  `node_computer ∪ node_user ∪ node_group ∪ node_backfill`) and `graph_edges_sccm` (the EXISTS/NOT
-  EXISTS complement). Every backfill stub id counts as AD, so the `SCCM_HasMember` /
+- **Edge routing is one preproc step, now a three-way partition.** `transforms._graph_edges_split`
+  runs *after* `_node_backfill` and partitions `graph_edges` into `graph_edges_ad` (either endpoint id
+  is in `node_computer ∪ node_user ∪ node_group ∪ node_backfill` — highest precedence),
+  `graph_edges_mssql` (not AD-touching **and** both endpoints are in the new `_mssql_ids` set, unioned
+  from the six MSSQL node id columns), and `graph_edges_sccm` (the remaining complement). AD↔MSSQL
+  edges stay in `graph_edges_ad` under this precedence (e.g. `MSSQL_HostFor`, `MSSQL_HasLogin`), and
+  the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) stays in `graph_edges_sccm`, since
+  it is not both-MSSQL. Every backfill stub id counts as AD, so the `SCCM_HasMember` /
   `SCCM_HasStoredAccount` edges to bare-`Base` principals follow their stub into the AD payload.
-- **Two emit passes.** `_emit_split_graph` calls `emit_graph_from_duckdb` twice into the same
-  directory: the SCCM pass (`source_kind="SCCM"`, `resource_prefix="sccm"`) through core's
-  `opengraph_file`, and the AD pass (`source_kind=None`, `resource_prefix="ad"`) through the
-  extension's [`opengraph_file_untagged`](src/openhound_sccm/opengraph_untagged.py) — a sibling of
-  core's writer that omits the `metadata` block entirely. Distinct resource prefixes give distinct
-  file basenames (`sccm_*` vs `ad_*`), so two pipelines writing to one directory never collide.
+- **Three emit passes.** `_emit_split_graph` calls `emit_graph_from_duckdb` three times into the same
+  directory: the SCCM pass (`source_kind="SCCM"`, `resource_prefix="sccm"`) and the MSSQL pass
+  (`source_kind="MSSQL"`, `resource_prefix="mssql"`) both through core's `opengraph_file`, and the AD
+  pass (`source_kind=None`, `resource_prefix="ad"`) through the extension's
+  [`opengraph_file_untagged`](src/openhound_sccm/opengraph_untagged.py) — a sibling of core's writer
+  that omits the `metadata` block entirely. Distinct resource prefixes give distinct file basenames
+  (`sccm_*` / `mssql_*` / `ad_*`), so three pipelines writing to one directory never collide.
 
 #### Trade-offs
 
-- An AD↔SCCM edge lives in the untagged file but references an `SCCM_*` node defined in the tagged
-  file; this is safe only because BloodHound resolves edge endpoints by id across all ingested
-  files — so both file sets must be uploaded together.
+- An AD↔SCCM or AD↔MSSQL edge lives in the untagged file but references an `SCCM_*` or `MSSQL_*` node
+  defined in a differently-tagged file; this is safe only because BloodHound resolves edge endpoints
+  by id across all ingested files — so all three file sets must be uploaded together.
 - `opengraph_file_untagged` duplicates core's writer logic (a coupling to watch on OpenHound
   upgrades), because core's destination can't express "no metadata" and core is off-limits.
 - `_graph_edges_split` must run after `node_backfill`; a future reordering of `transforms()` that
@@ -1214,14 +1220,16 @@ AD-domain SID of the SQL host — the same derivation as `Computer` / `User` / `
 This ensures MSSQL nodes merge correctly with a future `MSSQLHound` collection keyed on the same
 domain SID.
 
-**Output routing.** MSSQL nodes register in `SCCM_NODE_SPECS` (they are SCCM-owned,
-`source_kind="SCCM"`). MSSQL edges insert into the single `graph_edges` table and are then
-auto-routed by `_graph_edges_split` (§11f): edges whose Computer-SID or service-account-SID
-endpoint is an AD node (`MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`,
-`MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, `MSSQL_GetAdminTGS`) go to `graph_edges_ad` (untagged
-AD payload); all-MSSQL/SCCM edges (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`,
-`MSSQL_MemberOf`, `MSSQL_IsMappedTo`, `SCCM_AssignAllPermissions`) go to `graph_edges_sccm`.
-No change to `_graph_edges_split` is needed — MSSQL node ids are deliberately not in its AD id set.
+**Output routing.** MSSQL nodes register in `MSSQL_NODE_SPECS` (`source_kind="MSSQL"`,
+`mssql_*` files) — the separate MSSQL OpenGraph schema (`schema_MSSQL.json`) owns them,
+even though this collector emits them. MSSQL edges insert into the single `graph_edges`
+table and are routed by `_graph_edges_split` (§11f) **by endpoint**: both-MSSQL edges
+(`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`,
+`MSSQL_IsMappedTo`) go to `graph_edges_mssql`; edges with an AD endpoint (`MSSQL_HostFor`,
+`MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`,
+`MSSQL_GetAdminTGS`) go to `graph_edges_ad` (untagged AD payload); and the MSSQL↔SCCM
+`SCCM_AssignAllPermissions` (database → site) goes to `graph_edges_sccm`. `_graph_edges_split`
+builds an `_mssql_ids` set from the six MSSQL node id columns to make this decision.
 
 ### 11h. Stage 6: coerce-and-relay possible edges and the synthetic Authenticated Users node
 
@@ -1252,7 +1260,7 @@ flag required an *explicitly confirmed* `Off` for each condition.
 
 **`SCCM_CoerceAndRelayToSMB` traversable bug fix.** ConfigManBearPig's traversable allow-list at `ps1:2221` named the SMB relay kind `CoerceAndRelayNTLMtoSMB`, while the function that emits the edge at `ps1:6775` used `CoerceAndRelayToSMB` — the string mismatch meant the SMB relay edge was stored but never marked traversable. This port emits `SCCM_CoerceAndRelayToSMB` and includes that exact string in `TRAVERSABLE_EDGE_KINDS`, so all three relay kinds are traversable.
 
-**Output routing.** All three relay edges touch an AD `Group` start node (Authenticated Users), so they are routed to `graph_edges_ad` (the untagged AD payload) by `_graph_edges_split`. For `SCCM_CoerceAndRelayToSMB` the end node is also an AD `Computer`, so both endpoints are AD nodes. For `SCCM_CoerceAndRelayToAdminService` the end is a `SCCM_Site`, and for `MSSQL_CoerceAndRelayToMSSQL` the end is an `MSSQL_Login` — both SCCM-payload nodes — but the AD-start-node rule routes them to the AD payload regardless.
+**Output routing.** All three relay edges touch an AD `Group` start node (Authenticated Users), so they are routed to `graph_edges_ad` (the untagged AD payload) by `_graph_edges_split`. For `SCCM_CoerceAndRelayToSMB` the end node is also an AD `Computer`, so both endpoints are AD nodes. For `SCCM_CoerceAndRelayToAdminService` the end is a `SCCM_Site` (SCCM payload), and for `MSSQL_CoerceAndRelayToMSSQL` the end is an `MSSQL_Login` (MSSQL payload since the §11f/§11g split) — but the AD-start-node rule routes both to the AD payload regardless. `MSSQL_CoerceAndRelayToMSSQL` therefore lands in the **AD payload**, not the MSSQL payload, despite its `MSSQL_` kind — the by-endpoint routing rule (§11f) wins over the kind's naming convention.
 
 ### 11i. HTTP version fingerprint from ccmsetup.exe — a new HTTP-phase capability
 
@@ -1673,6 +1681,16 @@ sccm`) is exactly the thing the framework can't express without a core edit.
   **in-process** and derives every path from the single collect `OUTPUT_PATH`.
   It is framework-agnostic (duck-types the app; no `openhound`/`dlt` import), so
   the MSSQL collector can adopt the same flag by calling it.
+- **The graph output is also bundled into a zip.** After convert finishes, `run_end_to_end` calls the
+  shared `openhound_collector_common.orchestration.zip_graph_output`, which flat-bundles every
+  `*.json` in the graph directory into `graph/<archive_name>` (the loose `.json` files are kept, not
+  replaced). The `--run-all` path (`_run_e2e_after_collect`) passes
+  `configmanbearpig_collection_<ts>.zip` — the same `_ts` used for `collect_full_<ts>.log` — as
+  `run_end_to_end(..., graph_zip_name=...)`; the shared default when no name is given is
+  `<app.name>_collection.zip`. This zip step requires `openhound-collector-common` **>=0.1.1**
+  (the release that adds `graph_zip_name`/`zip_graph_output`) — against an installed `0.1.0` it is
+  inactive/would error, which is why the dependency floor bump is paired with the library's v0.1.1
+  release.
 - **Progress plumbing quirk:** the framework stages read progress inconsistently
   (`Converter` uses `progress.value`; `PreProcessor` forwards the object straight
   to `dlt.pipeline()`), so the orchestrator's contract is `Progress | None` and it
@@ -1874,6 +1892,7 @@ took a separate, manual step outside `openhound collect sccm`.
 
 | Date | Change |
 |---|---|
+| 2026-07-30 | **MSSQL payload split out, and `--run-all` now zips the graph output.** MSSQL nodes and MSSQL-only edges now emit as a third OpenGraph payload (`mssql_*` files, `source_kind="MSSQL"`, matching `schema_MSSQL.json`) instead of under `source_kind="SCCM"`. `transforms._graph_edges_split` became a three-way partition — added `graph_edges_mssql` (not AD-touching, both endpoints in the new `_mssql_ids` set) between the existing AD and SCCM sets; AD keeps top precedence so AD↔MSSQL edges stay untagged and MSSQL↔SCCM edges (`SCCM_AssignAllPermissions`) stay SCCM. `main.py` gained `MSSQL_NODE_SPECS` / `MSSQL_EDGE_SPECS` / `MSSQL_SOURCE_KIND` and a third `_emit_split_graph` pass; the six `node_mssql_*` tables moved out of `SCCM_NODE_SPECS`. Separately, `run_end_to_end` (§12) now finishes by calling the shared `openhound_collector_common.orchestration.zip_graph_output`, flat-bundling the graph `*.json` files into `graph/<archive_name>`; the `--run-all` path passes the run's own `configmanbearpig_collection_<ts>.zip` (the shared default is `<app.name>_collection.zip`). Updated §11f/§11g/§11h, §12, the "Where this code lives" table, and the README. No framework/shared-library change from this collector's side — the zip behavior ships in `openhound-collector-common` v0.1.1; this repo's dependency floor bump to `>=0.1.1` is **deferred** until that version is actually resolvable here (`v0.1.0` is still what's tagged/installed at the time of this entry). |
 | 2026-07-29 | **First green `ruff` + `mypy` across both packages** (ope-60fe step 2e), prerequisite for the new `ci.yml` in each repo. Neither tool had ever passed despite both being declared dev dependencies and documented commands — the pre-commit config runs `black` and the standard hooks only. Starting point: **273 mypy errors** (206 collector / 67 library) and **50 ruff** (27 / 23); end state zero of each, with the offline suites green and a live `--run-all` collect producing a graph identical to the pre-session baseline (148 nodes / 454 edges, same kinds, identities, triples and property population). Four root causes covered nearly all the mypy count: **88 `logger.verbose` errors** fixed by routing 18 modules through the shared `get_logger()` (which already returned a `VerboseLogger` declaring the custom level) instead of `logging.getLogger` — this also retired five side-effect-only `from .. import log_context  # noqa: F401` imports whose sole job was installing the monkeypatch; **85 `import-untyped`** resolved with `ignore_missing_imports` overrides for `impacket`/`openhound`/`sspi`, none of which ship `py.typed`; **three missing stub packages** added (`types-ldap3`, `types-pywin32`, `types-pyasn1`), which surfaced three real library issues — noting `types-ldap3` targets 2.9.13 while this project pins ldap3 2.10.2rc4, so `ENCRYPT` / `TLS_CHANNEL_BINDING` / `session_security` need a narrow version-gap suppression rather than losing ldap3 checking; and **28 `fetchone()[0]`** sites replaced by a `transforms._scalar()` helper that raises a query-naming error instead of indexing `tuple \| None` (rewritten with a paren-matching scan, not a regex — the file has 130 `con.execute(` calls and only 28 with that suffix, so a forward non-greedy match runs across newlines into the next query; verified behaviour-preserving by reprocessing one cached bucket and diffing the graph). Several findings were real defects rather than annotation noise: `registry.py`'s `get_current_user` / `get_ntlm_settings` were annotated `Optional[list[str]]` / `Optional[dict]` but are generators yielding `(table, row)` tuples; two sites in `ldap.py` yielded a possibly-`None` `target.ad_object` into a dlt resource, which fails schema validation downstream without naming the host; `dns.py` referenced `dns.resolver.NXDOMAIN` in an `except` clause where `dns` binds only on a successful import, correlated to a separate boolean; `test_extension_methods.py` carried a bare `try/except` that swallowed every exception around an unused import, plus a skip claiming "convert phase not yet implemented" (false — `app.converter` is assigned and the test passes); and one library test asserted a public API purely by importing eight names, seven of which read as unused, so `ruff --fix` would have deleted them and left a green test checking nothing (rewritten to assert the export list as data; that test was retired with the upload feature later the same day, but the lesson — an unused import can be a contract — outlives it). Deliberate suppressions are confined to genuine duck-typing and stub defects, each naming its reason: the SOCKS `socket`-module patch (§13), the per-instance dnspython `resolve` override, pywin32's read-only-typed `PySecBuffer.Buffer`, ldap3's undeclared `ntlm_client`, and core's `RotatingFileHandler` — the last replaced by a `_RotatingHandler` Protocol in `main.py` that documents which six attributes (two private) the Windows rollover fix depends on. No new divergence category. |
 | 2026-07-29 | **Adopted the published `openhound` 0.2.12 and fixed two bugs the validation exposed** (ope-60fe, during the PyPI publishing run). The framework dependency moved from an unpinned `git+` dev reference to a declared `openhound>=0.2.12` — 0.2.12 being what PyPI actually serves, versus the 0.1.4 commit this collector was built against. Equivalence was proven by reprocessing one cached bucket under both versions rather than by comparing two live collects: identical 148 nodes / 454 edges, kinds, node identities, edge triples, and property population. (Two live collects are *not* comparable — the pre-existing baseline had accumulated three dlt load packages for want of `--clean`, inflating its raw AdminService counts 3×, and the fresh run hit 5-second AdminService read timeouts. Neither is a framework effect.) **Bug 1 — nondeterministic array ordering (§10).** The ~20 DuckDB `list()`/`array_agg()` aggregations feeding graph arrays give no ordering guarantee and run multi-threaded, so two converts over byte-identical input emitted the same elements in different orders (measured: 14 node + 6 edge property diffs in `collectionIds`, `siteSystemRoles`, `coercionVictimHostnames`, `coercionVictimAndRelayTargetPairs`). BloodHound saw property changes on re-ingest that had not happened, and the `--compare-to-zip` parity diff filled with false positives. Fixed at the single emit boundary — `_without_null_properties` became `_normalize_properties`, which now sorts array properties as well as dropping nulls — rather than in twenty SQL expressions, because one place cannot end up half-applied and covers future arrays for free. `objectClass` is exempt via `_ORDER_SIGNIFICANT_PROPERTIES`: LDAP returns it in class-hierarchy order (`top`, `person`, …), which is meaningful and already reproducible. Same experiment now reports zero differences. Three offline tests in `convert_pipeline_test.py`. **Bug 2 — a read timeout reported as zero rows (§7).** `_http_get_value` logged `ErrorClass.CONNECT_FAILURE` (which covers timeouts) at VERBOSE while every other failure class logged WARNING, so a timed-out AdminService query surfaced only as `Collected 0 stored accounts` at INFO with nothing in the issues log — a silently incomplete graph indistinguishable from an accurate one, and it dropped two `SCCM_HasStoredAccount` edges. The level is now WARNING when collecting, with a new `probing=True` parameter keeping it at VERBOSE for `_http_identify`, whose whole job is testing whether a host is a provider at all (a connect failure there is an expected negative, and warning per candidate host would be noise). The paging loop also now distinguishes `None` (request failed) from `[]` (no rows) and reports how many rows it did get. The HTTP client's connect/read timeout was raised 5s → 10s, since `SMS_SCI_Reserved` exceeded 5s on every site server in a healthy lab. No new divergence category — extends §7 and §10. |
 | 2026-07-29 | **Removed direct BloodHound CE upload**, deleting §15 and its 16 CLI options (eight each on `collect sccm` and `convert sccm`), the collector's `bloodhound_schemas.py` / `bloodhound_upload.py`, and the shared library's whole `bloodhound/` subpackage — which also lets the library drop its `requests` dependency, since nothing else there used it. Operators register the two shipped schema JSON files and ingest the OpenGraph output through BloodHound's own **File Ingest** UI; the README's Quick Start covers it. Three things deliberately unchanged: the hand-registered `convert sccm` stays (it still carries `--lookup-file` and `--progress`, and the `@app.convert()` decorator offers no seam for them, so `app.converter` is still assigned and `openhound` is still a declared dependency for that reason); both schema files stay inside the package, because `integration/__init__.py` reads `schema_SCCM.json` at runtime for the test kit's coverage check and `schema_MSSQL.json` ships as an operator deliverable; and `--disable-possible-edges` stays on `collect`, where it changes the graph. It was removed from `convert`, where it was a no-op in all but name — possible edges are gated during preprocess (`transforms._read_disable_possible`), so by convert time the decision is already in the lookup DB and the flag's only remaining effect was on the schema being uploaded. Verified: both commands bind, ruff and mypy clean in both packages, and a live `--run-all` collect produced an unchanged 148-node / 454-edge graph. |

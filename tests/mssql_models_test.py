@@ -64,11 +64,11 @@ def test_models_exported_from_package():
                (MSSQLServer, MSSQLDatabase, MSSQLServerRole, MSSQLDatabaseRole, MSSQLLogin, MSSQLDatabaseUser))
 
 
-def test_sccm_node_specs_include_mssql_tables():
-    from openhound_sccm.main import SCCM_NODE_SPECS
-    tables = [t for t, _ in SCCM_NODE_SPECS]
+def test_mssql_node_specs_hold_mssql_tables_and_sccm_specs_do_not():
+    from openhound_sccm.main import MSSQL_NODE_SPECS, SCCM_NODE_SPECS
+    mssql_tables = [t for t, _ in MSSQL_NODE_SPECS]
+    sccm_tables = [t for t, _ in SCCM_NODE_SPECS]
     for t in ("node_mssql_server", "node_mssql_database", "node_mssql_server_role",
               "node_mssql_database_role", "node_mssql_login", "node_mssql_database_user"):
-        assert t in tables
-    # MSSQL nodes are SCCM-owned, never in the AD payload, and node_backfill is an AD spec.
-    assert "node_backfill" not in tables
+        assert t in mssql_tables            # MSSQL nodes are their own source_kind="MSSQL" payload
+        assert t not in sccm_tables         # ...and no longer live under the SCCM payload

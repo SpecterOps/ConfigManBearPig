@@ -1361,7 +1361,10 @@ def collect_sccm(
     # propagated past the finally and never reached this point. Chain the
     # remaining phases only when the operator asked for it.
     if run_all:
-        _paths = _run_e2e_after_collect(output_path, progress)
+        _paths = _run_e2e_after_collect(
+            output_path, progress,
+            graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
+        )
         # Re-surface every artifact's location in one block at the very end, so the
         # operator doesn't have to scroll back through the collect/preproc/convert
         # logs to find where each output landed.
@@ -1610,7 +1613,9 @@ def _clean_previous_collection(output_path: pathlib.Path, clean: bool) -> None:
                 prior, oldest or "unknown", output_path)
 
 
-def _run_e2e_after_collect(output_path: pathlib.Path, progress: ProgressOption) -> "StagePaths":
+def _run_e2e_after_collect(
+    output_path: pathlib.Path, progress: ProgressOption, graph_zip_name: str | None = None,
+) -> "StagePaths":
     """Chain preprocess + convert in-process after a successful --run-all collect.
 
     Maps the collector's --progress choice to what the shared orchestrator wants
@@ -1639,7 +1644,7 @@ def _run_e2e_after_collect(output_path: pathlib.Path, progress: ProgressOption) 
 
     logger.info("--run-all: continuing with preprocess and convert (in-process).")
     try:
-        return run_end_to_end(app, output_path, progress=e2e_progress)
+        return run_end_to_end(app, output_path, progress=e2e_progress, graph_zip_name=graph_zip_name)
     except Exception:
         # Collect already succeeded, so the raw data on disk is still good; tell
         # the operator exactly how to resume rather than lose that work. Commands
@@ -1832,19 +1837,28 @@ def _noop_convert_source():
     return _empty
 
 
-# Registry of (table_name, ModelClass) pairs the convert pipeline iterates, split into the
-# two OpenGraph payloads (ARCHITECTURE.md §11f):
-#   - SCCM payload  -> source_kind="SCCM"  (custom SCCM_* kinds only)
-#   - AD payload    -> NO source_kind      (native Computer/User/Group + backfill stubs;
-#                                           BloodHound merges these into its AD graph)
+# Registry of (table_name, ModelClass) pairs the convert pipeline iterates, split into three
+# OpenGraph payloads (ARCHITECTURE.md §11f):
+#   - SCCM payload  -> source_kind="SCCM"   (custom SCCM_* kinds only)
+#   - MSSQL payload -> source_kind="MSSQL"  (MSSQL_* kinds; the separate MSSQL OpenGraph
+#                                            schema, schema_MSSQL.json, owns these)
+#   - AD payload    -> NO source_kind       (native Computer/User/Group/Container + backfill
+#                                            stubs; BloodHound merges these into its AD graph)
+
+# MSSQL nodes/edges belong to the separately maintained MSSQL schema (schema_MSSQL.json,
+# name/namespace "MSSQL"), even though this SCCM collector emits them. Their own source_kind
+# means re-ingesting or deleting the SCCM source never touches SQL topology.
+MSSQL_SOURCE_KIND = "MSSQL"
+
 SCCM_NODE_SPECS: list[tuple[str, type]] = [
     ("node_site", SCCMSite),
     ("node_collection", SCCMCollection),
     ("node_security_role", SCCMSecurityRole),
     ("node_admin_user", SCCMAdminUser),
     ("node_client_device", SCCMClientDevice),
-    # MSSQL nodes are SCCM-owned (source_kind="SCCM") — they are not AD principals and
-    # must not appear in the AD payload. node_backfill lives in AD_NODE_SPECS.
+]
+
+MSSQL_NODE_SPECS: list[tuple[str, type]] = [
     ("node_mssql_server", MSSQLServer),
     ("node_mssql_database", MSSQLDatabase),
     ("node_mssql_server_role", MSSQLServerRole),
@@ -1865,21 +1879,29 @@ AD_NODE_SPECS: list[tuple[str, type]] = [
     ("node_backfill", StubNode),
 ]
 
-# graph_edges_sccm / graph_edges_ad are the partition built by transforms._graph_edges_split.
+# graph_edges_{sccm,mssql,ad} are the partition built by transforms._graph_edges_split.
 SCCM_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_sccm", GraphEdge)]
+MSSQL_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_mssql", GraphEdge)]
 AD_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_ad", GraphEdge)]
 
 
 def _emit_split_graph(lookup: SCCMLookup, output_path) -> None:
-    """Emit the SCCM graph as two payloads into the same directory.
+    """Emit the graph as three payloads into the same directory.
 
-    The SCCM payload (sccm_* files) carries source_kind="SCCM"; the AD payload (ad_* files)
-    carries no source_kind so BloodHound merges its Computer/User/Group/stub nodes and the
-    edges touching them into the native AD graph. See ARCHITECTURE.md §11f.
+    SCCM payload (sccm_* files, source_kind="SCCM"): SCCM_* nodes + every edge with at
+    least one SCCM endpoint (including MSSQL<->SCCM edges). MSSQL payload (mssql_* files,
+    source_kind="MSSQL"): MSSQL_* nodes + every edge whose endpoints are BOTH MSSQL nodes.
+    AD payload (ad_* files, no source_kind): native Computer/User/Group/Container/stub nodes
+    + every edge touching one (including AD<->MSSQL), so BloodHound merges them into the
+    native AD graph. See ARCHITECTURE.md §11f.
     """
     emit_graph_from_duckdb(
         lookup, output_path, app.source_kind,
         SCCM_NODE_SPECS, SCCM_EDGE_SPECS, resource_prefix="sccm",
+    )
+    emit_graph_from_duckdb(
+        lookup, output_path, MSSQL_SOURCE_KIND,
+        MSSQL_NODE_SPECS, MSSQL_EDGE_SPECS, resource_prefix="mssql",
     )
     emit_graph_from_duckdb(
         lookup, output_path, None,
@@ -1888,8 +1910,8 @@ def _emit_split_graph(lookup: SCCMLookup, output_path) -> None:
 
 
 def _sccm_convert_hook(ctx: ConvertContext):
-    """Emit the SCCM graph by reading the preproc DuckDB directly (Convert2-Read-DB), as two
-    payloads (SCCM-tagged + untagged AD), then hand the framework a no-op source."""
+    """Emit the SCCM graph by reading the preproc DuckDB directly (Convert2-Read-DB), as three
+    payloads (SCCM-tagged + MSSQL-tagged + untagged AD), then hand the framework a no-op source."""
     _emit_split_graph(ctx.lookup, ctx.output_path)
     return _noop_convert_source(), {}
 

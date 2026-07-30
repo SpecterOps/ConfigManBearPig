@@ -2,15 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Emit MSSQL nodes and MSSQL-only edges as a third OpenGraph payload (`mssql_nodes-*.json` / `mssql_edges-*.json`, tagged `source_kind="MSSQL"`), so the SQL topology this collector produces is owned by the MSSQL source (which matches `schema_MSSQL.json`) instead of being mis-homed under `source_kind="SCCM"`.
+**Goal:** (1) Emit MSSQL nodes and MSSQL-only edges as a third OpenGraph payload (`mssql_nodes-*.json` / `mssql_edges-*.json`, tagged `source_kind="MSSQL"`), so the SQL topology this collector produces is owned by the MSSQL source (which matches `schema_MSSQL.json`) instead of being mis-homed under `source_kind="SCCM"`. (2) After the `--run-all` convert stage, bundle the emitted graph `.json` files into a single `graph/configmanbearpig_collection_<timestamp>.zip` (via a helper in the shared `openhound-collector-common` library), so the operator has one upload-ready, run-stamped artifact for BloodHound File Ingest.
 
-**Architecture:** This extends the existing two-payload split (ARCHITECTURE.md §11f) into three. Node routing is free — move the six `node_mssql_*` tables out of `SCCM_NODE_SPECS` into a new `MSSQL_NODE_SPECS` and add a third `emit_graph_from_duckdb` pass. Edge routing is one change to the existing preproc step `transforms._graph_edges_split`: it already partitions `graph_edges` into an **AD-touching** set (`graph_edges_ad`, either endpoint is an AD node id) and an SCCM set. We add an **MSSQL-only** set (`graph_edges_mssql`) between them: edges that are *not* AD-touching and whose **both** endpoints are MSSQL node ids. Everything else stays in `graph_edges_sccm`. The AD rule keeps top precedence, so AD↔MSSQL edges stay in the untagged AD payload; MSSQL↔SCCM edges (e.g. `SCCM_AssignAllPermissions`) stay in the SCCM payload — exactly the routing the change owner specified: *"move only the nodes/edges where MSSQL nodes are both source and destination."*
+**Architecture:** *Split* — extends the existing two-payload split (ARCHITECTURE.md §11f) into three. Node routing is free — move the six `node_mssql_*` tables out of `SCCM_NODE_SPECS` into a new `MSSQL_NODE_SPECS` and add a third `emit_graph_from_duckdb` pass. Edge routing is one change to the existing preproc step `transforms._graph_edges_split`: it already partitions `graph_edges` into an **AD-touching** set (`graph_edges_ad`, either endpoint is an AD node id) and an SCCM set. We add an **MSSQL-only** set (`graph_edges_mssql`) between them: edges that are *not* AD-touching and whose **both** endpoints are MSSQL node ids. Everything else stays in `graph_edges_sccm`. The AD rule keeps top precedence, so AD↔MSSQL edges stay in the untagged AD payload; MSSQL↔SCCM edges (e.g. `SCCM_AssignAllPermissions`) stay in the SCCM payload — exactly the routing the change owner specified: *"move only the nodes/edges where MSSQL nodes are both source and destination."* *Zip* — a new standalone helper `zip_graph_output(graph_dir, archive_name)` in `openhound_collector_common.orchestration.run` flat-bundles every `*.json` in the graph dir into `graph/<archive_name>` (the exact shape `integration_testing.graph.load_graph` and BloodHound File Ingest read); `run_end_to_end` gains a `graph_zip_name` parameter and calls it once, right after `app.converter(...)`. The archive name is a **parameter** (the helper is shared with the MSSQL collector, so it can't hardcode `configmanbearpig`); this collector's `--run-all` path passes `configmanbearpig_collection_<ts>.zip`, reusing the run's existing timestamp so it matches that run's `collect_full_<ts>.log`. Loose `.json` files are kept. The zip fires only on the `--run-all` path (per owner decision), never on a standalone `openhound convert`.
 
 **Tech Stack:** Python 3, DuckDB SQL (preproc transforms), `dlt` (resources + custom destination), `dataclasses`/`pydantic` (graph models), `pytest`.
 
 ## Global Constraints
 
-- **Only modify code under this repository (`ConfigManBearPig/`).** Never edit anything under `openhound/` (framework core) or `openhound-collector-common/` (shared library) — both are off-limits per `AGENTS.md`/`CLAUDE.md`. This change lives entirely in `src/openhound_sccm/` and `tests/`, plus `README.md`/`ARCHITECTURE.md`.
+- **Two repositories, by explicit owner authorization.** The MSSQL split (Tasks 1–2) lives entirely in this repo (`ConfigManBearPig/`: `src/openhound_sccm/`, `tests/`, `README.md`, `ARCHITECTURE.md`). The zip feature (Task 3) edits the **shared library `openhound-collector-common/`** — normally off-limits per `AGENTS.md`/`CLAUDE.md`, but Meatbag has explicitly directed this change. `openhound/` framework **core remains off-limits** — do not touch it.
+- **Shared-library governance (Task 3).** `openhound-collector-common` is consumed by **both** this SCCM collector and the sibling **MSSQL collector**, and it releases on its own git tag (`hatch-vcs`; a release is `git tag vX.Y.Z && git push`). Therefore: (a) the zip step changes the MSSQL collector's `--run-all` behavior too — update the **library's own** tests/README here, but the **MSSQL collector repo's** re-validation is a separate, owner-run task this plan does not cover; (b) **tagging/publishing the library release is Meatbag's action, not the implementer's** — the plan stops at "tests pass locally against the editable path checkout."
 - **Do not `git add` or commit anything.** Each task ends when its tests pass; Meatbag reviews and commits after testing (`CLAUDE.md`: "Ask before committing each time. Never push."). This overrides the writing-plans skill's "Commit" step.
 - **`source_kind` for MSSQL is the literal string `"MSSQL"`** — it must equal `schema_MSSQL.json`'s `"name"` / `"namespace"` (`"MSSQL"`) so BloodHound matches the payload to the uploaded MSSQL schema.
 - **File basenames come from `resource_prefix`.** The MSSQL pass uses `resource_prefix="mssql"`, yielding `mssql_nodes-*.json` and `mssql_edges-*.json`. `sccm`/`ad` prefixes are unchanged.
@@ -21,6 +22,10 @@
 - **MSSQL node id set** = the id columns of the six MSSQL node tables: `node_mssql_server.server_id`, `node_mssql_database.database_id`, `node_mssql_login.login_id`, `node_mssql_database_user.dbuser_id`, `node_mssql_server_role.role_id`, `node_mssql_database_role.role_id`.
 - **Property casing stays CMBP-verbatim.** This change moves nodes/edges between files; it does not rename or restructure any property or kind.
 - **Always-on:** no CLI flag. The three-payload split is the new default output shape.
+- **Zip = flat `*.json` archive at `graph/configmanbearpig_collection_<timestamp>.zip`.** Bundle every `*.json` in the graph dir, stored by basename (no directory prefix) — the shape `integration_testing.graph.load_graph` reads (`sorted(zf.namelist())`, `.json` only) and BloodHound File Ingest accepts. `<timestamp>` is the **run's** stamp `_ts` in `%Y%m%d_%H%M%S` ([main.py:1186](../../src/openhound_sccm/main.py#L1186)) so the zip shares the suffix of that run's `collect_full_<ts>.log`. **Keep** the loose `.json` files (non-destructive). Only `*.json` are added, so a prior archive is never nested in. Skip (log a WARNING, emit no zip) if the graph dir holds no `*.json`.
+- **The archive name is a parameter, never hardcoded in the shared library.** `zip_graph_output(graph_dir, archive_name)` and `run_end_to_end(..., graph_zip_name=...)` take the name; the collector-agnostic default is `f"{app.name}_collection.zip"` (so the MSSQL collector is not mislabeled `configmanbearpig`). This SCCM collector's `--run-all` path passes `f"configmanbearpig_collection_{_ts}.zip"`.
+- **Zip fires only on `--run-all`.** The step lives in `openhound_collector_common.orchestration.run.run_end_to_end`, after `app.converter(...)`, reached from this repo via `_run_e2e_after_collect`. A standalone `openhound convert` does not zip (owner decision).
+- **Library version/consumer floor.** Release the library as a backward-compatible `v0.1.1` (stays within this repo's existing `<0.2.0` cap) and bump this repo's dependency floor to `openhound-collector-common>=0.1.1,<0.2.0` ([pyproject.toml:45](../../pyproject.toml#L45)). Tagging/publishing is Meatbag's action.
 - **Tests live under `tests/`** and are named `*_test.py` (house convention).
 - **Logging:** `_graph_edges_split`'s existing INFO summary line must be extended to report the MSSQL-only count alongside the AD and SCCM counts (per `CLAUDE.md`/`.agents/standards/workflow.md`, every branch logs; here we only extend an existing log, no new branch).
 - **Preserve intent in comments**; do not annotate "ported from line X".
@@ -36,16 +41,22 @@
 | File | Create/Modify | Responsibility |
 |---|---|---|
 | `src/openhound_sccm/transforms.py` | Modify | Rework `_graph_edges_split` into a three-way partition; add the `_mssql_ids` set and the `graph_edges_mssql` table; extend the summary log. |
-| `src/openhound_sccm/main.py` | Modify | Add `MSSQL_SOURCE_KIND` + `MSSQL_NODE_SPECS` + `MSSQL_EDGE_SPECS`; remove the six MSSQL tables from `SCCM_NODE_SPECS`; add the third emit pass in `_emit_split_graph`. |
+| `src/openhound_sccm/main.py` | Modify | (Task 2) Add `MSSQL_SOURCE_KIND` + `MSSQL_NODE_SPECS` + `MSSQL_EDGE_SPECS`; remove the six MSSQL tables from `SCCM_NODE_SPECS`; add the third emit pass in `_emit_split_graph`. (Task 3 Step 7) Thread `graph_zip_name` through `_run_e2e_after_collect` and pass `configmanbearpig_collection_<ts>.zip` at the `--run-all` call site. |
+| `tests/collect_run_all_test.py` | Modify | Assert `--run-all` forwards the timestamped `configmanbearpig_collection_<ts>.zip` name into `run_end_to_end` (Task 3 Step 7). |
 | `tests/graph_edges_split_test.py` | Modify | Seed the six `node_mssql_*` tables + MSSQL/AD↔MSSQL/MSSQL↔SCCM edges; assert the three-way partition. |
 | `tests/graph_edges_coercion_cols_test.py` | Modify | Seed six empty `node_mssql_*` tables so the split doesn't error; assert `graph_edges_mssql` carries the coercion columns. |
 | `tests/edge_mssql_structural_test.py` | Modify | Flip the routing assertion: `MSSQL_Contains` now lands in `graph_edges_mssql`; add an assertion that `SCCM_AssignAllPermissions` stays in `graph_edges_sccm`. |
 | `tests/mssql_models_test.py` | Modify | Replace `test_sccm_node_specs_include_mssql_tables` with one asserting the six tables are in `MSSQL_NODE_SPECS` and **absent** from `SCCM_NODE_SPECS`. |
 | `tests/convert_split_output_test.py` | Modify | Extend the emit test to three payloads: seed a `node_mssql_server` row + a both-MSSQL `graph_edges_mssql` edge; assert `mssql_*.json` files carry `source_kind="MSSQL"` and hold the MSSQL node/edge. |
-| `README.md` | Modify | Update the output-files table, the Graph Model payload table + mermaid, the Limitations note, and the Node/Edge Reference payload notes. |
-| `ARCHITECTURE.md` | Modify | Update §11f (two→three payloads, new `_graph_edges_split` description), §11g "Output routing", §11h relay note, the quick-reference row, and add a changelog entry. |
+| `../openhound-collector-common/src/openhound_collector_common/orchestration/run.py` | Modify | Add `zip_graph_output(graph_dir)`; call it in `run_end_to_end` after convert. |
+| `../openhound-collector-common/src/openhound_collector_common/orchestration/__init__.py` | Modify | Export `zip_graph_output`. |
+| `../openhound-collector-common/tests/test_orchestration.py` | Modify | Unit-test the helper (flat bundle, empty-dir skip, non-json/prior-zip exclusion) + a `run_end_to_end` wiring test. |
+| `../openhound-collector-common/README.md` | Modify | Note `run_end_to_end` now flat-zips graph `*.json` after convert (name via `graph_zip_name`, default `<app.name>_collection.zip`). |
+| `pyproject.toml` | Modify | Bump the `openhound-collector-common` floor to `>=0.1.1`. |
+| `README.md` | Modify | Update the output-files table, the Graph Model payload table + mermaid, the Limitations note, the Node/Edge Reference payload notes, and the `--run-all` docs (now writes `graph/configmanbearpig_collection_<timestamp>.zip`). |
+| `ARCHITECTURE.md` | Modify | Update §11f (two→three payloads, new `_graph_edges_split` description), §11g "Output routing", §11h relay note, §12 (`--run-all` now zips), the quick-reference row, and add a changelog entry. |
 
-**Task ordering:** Task 1 (preproc split) must land before Task 2's full-suite regression (the emit pass reads `graph_edges_mssql`). Each task is independently unit-testable because the emit test seeds `graph_edges_mssql` directly. Task 3 (docs) is last and has no code dependency.
+**Task ordering:** Task 1 (preproc split) → Task 2 (emit pass; its full-suite regression reads `graph_edges_mssql`, so Task 1 lands first) → Task 3 (zip: the shared-library helper is independent of 1–2, but its Step 7 edits this repo's `main.py` — a different region than Task 2's spec lists — so run it after Task 2 to keep sequential edits to that file clean) → Task 4 (docs + dependency floor bump, no code dependency) → Task 5 (full verification gate; run last, after everything else is done). Each code task is independently unit-testable — the emit test seeds `graph_edges_mssql` directly, and the zip helper is tested standalone.
 
 ---
 
@@ -467,11 +478,247 @@ Expected: PASS. `integration_wiring_test.py` / `integration_fixtures_test.py` co
 
 ---
 
-### Task 3: Documentation — README + ARCHITECTURE
+### Task 3: Zip the graph output after `--run-all` convert (shared library)
+
+> **Repo boundary:** this task edits **`openhound-collector-common/`**, a separate checkout at `../openhound-collector-common` relative to this repo. Develop and validate it **in that checkout** (its own venv and `tests/`), not this repo's. Do **not** `git tag`/publish — that release is Meatbag's action (see Global Constraints).
+
+**Files:**
+- Modify: `../openhound-collector-common/src/openhound_collector_common/orchestration/run.py`
+- Modify: `../openhound-collector-common/src/openhound_collector_common/orchestration/__init__.py`
+- Modify: `../openhound-collector-common/README.md`
+- Test: `../openhound-collector-common/tests/test_orchestration.py`
+
+**Interfaces:**
+- Produces: `zip_graph_output(graph_dir: Path, archive_name: str = "opengraph.zip") -> Path | None` — flat-bundles every `*.json` in `graph_dir` into `graph_dir/<archive_name>` (stored by basename), keeping the loose files. Returns the zip path, or `None` when the dir is missing or holds no `*.json`. Exported from `openhound_collector_common.orchestration`. **The name must be a parameter, not a hardcoded constant**, because this helper is shared with the MSSQL collector — hardcoding `configmanbearpig_collection` would mislabel MSSQL's archive.
+- Produces: `run_end_to_end(app, output_path, *, progress=None, graph_zip_name: str | None = None) -> StagePaths` — new keyword-only `graph_zip_name`; after convert it calls `zip_graph_output(paths.graph_out, graph_zip_name or f"{app.name}_collection.zip")`. The `f"{app.name}_collection.zip"` default is collector-agnostic (MSSQL gets `mssql_collection.zip`, no leak); this SCCM collector passes an explicit, timestamped name.
+- Consumes (this repo, Step 7): `_run_e2e_after_collect` gains a `graph_zip_name: str | None = None` param and the `collect_sccm --run-all` call site passes `f"configmanbearpig_collection_{_ts}.zip"`, reusing the run timestamp `_ts` from [main.py:1186](../../src/openhound_sccm/main.py#L1186) so the zip shares the same suffix as that run's `collect_full_{_ts}.log`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `../openhound-collector-common/tests/test_orchestration.py`:
+
+```python
+import zipfile
+
+_NAME = "configmanbearpig_collection_20260730_101112.zip"  # a representative run-stamped name
+
+
+def test_zip_graph_output_flat_bundles_json_under_given_name(tmp_path):
+    from openhound_collector_common.orchestration import zip_graph_output
+    g = tmp_path / "graph"
+    g.mkdir()
+    for n in ("sccm_nodes-1.json", "mssql_edges-1.json", "ad_nodes-1.json"):
+        (g / n).write_text('{"graph": {"nodes": [], "edges": []}}', encoding="utf-8")
+    zp = zip_graph_output(g, _NAME)
+    assert zp == g / _NAME
+    with zipfile.ZipFile(zp) as zf:
+        assert sorted(zf.namelist()) == ["ad_nodes-1.json", "mssql_edges-1.json", "sccm_nodes-1.json"]
+    assert (g / "sccm_nodes-1.json").exists()  # loose files kept (non-destructive)
+
+
+def test_zip_graph_output_default_name_is_opengraph_zip(tmp_path):
+    from openhound_collector_common.orchestration import zip_graph_output
+    g = tmp_path / "graph"
+    g.mkdir()
+    (g / "sccm_nodes-1.json").write_text("{}", encoding="utf-8")
+    assert zip_graph_output(g) == g / "opengraph.zip"  # collector-agnostic default
+
+
+def test_zip_graph_output_skips_when_no_json(tmp_path):
+    from openhound_collector_common.orchestration import zip_graph_output
+    g = tmp_path / "graph"
+    g.mkdir()
+    assert zip_graph_output(g, _NAME) is None
+    assert not (g / _NAME).exists()
+    # A missing dir is also a no-op (not an error).
+    assert zip_graph_output(tmp_path / "nope", _NAME) is None
+
+
+def test_zip_graph_output_excludes_nonjson_and_prior_zip(tmp_path):
+    from openhound_collector_common.orchestration import zip_graph_output
+    g = tmp_path / "graph"
+    g.mkdir()
+    (g / "sccm_nodes-1.json").write_text("{}", encoding="utf-8")
+    (g / "collect.log").write_text("noise", encoding="utf-8")
+    (g / "configmanbearpig_collection_20260101_000000.zip").write_bytes(b"stale")  # a prior run's archive
+    zp = zip_graph_output(g, _NAME)
+    with zipfile.ZipFile(zp) as zf:
+        assert zf.namelist() == ["sccm_nodes-1.json"]  # only json; not the log or the old zip
+
+
+def test_run_end_to_end_zips_under_given_name(tmp_path):
+    def preprocessor(**kwargs):
+        pass
+
+    def converter(**kwargs):
+        out = kwargs["output_path"]  # the derived graph dir
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "sccm_nodes-1.json").write_text('{"graph": {"nodes": [], "edges": []}}', encoding="utf-8")
+
+    app = SimpleNamespace(name="sccm", preprocessor=preprocessor, converter=converter)
+    paths = run_end_to_end(app, tmp_path, progress=None, graph_zip_name=_NAME)
+    assert (paths.graph_out / _NAME).exists()
+
+
+def test_run_end_to_end_defaults_zip_name_to_app_collection(tmp_path):
+    def preprocessor(**kwargs):
+        pass
+
+    def converter(**kwargs):
+        out = kwargs["output_path"]
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "sccm_nodes-1.json").write_text("{}", encoding="utf-8")
+
+    app = SimpleNamespace(name="sccm", preprocessor=preprocessor, converter=converter)
+    paths = run_end_to_end(app, tmp_path, progress=None)
+    assert (paths.graph_out / "sccm_collection.zip").exists()  # f"{app.name}_collection.zip"
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run (in the library checkout): `uv run pytest tests\test_orchestration.py -v`
+Expected: FAIL — `cannot import name 'zip_graph_output'`.
+
+- [ ] **Step 3: Add the helper, wire it in, and export it**
+
+In `run.py`, add `import zipfile` under `import logging` (line ~14), and a default-name constant beside the existing ones (after [run.py:30](../../openhound-collector-common/src/openhound_collector_common/orchestration/run.py#L30)):
+
+```python
+_DEFAULT_GRAPH_ZIP_NAME = "opengraph.zip"
+```
+
+Add the helper (place it after `derive_stage_paths`, before `_NullProgress`):
+
+```python
+def zip_graph_output(graph_dir: Path, archive_name: str = _DEFAULT_GRAPH_ZIP_NAME) -> Optional[Path]:
+    """Bundle every *.json in *graph_dir* into a flat ``graph_dir/<archive_name>``.
+
+    The archive stores each file by basename (no directory prefix), which is exactly
+    the shape ``integration_testing.graph.load_graph`` reads back (``sorted(zf.namelist())``,
+    ``.json`` only) and BloodHound File Ingest accepts — so the operator has one
+    upload-ready artifact. The loose ``.json`` files are left in place (non-destructive),
+    and only ``*.json`` are added, so a prior archive (any ``.zip``) is never nested in.
+
+    *archive_name* is a parameter, not a constant, because this library is shared with the
+    MSSQL collector — each collector names its own archive (this one passes a timestamped
+    ``configmanbearpig_collection_<ts>.zip``). Returns the zip path, or ``None`` when there
+    is nothing to bundle (a missing dir, or a dir with no ``*.json``) — those are no-ops,
+    not errors, so a caller can call this unconditionally after convert.
+    """
+    if not graph_dir.is_dir():
+        logger.debug("Graph dir %s does not exist; no %s written.", graph_dir, archive_name)
+        return None
+    json_files = sorted(graph_dir.glob("*.json"))
+    if not json_files:
+        logger.warning("No *.json in %s; skipping %s.", graph_dir, archive_name)
+        return None
+    zip_path = graph_dir / archive_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in json_files:
+            zf.write(f, arcname=f.name)  # arcname = basename -> flat archive
+    logger.info("Bundled %d graph file(s) into %s", len(json_files), zip_path)
+    return zip_path
+```
+
+Add the keyword-only `graph_zip_name` parameter to `run_end_to_end` (extend its signature and docstring), and wire the call in by replacing the function's final two lines ([run.py:123-125](../../openhound-collector-common/src/openhound_collector_common/orchestration/run.py#L123-L125)):
+
+```python
+def run_end_to_end(
+    app: "OpenHound",
+    output_path: Path,
+    *,
+    progress: "Optional[Progress]" = None,
+    graph_zip_name: Optional[str] = None,
+) -> StagePaths:
+    # ... (unchanged body up to the convert call) ...
+    logger.info("Convert complete. Graph written to: %s", paths.graph_out)
+    # One upload-ready archive for BloodHound File Ingest; a no-op if convert wrote no json.
+    # Collector-agnostic default name; the caller may pass a run-specific one.
+    zip_graph_output(paths.graph_out, graph_zip_name or f"{app.name}_collection.zip")
+    return paths
+```
+
+Add a line to the docstring's parameter notes: *"graph_zip_name: basename for the bundled graph archive written into the graph dir after convert; defaults to ``<app.name>_collection.zip``."*
+
+In `orchestration/__init__.py`, add `zip_graph_output` to the `from .run import ...` line and to `__all__`.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run (in the library checkout): `uv run pytest tests\test_orchestration.py -v`
+Expected: PASS. (The pre-existing fake-app tests whose converter writes no graph dir still pass — `zip_graph_output` hits the missing-dir DEBUG branch and returns `None`, changing nothing they assert.)
+
+- [ ] **Step 5: Update the library README**
+
+In `../openhound-collector-common/README.md`, in the section that describes `orchestration.run` (the "Layout" list), add a line noting that `run_end_to_end` now bundles the convert output: *"After convert, `run_end_to_end` flat-zips the emitted graph `*.json` into the graph dir (name from `graph_zip_name`, default `<app.name>_collection.zip`), ready for BloodHound File Ingest (loose files kept)."*
+
+- [ ] **Step 6: Library regression**
+
+Run (in the library checkout): `uv run pytest tests\ -q` (plus `ruff`/`mypy` if the library configures them).
+Expected: PASS. **Stop here for the library — do not `git tag`/publish; that release is Meatbag's action.**
+
+- [ ] **Step 7: Wire the run-specific archive name from this repo's `--run-all` path**
+
+Back in **this repo** (`ConfigManBearPig/`), thread the timestamped name so `--run-all` produces `graph/configmanbearpig_collection_<ts>.zip`. Local dev resolves `openhound-collector-common` via the `[tool.uv.sources]` editable path, so the Step 3 change is already importable here.
+
+First the failing test — append to `tests/collect_run_all_test.py`:
+
+```python
+def test_run_e2e_forwards_configmanbearpig_zip_name(monkeypatch, tmp_path):
+    """--run-all must pass a timestamped configmanbearpig_collection_<ts>.zip through
+    to the shared run_end_to_end (which writes it into the graph dir)."""
+    import openhound_collector_common.orchestration as orch
+    from openhound_sccm.main import _run_e2e_after_collect, ProgressOption
+
+    captured = {}
+
+    def fake_run_end_to_end(app, output_path, *, progress=None, graph_zip_name=None):
+        captured["graph_zip_name"] = graph_zip_name
+        from openhound_collector_common.orchestration import derive_stage_paths
+        return derive_stage_paths(app, output_path)
+
+    # _run_e2e_after_collect does a function-local `from ... import run_end_to_end`,
+    # which resolves the attribute at call time, so patching the module attr takes effect.
+    monkeypatch.setattr(orch, "run_end_to_end", fake_run_end_to_end)
+    _run_e2e_after_collect(
+        tmp_path, ProgressOption.off,
+        graph_zip_name="configmanbearpig_collection_20260730_101112.zip",
+    )
+    assert captured["graph_zip_name"] == "configmanbearpig_collection_20260730_101112.zip"
+```
+
+Run: `uv run pytest tests\collect_run_all_test.py::test_run_e2e_forwards_configmanbearpig_zip_name -v`
+Expected: FAIL — `_run_e2e_after_collect` takes no `graph_zip_name`.
+
+Then implement. In `_run_e2e_after_collect` ([main.py:1613](../../src/openhound_sccm/main.py#L1613)), add a keyword param (default `None` so any existing direct call keeps working) and forward it:
+
+```python
+def _run_e2e_after_collect(
+    output_path: pathlib.Path, progress: ProgressOption, graph_zip_name: str | None = None,
+) -> "StagePaths":
+    ...
+        return run_end_to_end(app, output_path, progress=e2e_progress, graph_zip_name=graph_zip_name)
+```
+
+At the `--run-all` call site ([main.py:1364](../../src/openhound_sccm/main.py#L1364)), pass the run-stamped name (reusing `_ts` from [main.py:1186](../../src/openhound_sccm/main.py#L1186), the same suffix as `collect_full_{_ts}.log`):
+
+```python
+        _paths = _run_e2e_after_collect(
+            output_path, progress,
+            graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
+        )
+```
+
+Run: `uv run pytest tests\collect_run_all_test.py -v`
+Expected: PASS (the new test plus the file's existing ones).
+
+---
+
+### Task 4: Documentation — README + ARCHITECTURE (+ dependency floor bump)
 
 **Files:**
 - Modify: `README.md`
 - Modify: `ARCHITECTURE.md`
+- Modify: `pyproject.toml`
 
 No automated test; the deliverable is reviewed prose held to the repo's "README is code-truth above all else" rule (`CLAUDE.md`/`AGENTS.md`). Verify with the doc-truth checks in Step 5.
 
@@ -551,20 +798,71 @@ Also update the "**`environmentid`**" note wording is unchanged, but change the 
 | 2026-07-30 | **MSSQL payload split out.** MSSQL nodes and MSSQL-only edges now emit as a third OpenGraph payload (`mssql_*` files, `source_kind="MSSQL"`, matching `schema_MSSQL.json`) instead of under `source_kind="SCCM"`. `transforms._graph_edges_split` became a three-way partition — added `graph_edges_mssql` (not AD-touching, both endpoints in the new `_mssql_ids` set) between the existing AD and SCCM sets; AD keeps top precedence so AD↔MSSQL edges stay untagged and MSSQL↔SCCM edges (`SCCM_AssignAllPermissions`) stay SCCM. `main.py` gained `MSSQL_NODE_SPECS` / `MSSQL_EDGE_SPECS` / `MSSQL_SOURCE_KIND` and a third `_emit_split_graph` pass; the six `node_mssql_*` tables moved out of `SCCM_NODE_SPECS`. Updated §11f/§11g/§11h and the README. No framework/shared-library change. |
 ```
 
-- [ ] **Step 6: Doc-truth verification**
+- [ ] **Step 6: Bump the shared-library dependency floor (`pyproject.toml`)**
+
+The zip behavior ships in `openhound-collector-common` `v0.1.1`. Raise this repo's floor so an install is guaranteed to have it, keeping the existing upper cap ([pyproject.toml:45](../../pyproject.toml#L45)):
+
+```toml
+    "openhound-collector-common>=0.1.1,<0.2.0",
+```
+
+(Local development uses the `[tool.uv.sources]` editable-path redirect, which is unaffected; the floor guards installed/published wheels.)
+
+- [ ] **Step 7: Document the `--run-all` zip (README + ARCHITECTURE §12)**
+
+(a) `README.md` — in the `--run-all` entry of the Command Line Options table and in the Quick Start end-to-end example, add that the run now also writes `graph\configmanbearpig_collection_<timestamp>.zip` — a single upload-ready archive of the graph `.json` files for BloodHound File Ingest (loose files kept; `<timestamp>` matches the run's `collect_full_<ts>.log`). If the output-files table (Step 1) is nearby, add a row: `| `graph\configmanbearpig_collection_<timestamp>.zip` | **Bundle** — every graph `.json` above, flat-zipped for one-shot upload (written by `--run-all` only) |`.
+
+(b) `ARCHITECTURE.md` §12 ("One-command end-to-end: a `--run-all` flag") — add a sentence that `run_end_to_end` now finishes by calling the shared `openhound_collector_common.orchestration.zip_graph_output`, which flat-bundles the graph `*.json` into `graph/<archive_name>`; the `--run-all` path passes `configmanbearpig_collection_<ts>.zip` (the shared default is `<app.name>_collection.zip`). Add `zip_graph_output` to the `orchestration/run` cell of the "Where this code lives" table's §12 row. Extend the changelog entry from Task 4 Step 5 to mention the zip addition (or add a companion line).
+
+- [ ] **Step 8: Doc-truth verification**
 
 Confirm the docs match the shipped code:
 - README's three file-name patterns (`sccm_*` / `mssql_*` / `ad_*`) match the `resource_prefix` values in `_emit_split_graph`.
 - README's per-payload node lists match `SCCM_NODE_SPECS` / `MSSQL_NODE_SPECS` / `AD_NODE_SPECS`.
 - README's both-MSSQL vs AD-touching vs MSSQL↔SCCM edge lists match the endpoints in `transforms._edge_mssql_*` and `_edge_mssql_db_assign_all`.
 - ARCHITECTURE §11f/§11g code references (`_graph_edges_split`, `graph_edges_mssql`, `_mssql_ids`, `MSSQL_NODE_SPECS`, `MSSQL_EDGE_SPECS`, `MSSQL_SOURCE_KIND`, `_emit_split_graph`) all exist in the code.
+- The `--run-all` zip claims match the shipped code: `--run-all` passes `configmanbearpig_collection_<ts>.zip` (via `_run_e2e_after_collect` → `run_end_to_end(graph_zip_name=...)`), written into `graph/` by `zip_graph_output`, with the shared default `<app.name>_collection.zip`; the `pyproject.toml` floor reads `>=0.1.1`.
 
 Run: `uv run pytest tests\ -q`
 Expected: PASS (final full-suite confirmation that documented behavior holds).
 
-- [ ] **Step 7: Ticket close-out**
+---
 
-Move the `gtk` ticket to done and regenerate `TICKETS-BY-STATUS.md` from `gtk list`.
+### Task 5: Full verification gate — all tests (unit + integration) green across both repos
+
+*No code changes. This is the explicit "everything passes after the changes" gate. Run it only after Tasks 1–4 are complete, using the isolated validation venv from Global Constraints. Do not claim completion until every command below is green (`superpowers:verification-before-completion`).*
+
+- [ ] **Step 1: This repo — the CI-gate four files (the PR gate)**
+
+Run:
+```powershell
+uv run pytest tests\extension_metadata_test.py tests\integration_wiring_test.py `
+    tests\convert_pipeline_test.py tests\integration_fixtures_test.py -q
+```
+Expected: PASS, 0 failed. These are the four files `ci.yml` runs (`AGENTS.md` → Tests).
+
+- [ ] **Step 2: This repo — full unit + offline-integration suite**
+
+Run: `uv run pytest tests\ -q`
+Expected: 0 failed. Skips are acceptable **only** for the minority of tests that need a live SCCM/AD hierarchy (`AGENTS.md`: "Most of the suite is offline; a minority needs a live SCCM hierarchy and is skipped without one"). The offline integration suites — `integration_fixtures_test.py`, `integration_wiring_test.py`, `integration_cli_flags_test.py`, `integration_lowpriv_fixtures_test.py` — must **run and pass**, not skip. Confirm the summary reads `0 failed` and that every skip is a documented live-only test; investigate any other skip.
+
+- [ ] **Step 3: This repo — lint + types**
+
+Run: `uv run ruff check src tests` then `uv run mypy src\openhound_sccm`
+Expected: both clean (0 errors).
+
+- [ ] **Step 4: Shared library — full suite (in its own checkout)**
+
+Because Task 3 changed `openhound-collector-common`, run its suite too, in that checkout's venv:
+```powershell
+cd ..\openhound-collector-common
+uv run pytest tests\ -q
+```
+Expected: 0 failed (includes the new `zip_graph_output` / `run_end_to_end` tests). Run its `ruff`/`mypy` if that repo configures them. Return to this repo afterward.
+
+- [ ] **Step 5: Record the result and close out**
+
+State the outcome plainly — passed/failed/skipped counts for each suite above, with the reason for every skip. If anything failed, fix it under the owning task and re-run this gate before claiming completion; never report success on a red or unexplained-skip suite. Then move the `gtk` ticket to done and regenerate `TICKETS-BY-STATUS.md` from `gtk list`.
 
 ---
 
@@ -578,13 +876,18 @@ Move the `gtk` ticket to done and regenerate `TICKETS-BY-STATUS.md` from `gtk li
 - ✅ SCCM↔MSSQL edges stay in `sccm_*.json`: they are not both-MSSQL, so they fall to `graph_edges_sccm` — verified with `SCCM_AssignAllPermissions` in Tasks 1 and 2 tests.
 - ✅ File basenames `mssql_nodes-*.json` / `mssql_edges-*.json`: `resource_prefix="mssql"` (Task 2).
 - ✅ `source_kind="MSSQL"` matches `schema_MSSQL.json`: `MSSQL_SOURCE_KIND` constant (Task 2).
-- ✅ Docs updated (README output/Graph Model/Node+Edge Reference/mermaid; ARCHITECTURE §11f/§11g/§11h/quick-ref/changelog): Task 3.
-- ✅ Only this repo modified; `openhound/` and `openhound-collector-common/` untouched.
-- ✅ Cleanup/summary unaffected: `_clean_previous_collection` removes whole artifact dirs and the run-all summary globs `*.json` — both prefix-agnostic, so no code change needed (verified during planning).
+- ✅ Zip graph output after `--run-all` convert → `graph/configmanbearpig_collection_<ts>.zip`: `zip_graph_output(graph_dir, archive_name)` in the shared library, called by `run_end_to_end(graph_zip_name=...)`, with the name threaded from this repo's `_run_e2e_after_collect` reusing the run's `_ts` (Task 3).
+- ✅ Filename is exactly `configmanbearpig_collection_<timestamp>.zip`: the `--run-all` call site passes `f"configmanbearpig_collection_{_ts}.zip"` (Task 3 Step 7); the shared helper keeps the name a parameter so the MSSQL collector isn't mislabeled (default `<app.name>_collection.zip`).
+- ✅ Zip is a flat archive of the graph `*.json`, loose files kept, `--run-all` only: helper spec + placement (Task 3); owner decisions honored.
+- ✅ All tests (unit + integration) pass after the changes, across both repos: Task 5 gate (CI-gate four files, full suite, lint/types, shared-library suite), with only documented live-only skips permitted.
+- ✅ Consumer floor bumped so installs include the zip: `pyproject.toml` `>=0.1.1` (Task 4 Step 6).
+- ✅ Docs updated (README output/Graph Model/Node+Edge Reference/mermaid + `--run-all` zip; ARCHITECTURE §11f/§11g/§11h/§12/quick-ref/changelog): Task 4.
+- ✅ `openhound/` framework core untouched. `openhound-collector-common/` is edited **only** for the zip (Task 3), by explicit owner authorization; its release tag + the MSSQL collector's re-validation are owner tasks noted in Global Constraints, not steps here.
+- ✅ Cleanup/summary unaffected: `_clean_previous_collection` removes whole artifact dirs (so the `--run-all` zip, living inside `graph/`, is swept with it) and the run-all summary globs `*.json` — both prefix-agnostic, so no code change needed (verified during planning).
 
 **Placeholder scan:** No `TBD`/`TODO`. Every code step shows full code; every doc step shows the exact replacement text or a precise locate-and-edit instruction with the target lines.
 
-**Type consistency:** `emit_graph_from_duckdb(lookup, output_path, source_kind, node_specs, edge_specs, resource_prefix)` is called in Task 2's `_emit_split_graph` with `MSSQL_SOURCE_KIND` (a `str`), matching the existing `source_kind: str | None` parameter. Table name `graph_edges_mssql` is produced in Task 1 and consumed by `MSSQL_EDGE_SPECS` in Task 2. The six `node_mssql_*` id columns used to build `_mssql_ids` in Task 1 (`server_id`, `database_id`, `login_id`, `dbuser_id`, `role_id`, `role_id`) match the columns the edge builders already join on (`_edge_mssql_structural`/`_membership`/`_db_assign_all`). `MSSQL_NODE_SPECS` / `MSSQL_EDGE_SPECS` are defined in Task 2 and asserted by name in `mssql_models_test.py` (Task 2).
+**Type consistency:** `emit_graph_from_duckdb(lookup, output_path, source_kind, node_specs, edge_specs, resource_prefix)` is called in Task 2's `_emit_split_graph` with `MSSQL_SOURCE_KIND` (a `str`), matching the existing `source_kind: str | None` parameter. Table name `graph_edges_mssql` is produced in Task 1 and consumed by `MSSQL_EDGE_SPECS` in Task 2. The six `node_mssql_*` id columns used to build `_mssql_ids` in Task 1 (`server_id`, `database_id`, `login_id`, `dbuser_id`, `role_id`, `role_id`) match the columns the edge builders already join on (`_edge_mssql_structural`/`_membership`/`_db_assign_all`). `MSSQL_NODE_SPECS` / `MSSQL_EDGE_SPECS` are defined in Task 2 and asserted by name in `mssql_models_test.py` (Task 2). `zip_graph_output(graph_dir: Path) -> Optional[Path]` is defined and exported in Task 3 and imported by name in the Task 3 tests; `run_end_to_end` calls it with `paths.graph_out` (a `Path`), matching the signature.
 
 **Edge classification cross-check** (endpoints confirmed against the builders in `transforms.py`):
 

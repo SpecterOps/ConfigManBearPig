@@ -51,6 +51,14 @@ def test_split_carries_coercion_columns_to_ad_payload():
         "CREATE TABLE sccm.node_group AS SELECT 'MAYYHEM.COM-S-1-5-11'::VARCHAR AS sid"
     )
     con.execute("CREATE TABLE sccm.node_backfill AS SELECT NULL::VARCHAR AS id WHERE false")
+    # _graph_edges_split now unions the six MSSQL node id columns into _mssql_ids;
+    # create them empty so the split does not error (no edge here is both-MSSQL).
+    con.execute("CREATE TABLE sccm.node_mssql_server AS SELECT NULL::VARCHAR AS server_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database AS SELECT NULL::VARCHAR AS database_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_login AS SELECT NULL::VARCHAR AS login_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database_user AS SELECT NULL::VARCHAR AS dbuser_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_server_role AS SELECT NULL::VARCHAR AS role_id WHERE false")
+    con.execute("CREATE TABLE sccm.node_mssql_database_role AS SELECT NULL::VARCHAR AS role_id WHERE false")
     _graph_edges_split(con, "sccm")
     ad_cols = [d[0] for d in con.execute("DESCRIBE sccm.graph_edges_ad").fetchall()]
     assert "coercion_victim_and_relay_target_pairs" in ad_cols
@@ -58,6 +66,9 @@ def test_split_carries_coercion_columns_to_ad_payload():
     sccm_cols = [d[0] for d in con.execute("DESCRIBE sccm.graph_edges_sccm").fetchall()]
     assert "coercion_victim_and_relay_target_pairs" in sccm_cols
     assert "coercion_victim_hostnames" in sccm_cols
+    mssql_cols = [d[0] for d in con.execute("DESCRIBE sccm.graph_edges_mssql").fetchall()]
+    assert "coercion_victim_and_relay_target_pairs" in mssql_cols
+    assert "coercion_victim_hostnames" in mssql_cols
     # The AdminService relay (AuthUsers start) is AD-routed.
     ad_kinds = [r[0] for r in con.execute("SELECT kind FROM sccm.graph_edges_ad").fetchall()]
     assert "SCCM_CoerceAndRelayToAdminService" in ad_kinds

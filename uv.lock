@@ -294,7 +294,7 @@ requires-dist = [
     { name = "impacket", specifier = ">=0.11.0" },
     { name = "ldap3", specifier = ">=2.10.2rc4" },
     { name = "openhound", specifier = ">=0.2.12" },
-    { name = "openhound-collector-common", specifier = ">=0.1.0,<0.2.0" },
+    { name = "openhound-collector-common", specifier = ">=0.1.1,<0.2.0" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "winkerberos", marker = "sys_platform == 'win32'", specifier = ">=0.10.0" },
@@ -1042,7 +1042,7 @@ wheels = [
 
 [[package]]
 name = "openhound-collector-common"
-version = "0.1.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -1057,9 +1057,9 @@ dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "winkerberos", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f6/e1/0f32b0358245f5c4b1b0ffd9a25f7be933c9840c639afdb42e24cdfc6e79/openhound_collector_common-0.1.0.tar.gz", hash = "sha256:8f542964047b44c5a0741ad3833410f93dda19caa38093d0721ed1165d78542d", size = 175523, upload-time = "2026-07-30T00:31:47.294Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/04/49c0c8cdc23932765b94cf9f5c4cf8aab40cb0815331e75569bd4d7b535a/openhound_collector_common-0.1.1.tar.gz", hash = "sha256:5b4763dd9c43f3e2c0de5daef75e4fede6a58eec2b71cd928ec56d4b53c6fc20", size = 176982, upload-time = "2026-07-30T22:06:46.453Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/45/541a9fac781edd33b03ccd40aa10dab9752821972bbd6a9dd8637e35e0da/openhound_collector_common-0.1.0-py3-none-any.whl", hash = "sha256:1282c0373a195be1bee4bd34068c03025f7b28e2e5d54464f98f62c5c15bef2e", size = 100020, upload-time = "2026-07-30T00:31:46.353Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/a2/9c992803cc2b1a0d3558af4c2b8efd1761435963a31815e4cf76626602be/openhound_collector_common-0.1.1-py3-none-any.whl", hash = "sha256:f82c5a35a9a2c0d51a67b1aedd13070158bc19d808feb3f85f2890bb79ff1427", size = 101032, upload-time = "2026-07-30T22:06:45.446Z" },
 ]
 
 [[package]]

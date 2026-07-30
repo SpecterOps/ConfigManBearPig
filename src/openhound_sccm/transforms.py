@@ -4996,22 +4996,28 @@ def _node_backfill(con: duckdb.DuckDBPyConnection, schema: str) -> None:
 
 
 def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
-    """Partition graph_edges into an AD-touching set and an SCCM-only set.
+    """Partition graph_edges into three payloads: AD-touching, MSSQL-only, SCCM-only.
 
-    An edge belongs to the AD payload when EITHER endpoint is an AD node id: a
-    Computer/User/Group coalesce row, or a backfill stub (every backfill stub is an
-    unresolved AD principal, including the bare-'Base' ones). The AD payload is emitted to
-    the untagged ad_* OpenGraph files (no source_kind) so BloodHound merges those nodes and
-    relationships into its native AD graph. Every other edge has both ends in the SCCM_*
-    node space and stays in the SCCM-tagged payload.
+    Routing precedence (each edge lands in exactly one payload):
+      1. AD    -- EITHER endpoint is an AD node id (Computer/User/Group coalesce
+                  row, or a backfill stub). Emitted untagged (no source_kind) so BloodHound
+                  merges it into the native AD graph. This is what keeps AD<->MSSQL edges
+                  (MSSQL_HostFor, MSSQL_HasLogin, the service-account and relay edges) here.
+      2. MSSQL -- NOT AD-touching AND BOTH endpoints are MSSQL node ids. Emitted under
+                  source_kind="MSSQL" so the separate MSSQL source owns its own SQL topology.
+      3. SCCM  -- everything else: not AD-touching, not both-MSSQL, so at least one endpoint
+                  is an SCCM node. This keeps MSSQL<->SCCM edges (SCCM_AssignAllPermissions,
+                  database -> site) here.
 
     Runs LAST, after _node_backfill, so the AD id set includes the stub ids minted there.
-    Reads graph_edges without mutating it (node_backfill has already consumed it). EXISTS /
-    NOT EXISTS make the two output tables an exact complement, NULL-safe even for a malformed
-    edge with a NULL endpoint (it falls to the SCCM-only side deterministically).
+    Every node_* table it reads is built earlier in transforms() with CREATE OR REPLACE
+    TABLE, so all are guaranteed present. EXISTS/NOT EXISTS make the three outputs an exact,
+    disjoint, complete partition, NULL-safe even for a malformed edge with a NULL endpoint
+    (it falls to the SCCM side deterministically). MSSQL node ids never collide with AD SIDs,
+    but the explicit NOT-AD guard on the MSSQL and SCCM arms keeps the precedence unambiguous.
     """
-    # _ad_ids is a session-local TEMP TABLE (DuckDB's temp schema); intentionally unqualified —
-    # do NOT add a {schema}. prefix, that would be invalid for a temp table.
+    # _ad_ids / _mssql_ids are session-local TEMP TABLEs (DuckDB's temp schema);
+    # intentionally unqualified -- do NOT add a {schema}. prefix, that is invalid for a temp table.
     con.execute(
         f"CREATE OR REPLACE TEMP TABLE _ad_ids AS "
         f"SELECT sid AS id FROM {schema}.node_computer WHERE sid IS NOT NULL "
@@ -5020,26 +5026,51 @@ def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"UNION SELECT id FROM {schema}.node_backfill WHERE id IS NOT NULL"
     )
     con.execute(
-        f"CREATE OR REPLACE TABLE {schema}.graph_edges_ad AS "
-        f"SELECT e.start_id, e.end_id, e.kind, e.collection_source, "
-        f"  e.coercion_victim_and_relay_target_pairs, e.coercion_victim_hostnames, e.sccm_infra, "
-        f"  e.assumed, e.assumption_basis "
-        f"FROM {schema}.graph_edges e "
-        f"WHERE EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.start_id) "
-        f"   OR EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.end_id)"
+        f"CREATE OR REPLACE TEMP TABLE _mssql_ids AS "
+        f"SELECT server_id AS id FROM {schema}.node_mssql_server WHERE server_id IS NOT NULL "
+        f"UNION SELECT database_id FROM {schema}.node_mssql_database WHERE database_id IS NOT NULL "
+        f"UNION SELECT login_id FROM {schema}.node_mssql_login WHERE login_id IS NOT NULL "
+        f"UNION SELECT dbuser_id FROM {schema}.node_mssql_database_user WHERE dbuser_id IS NOT NULL "
+        f"UNION SELECT role_id FROM {schema}.node_mssql_server_role WHERE role_id IS NOT NULL "
+        f"UNION SELECT role_id FROM {schema}.node_mssql_database_role WHERE role_id IS NOT NULL"
     )
+    # The full 9-column projection every payload keeps identical (one place, added arrays free).
+    cols = (
+        "e.start_id, e.end_id, e.kind, e.collection_source, "
+        "e.coercion_victim_and_relay_target_pairs, e.coercion_victim_hostnames, e.sccm_infra, "
+        "e.assumed, e.assumption_basis"
+    )
+    start_ad = "EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.start_id)"
+    end_ad = "EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.end_id)"
+    start_mssql = "EXISTS (SELECT 1 FROM _mssql_ids m WHERE m.id = e.start_id)"
+    end_mssql = "EXISTS (SELECT 1 FROM _mssql_ids m WHERE m.id = e.end_id)"
+    # 1. AD payload: either endpoint is an AD node id (highest precedence, unchanged).
+    con.execute(
+        f"CREATE OR REPLACE TABLE {schema}.graph_edges_ad AS "
+        f"SELECT {cols} FROM {schema}.graph_edges e "
+        f"WHERE {start_ad} OR {end_ad}"
+    )
+    # 2. MSSQL payload: not AD-touching AND both endpoints are MSSQL node ids.
+    con.execute(
+        f"CREATE OR REPLACE TABLE {schema}.graph_edges_mssql AS "
+        f"SELECT {cols} FROM {schema}.graph_edges e "
+        f"WHERE NOT {start_ad} AND NOT {end_ad} "
+        f"  AND {start_mssql} AND {end_mssql}"
+    )
+    # 3. SCCM payload: not AD-touching AND not both-MSSQL (at least one SCCM endpoint).
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.graph_edges_sccm AS "
-        f"SELECT e.start_id, e.end_id, e.kind, e.collection_source, "
-        f"  e.coercion_victim_and_relay_target_pairs, e.coercion_victim_hostnames, e.sccm_infra, "
-        f"  e.assumed, e.assumption_basis "
-        f"FROM {schema}.graph_edges e "
-        f"WHERE NOT EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.start_id) "
-        f"  AND NOT EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.end_id)"
+        f"SELECT {cols} FROM {schema}.graph_edges e "
+        f"WHERE NOT {start_ad} AND NOT {end_ad} "
+        f"  AND NOT ({start_mssql} AND {end_mssql})"
     )
     ad_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_ad")
+    mssql_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_mssql")
     sccm_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_sccm")
-    logger.info("graph_edges split: %d AD-touching, %d SCCM-only", ad_cnt, sccm_cnt)
+    logger.info(
+        "graph_edges split: %d AD-touching, %d MSSQL-only, %d SCCM-only",
+        ad_cnt, mssql_cnt, sccm_cnt,
+    )
 
 
 def transforms(con: duckdb.DuckDBPyConnection, schema: str = "sccm") -> None:
@@ -5147,6 +5178,7 @@ def transforms(con: duckdb.DuckDBPyConnection, schema: str = "sccm") -> None:
     # decision 2026-06-23). All node_* and graph_edges tables exist by this point.
     _node_backfill(con, schema)
     # Split the finalised graph_edges into the AD payload (either endpoint is an AD node id,
-    # including the backfill stubs minted just above) and the SCCM-only payload. Must run
-    # after _node_backfill so stub ids are in the AD id set. See ARCHITECTURE.md §11f.
+    # including the backfill stubs minted just above), the MSSQL-only payload (both endpoints
+    # are MSSQL node ids), and the SCCM payload (everything else). Must run after _node_backfill
+    # so stub ids are in the AD id set. See ARCHITECTURE.md §11f.
     _graph_edges_split(con, schema)

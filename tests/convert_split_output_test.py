@@ -28,8 +28,14 @@ def _seed_db(tmp_path):
         "'PS1' AS site_code, 'PS1' AS root_site_code, NULL AS parent_site_code, "
         "2 AS site_type"  # 2 = Primary Site (integer, as node_site stores it)
     )
+    # MSSQL node: node_mssql_server. MSSQLServer.as_node needs only server_id to emit;
+    # host_sid feeds environmentid, name is the display label (extra columns are ignored).
+    con.execute(
+        "CREATE TABLE sccm.node_mssql_server AS SELECT "
+        "'S-1-5-21-1-2-3-9:1433' AS server_id, 'S-1-5-21-1-2-3-9' AS host_sid, 'SQL01' AS name"
+    )
     # Edge tables as produced by _graph_edges_split.
-    for t in ("graph_edges_ad", "graph_edges_sccm"):
+    for t in ("graph_edges_ad", "graph_edges_mssql", "graph_edges_sccm"):
         con.execute(
             f"CREATE TABLE sccm.{t} "
             "(start_id VARCHAR, end_id VARCHAR, kind VARCHAR, collection_source VARCHAR[])"
@@ -41,6 +47,10 @@ def _seed_db(tmp_path):
     con.execute(
         "INSERT INTO sccm.graph_edges_sccm VALUES "
         "('PS1','CAS','SCCM_Contains', ['s'])"  # site -> site (SCCM only)
+    )
+    con.execute(
+        "INSERT INTO sccm.graph_edges_mssql VALUES "
+        "('S-1-5-21-1-2-3-9:1433','sysadmin@S-1-5-21-1-2-3-9:1433','MSSQL_Contains', ['s'])"
     )
     con.close()
     return str(path)
@@ -56,7 +66,7 @@ def _load(out, pattern):
     return nodes, edges, docs
 
 
-def test_emit_split_writes_two_payloads(tmp_path):
+def test_emit_split_writes_three_payloads(tmp_path):
     client = duckdb.connect(_seed_db(tmp_path), read_only=True)
     lookup = SCCMLookup(client)
     out = tmp_path / "graph"
@@ -77,3 +87,11 @@ def test_emit_split_writes_two_payloads(tmp_path):
     assert all("SCCM_Site" not in n["kinds"] for n in ad_nodes)
     assert {e["kind"] for e in ad_edges} == {"SCCM_HasStoredAccount"}
     assert all("metadata" not in d for _, d in ad_docs)
+
+    # MSSQL payload: the MSSQL_Server node, the both-MSSQL edge, source_kind="MSSQL".
+    mssql_nodes, mssql_edges, mssql_docs = _load(out, "mssql_*.json")
+    assert any("MSSQL_Server" in n["kinds"] for n in mssql_nodes)
+    assert {e["kind"] for e in mssql_edges} == {"MSSQL_Contains"}
+    assert all(d["metadata"]["source_kind"] == "MSSQL" for _, d in mssql_docs)
+    # The MSSQL node must NOT appear in the SCCM payload any more.
+    assert all("MSSQL_Server" not in n["kinds"] for n in sccm_nodes)
