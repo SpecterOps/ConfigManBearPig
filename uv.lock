@@ -294,7 +294,7 @@ requires-dist = [
     { name = "impacket", specifier = ">=0.11.0" },
     { name = "ldap3", specifier = ">=2.10.2rc4" },
     { name = "openhound", specifier = ">=0.2.12" },
-    { name = "openhound-collector-common", editable = "../openhound-collector-common" },
+    { name = "openhound-collector-common", specifier = ">=0.1.0,<0.2.0" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "winkerberos", marker = "sys_platform == 'win32'", specifier = ">=0.10.0" },
@@ -1042,7 +1042,8 @@ wheels = [
 
 [[package]]
 name = "openhound-collector-common"
-source = { editable = "../openhound-collector-common" }
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "dnspython" },
@@ -1056,30 +1057,9 @@ dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "winkerberos", marker = "sys_platform == 'win32'" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "dnspython", specifier = ">=2.4.0" },
-    { name = "duckdb", specifier = ">=1.0" },
-    { name = "impacket", specifier = ">=0.13.1" },
-    { name = "ldap3", specifier = ">=2.10.2rc4" },
-    { name = "openhound", specifier = ">=0.2.12" },
-    { name = "pyasn1" },
-    { name = "pyasn1-modules" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
-    { name = "winkerberos", marker = "sys_platform == 'win32'", specifier = ">=0.10.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.19.1" },
-    { name = "pytest", specifier = ">=9.0.1" },
-    { name = "ruff", specifier = ">=0.15.5,<0.16" },
-    { name = "types-ldap3", specifier = ">=2.9" },
-    { name = "types-pyasn1", specifier = ">=0.6" },
-    { name = "types-pywin32", specifier = ">=306" },
+sdist = { url = "https://files.pythonhosted.org/packages/f6/e1/0f32b0358245f5c4b1b0ffd9a25f7be933c9840c639afdb42e24cdfc6e79/openhound_collector_common-0.1.0.tar.gz", hash = "sha256:8f542964047b44c5a0741ad3833410f93dda19caa38093d0721ed1165d78542d", size = 175523, upload-time = "2026-07-30T00:31:47.294Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/45/541a9fac781edd33b03ccd40aa10dab9752821972bbd6a9dd8637e35e0da/openhound_collector_common-0.1.0-py3-none-any.whl", hash = "sha256:1282c0373a195be1bee4bd34068c03025f7b28e2e5d54464f98f62c5c15bef2e", size = 100020, upload-time = "2026-07-30T00:31:46.353Z" },
 ]
 
 [[package]]

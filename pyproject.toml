@@ -74,22 +74,27 @@ dependencies = [
     "cryptography>=42.0.0",
 ]
 
-[tool.uv.sources]
-# Local development override. `[project.dependencies]` above carries the real,
-# published constraint (that is what lands in the wheel's METADATA); this table
-# redirects it to the live sibling checkout for local work. uv-only and never
-# built into the wheel, so it cannot affect what users resolve.
+# NOTE: there is deliberately no [tool.uv.sources] table here.
 #
-# Editable, so edits in the sibling checkout take effect with no reinstall.
+# A `path = "../openhound-collector-common"` entry redirecting the shared library to a
+# sibling checkout is convenient locally and breaks every environment that does not have
+# one. CI is the obvious such environment -- the runner checks out this repository alone --
+# and `uv sync` fails there with:
 #
-# One level up, not two: this repo and the library are siblings on disk, where in the
-# development fork the library sat two levels above sccm/sccm/. uv resolves the path
-# relative to THIS file and reports a miss as "not found in the package registry",
-# which reads like a PyPI outage and is not.
+#     error: Failed to generate package metadata for
+#            `openhound-collector-common @ editable+../openhound-collector-common`
+#       Caused by: Distribution not found at: file:///.../openhound-collector-common
 #
-# Contributors without a local library checkout can delete this table: the published
-# constraint in [project.dependencies] resolves from PyPI on its own.
-openhound-collector-common = { path = "../openhound-collector-common", editable = true }
+# so does a clone by anyone who only wants this repo. The library is on PyPI, so the
+# capped range in [project.dependencies] resolves on its own and needs no redirect.
+#
+# To develop against a live library checkout, override it WITHOUT committing the override:
+#
+#     uv sync --group dev
+#     uv pip install -e ../openhound-collector-common     # re-run after any `uv sync`
+#
+# or point uv at it per-invocation with UV_* environment variables. Keeping it out of the
+# tree is what stops a local convenience becoming everyone else's failed install.
 
 [tool.uv]
 # Never use a uv-managed (python-build-standalone) interpreter: on Windows its
