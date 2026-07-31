@@ -5,7 +5,7 @@ editing by hand -- the ticket files under `.tickets/` are the source of truth.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**116 tickets** — 7 in progress · 28 open · 81 closed
+**118 tickets** — 7 in progress · 28 open · 83 closed
 
 ## In progress (7)
 
@@ -52,10 +52,12 @@ editing by hand -- the ticket files under `.tickets/` are the source of truth.
 | [`Ope-exvi`](.tickets/Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](.tickets/ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (81)
+## Closed (83)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
+| [`con-7296`](.tickets/con-7296.md) | 1 | task | Emit MSSQL nodes/edges as source_kind=MSSQL payload + zip graph output on --run-all | sccm, mssql, convert, packaging |
+| [`con-c522`](.tickets/con-c522.md) | 1 | task | Clear 14 Dependabot alerts via lock-only dependency bump | security, dependencies |
 | [`ope-0495`](.tickets/ope-0495.md) | 1 | task | SCCM collector vs live CMBP unit-test parity gaps (2026-07-14 comparison) | — |
 | [`ope-1201`](.tickets/ope-1201.md) | 1 | bug | node_mssql_server drops registry-only SQL servers (coalesce port VARCHAR vs INTEGER_LITERAL) | sccm, preproc, mssql, dlt |
 | [`ope-16f5`](.tickets/ope-16f5.md) | 1 | task | Rename SCCM node/edge properties to ConfigManBearPig.ps1 casing | sccm, graph, property-naming |
@@ -137,3 +139,4 @@ editing by hand -- the ticket files under `.tickets/` are the source of truth.
 | [`ope-da2a`](.tickets/ope-da2a.md) | 3 | task | Filter debug_per_host.py to specific collectors (mirror -m) | — |
 | [`Ope-f3di`](.tickets/Ope-f3di.md) | 3 | chore | Logging Audit: Ensure All Conditional Branches Have Appropriate Log Messages | sccm, logging, observability |
 | [`ope-f651`](.tickets/ope-f651.md) | 3 | task | Migrate SCCM extension onto openhound-collector-common shared library | sccm, refactor, shared-lib |
+
