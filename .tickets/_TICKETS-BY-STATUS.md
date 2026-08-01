@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**141 tickets** — 7 in progress · 28 open · 106 closed
+**142 tickets** — 7 in progress · 28 open · 107 closed
 
 ## In progress (7)
 
@@ -52,7 +52,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (106)
+## Closed (107)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -96,6 +96,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-7842`](con-7842.md) | 2 | task | Adopt openhound-collector-common v0.1.2: baseline/candidate compare orientation, regression exit codes, three-way privilege flag | testing, integration, cli, compare |
 | [`con-acdd`](con-acdd.md) | 2 | task | Integration runner conflates 'no such edge' with 'edge rejected by property match' | testing, integration, shared-lib, diagnostics |
 | [`con-be15`](con-be15.md) | 2 | bug | Review MSSQL_Server inclusion + CM_<site> attribution for the passive site server | sccm, mssql, preproc, inference |
+| [`con-be32`](con-be32.md) | 2 | task | CI red: --help substring tests break under forced colour and narrow terminals -type bug -priority 1 -tags testing,ci,cli,help -assignee cthompson -... | — |
 | [`con-c509`](con-c509.md) | 2 | bug | Secondary sites should not inherit primary-site MSSQL sysadmin/login assumptions | sccm, mssql, preproc, secondary-site |
 | [`con-e455`](con-e455.md) | 2 | bug | install_filter() leaks the log-prefix filter across tests, breaking later log assertions | testing, logging, test-isolation |
 | [`ope-00ca`](ope-00ca.md) | 2 | task | SCCM collect: silence dlt progress bars by default (--progress off) | sccm, cli, logging |

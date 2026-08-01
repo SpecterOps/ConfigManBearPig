@@ -11,6 +11,9 @@ is UTF-8, so the cp1252 redirect issue that bites a piped shell ``--help`` does
 not apply here).
 """
 import inspect
+import os
+import re
+from unittest import mock
 
 import typer
 from typer.models import OptionInfo
@@ -146,12 +149,26 @@ def test_panels_appear_in_intended_order():
 # End-to-end --help render
 # ---------------------------------------------------------------------------
 
+# The escape sequences rich emits for bold/dim/colour, and a width wide enough
+# that no option name folds. Both matter to the two tests below; the reasoning is
+# spelled out in integration_cli_flags_test._help_output, which normalises the
+# same way. The short version: typer forces colour whenever GITHUB_ACTIONS,
+# FORCE_COLOR or PY_COLORS is set, and the styling lands inside the option name.
+#
+# That bites test_help_omits_removed_flags hardest, because it asserts a name is
+# ABSENT. A name that cannot be found when present cannot be found when absent
+# either, so on any coloured run that test was passing without checking anything.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_RENDER_WIDTH = "100"
+
+
 def _help_output():
     app = typer.Typer()
     app.command()(collect_sccm)
-    result = CliRunner().invoke(app, ["--help"])
+    with mock.patch.dict(os.environ, {"COLUMNS": _RENDER_WIDTH}):
+        result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0, result.output
-    return result.output
+    return _ANSI.sub("", result.output)
 
 
 def test_help_renders_all_panels():
