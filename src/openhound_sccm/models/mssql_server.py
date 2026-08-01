@@ -27,6 +27,12 @@ class MSSQLServer(BaseAsset):
     instance_names: list[str] = Field(default_factory=list)
     service_account_name: str | None = None
     service_account_domain_sid: str | None = None
+    # con-be15: SQL Server can be installed on a host that never serves anything
+    # (a passive site server is the case that exposed this). This is the registry's
+    # STARTUP TYPE -- Automatic / Manual / Disabled -- not live running state,
+    # which only the service control manager knows. 'Disabled' is the one value
+    # that proves the engine is not running.
+    service_start_type: str | None = None
     collection_source: list[str] = Field(default_factory=list)
     assumed: bool | None = None
     assumption_basis: str | None = None
@@ -51,6 +57,7 @@ class MSSQLServer(BaseAsset):
                 extendedProtection=self.extended_protection,
                 SQLServiceAccountName=self.service_account_name,
                 SQLServiceAccountDomainSID=self.service_account_domain_sid,
+                SQLServiceStartType=self.service_start_type,
                 strictEncryption=self.strict_encryption,
                 instanceNames=list(self.instance_names),
                 # or None: prune the false a confirmed (or non-site-DB) row carries;

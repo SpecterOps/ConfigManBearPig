@@ -1,6 +1,6 @@
 ---
 id: Ope-4tdt
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-05-28T13:30:04Z
@@ -38,3 +38,7 @@ Add --dc-only CLI flag to main.py. When set, force --collection-methods LDAP,DNS
 **2026-07-22T16:16:10Z**
 
 Implementation plan written (writing-plans skill): docs/superpowers/plans/2026-07-22-dc-only-flag.md — 4 tasks (flag+helpers / --run-all tolerance verify+lock / docs / validation), TDD, no-commit green checkpoints.
+
+**2026-07-31T15:34:57Z**
+
+Status audit 2026-07-31: VERIFIED IMPLEMENTED IN CODE -> closing. Every element of the 2026-07-22 locked design is present in main.py: _resolve_dc_only_methods (main.py:321) forces LDAP,DNS and raises typer.BadParameter for the --dc-only + -m/--collection-methods conflict (main.py:335) exactly as the grilling settled; _should_run_per_host (main.py:341) returns False under --dc-only so _run_per_host_stage never starts the pool/bridge/emit drain; both are wired into collect_sccm (flag at main.py:1109, resolve at main.py:1177, per-host gate at main.py:1306, dc-only summary branch at main.py:1283). Docs done too: the stale README line claiming discovery resources are not gated by --collection-methods is gone, --dc-only appears 3x in README and 4x in ARCHITECTURE.md. Plan docs/superpowers/plans/2026-07-22-dc-only-flag.md executed.

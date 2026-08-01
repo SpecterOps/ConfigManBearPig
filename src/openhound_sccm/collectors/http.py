@@ -120,11 +120,33 @@ def _cert_issuer_and_dns(hex_der: str) -> tuple[Optional[str], Optional[str]]:
     """Parse a hex-DER X.509 certificate; return ``(issuer CN, first SAN DNS)``.
 
     PS1 reads the issuer CN (to detect a "Site Server" issuer) and the cert's
-    first DNS name (the site server's hostname)."""
+    first DNS name (the site server's hostname).
+
+    Both decode steps are guarded separately, because the payload comes from an
+    unauthenticated remote endpoint and each step fails for its own reason:
+    ``_parse_sitesigncert_hex`` checks only the hex string's length and parity,
+    not that it is hex at all, and a well-formed hex string still need not be a
+    certificate. Returning ``(None, None)`` keeps the probe best-effort while
+    naming *which* step failed -- otherwise the ValueError reaches
+    ``collect_http``'s ``except Exception``, which reports every cause alike as
+    "failed or not applicable" at VERBOSE, hiding a parser rejection behind the
+    same message as an absent endpoint.
+    """
     from cryptography import x509
     from cryptography.x509.oid import ExtensionOID, NameOID
 
-    cert = x509.load_der_x509_certificate(bytes.fromhex(hex_der))
+    try:
+        der = bytes.fromhex(hex_der)
+    except ValueError as ex:
+        logger.warning("sitesigncert payload is not valid hex; "
+                       "skipping site-server identification: %s", ex)
+        return None, None
+    try:
+        cert = x509.load_der_x509_certificate(der)
+    except ValueError as ex:
+        logger.warning("sitesigncert payload did not decode as an X.509 certificate; "
+                       "skipping site-server identification: %s", ex)
+        return None, None
     issuer_cn: Optional[str] = None
     issuer_cns = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
     if issuer_cns:
@@ -506,11 +528,30 @@ def collect_http(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[st
                 yield from probe.distribution_points(protocol)
                 if probe.connection_failed:
                     break
-                yield from probe.sms_provider()
             except Exception as ex:  # noqa: BLE001 - one protocol's failure isn't fatal
                 logger.warning("HTTP collection failed for protocol %s on %s: %s", protocol, target, ex)
             if probe.connection_failed:
                 break
+
+        # con-7741: the SMS Provider probe runs OUTSIDE the protocol loop, and is not
+        # gated on connection_failed.
+        #
+        # It builds an https:// URL regardless of the loop protocol (PS1 8834 treats it
+        # as protocol-independent), but it used to sit at the end of the loop body
+        # behind the MP/DP breaks. Those breaks are driven by the port-80 pass, so a
+        # host with 80 filtered and 443 serving the AdminService lost its SMS Provider
+        # tag on a port that was never the problem -- and that tag feeds
+        # SCCM_AssignAllPermissions and SCCM_CoerceAndRelayToAdminService's pair list,
+        # so the loss is silent and only shows up as missing edges much later.
+        #
+        # It self-guards on `is_sms`, so hoisting it cannot double-probe a host the
+        # loop already identified. The cost is at most one extra HTTPS connect attempt
+        # against a host that is entirely unreachable, which is a fair trade for not
+        # silently dropping a role.
+        try:
+            yield from probe.sms_provider()
+        except Exception as ex:  # noqa: BLE001 - consistent with the per-protocol handling
+            logger.warning("SMS Provider probe failed on %s: %s", target, ex)
     except Exception as ex:  # noqa: BLE001 - never crash the per-host worker
         logger.error("HTTP collection failed for %s: %s", target, ex)
     finally:

@@ -30,7 +30,7 @@ def run_integration_tests(graph_dir: Path, results_path: Path | None = None,
     *privileged* describes the COLLECTION the graph came from, not the fixtures. The
     default True preserves the historical behaviour (assert every case). Pass False for a
     graph collected without AdminService/WMI: cases marked ``requires_privilege`` are then
-    skipped, because the Tier-D RBAC families (SCCM_FullAdministrator / IsAssigned /
+    skipped, because the SCCM-admin-only RBAC families (SCCM_FullAdministrator / IsAssigned /
     IsMappedTo / AllPermissions and the admin-user, security-role and collection nodes) are
     structurally uncollectable at low privilege -- asserting them there would report a
     failure for behaving correctly. Everything else is still asserted, so a low-priv run

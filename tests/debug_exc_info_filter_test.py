@@ -8,6 +8,7 @@ import pytest
 from openhound_collector_common.logging.log_context import (
     _DebugExcInfoFilter,
     _EXC_INFO_FILTER_SINGLETON,
+    _FILTER_SINGLETON,
     install_filter,
 )
 from openhound_sccm.main import _DiagnosticFileHandler
@@ -141,12 +142,41 @@ def test_filter_always_returns_true(debug_filter, levelno):
 # install_filter() integration
 # ---------------------------------------------------------------------------
 
-def test_install_filter_registers_exc_info_filter():
+@pytest.fixture()
+def clean_installed_filters():
+    """Undo install_filter()'s filter installations after the test.
+
+    install_filter() offers no uninstall, and it installs in four places: both
+    singletons on the root logger, and both again on every handler of the root and
+    ``dlt`` loggers. Removing only some of them is not enough -- this fixture mirrors
+    the install exactly.
+
+    The one that actually leaks damage is ``_FILTER_SINGLETON``
+    (:class:`LogContextFilter`), which rewrites ``record.msg`` to carry a
+    ``[target][phase]`` prefix. Left installed, it silently prefixed every later
+    module's log records and broke local_log_scrape_regex_test.py's exact-match
+    message assertions. That was invisible until this file was renamed from
+    test_debug_exc_info_filter.py, which moved it from "t" to "d" in collection order
+    -- ahead of the file it was polluting instead of behind it.
+
+    Not undone: install_filter() also sets ``markup``/``show_path`` on any Rich
+    handler it finds. Nothing asserts on those and pytest's caplog is not a Rich
+    handler, so they are left alone rather than snapshotted.
+    """
+    yield
+    for f in (_FILTER_SINGLETON, _EXC_INFO_FILTER_SINGLETON):
+        logging.getLogger().removeFilter(f)
+        for logger_name in ("", "dlt"):
+            for handler in logging.getLogger(logger_name).handlers:
+                handler.removeFilter(f)
+
+
+def test_install_filter_registers_exc_info_filter(clean_installed_filters):
     install_filter()
     assert _EXC_INFO_FILTER_SINGLETON in logging.getLogger().filters
 
 
-def test_install_filter_is_idempotent():
+def test_install_filter_is_idempotent(clean_installed_filters):
     install_filter()
     install_filter()
     count = sum(1 for f in logging.getLogger().filters if f is _EXC_INFO_FILTER_SINGLETON)

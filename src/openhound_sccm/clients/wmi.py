@@ -123,8 +123,19 @@ class WmiClient:
         even when no ``-u`` was supplied.
         """
         from impacket.krb5.ccache import CCache
+        # Guarded the same way as smb_sso._load_ticket: bad base64 would otherwise
+        # surface as binascii's "Only base64 data is allowed" and a non-KRB-CRED
+        # payload as a raw pyasn1 EndOfStreamError, neither naming the flag at fault.
+        # No log here -- the raised message is the report.
+        try:
+            krb_cred = base64.b64decode(self._kerberos_ticket, validate=True)
+        except ValueError as ex:  # binascii.Error subclasses ValueError
+            raise ValueError(f"--ticket is not valid base64: {ex}") from ex
         ccache = CCache()
-        ccache.fromKRBCRED(base64.b64decode(self._kerberos_ticket, validate=True))
+        try:
+            ccache.fromKRBCRED(krb_cred)
+        except Exception as ex:  # noqa: BLE001 - impacket/pyasn1 raise many types here
+            raise ValueError(f"--ticket is not a valid KRB-CRED (.kirbi): {ex}") from ex
         if not ccache.credentials:
             raise ValueError("--ticket contains no usable credentials")
         cred = ccache.credentials[0]

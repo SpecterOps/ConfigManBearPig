@@ -1160,6 +1160,15 @@ def collect_sccm(
              "lab fixtures. Prints PASS/FAIL/SKIP + summary + coverage, writes "
              "integration_results-<ts>.json, and exits non-zero if any case fails.",
     ),
+    integration_lowpriv: bool = typer.Option(
+        False, "--integration-lowpriv", rich_help_panel="Testing",
+        help="With --run-integration-tests, assert only what a low-privilege collection can "
+             "produce: skips the SCCM-admin-only RBAC cases (SCCM_FullAdministrator, SCCM_IsAssigned, "
+             "SCCM_IsMappedTo, SCCM_AllPermissions and the SCCM_AdminUser / SCCM_SecurityRole / "
+             "SCCM_Collection nodes) that need AdminService or WMI access. Without this flag "
+             "those cases are asserted even on a run that could never collect them, and fail "
+             "for behaving correctly.",
+    ),
     compare_to_zip: Optional[pathlib.Path] = typer.Option(
         None, "--compare-to-zip", rich_help_panel="Testing",
         help="Implies --run-all, then deep-diff this run's graph (A) against an arbitrary node/edge "
@@ -1335,7 +1344,10 @@ def collect_sccm(
         unregister_host_complete_callback(_ordered.flush_host)
         _ordered.close()  # flushes any in-flight buffers before removal
         logging.root.removeHandler(_ordered)
-        logging.root.removeHandler(_diag)
+        # NOTE: _diag is deliberately NOT removed here -- see the run_all block below.
+        # It stays attached across preprocess/convert so their WARNING/ERROR records
+        # reach collect_issues_*.log (con-2ca2). _ordered does come off: its whole job
+        # is the collect phase's host/resource bucketing, which has no meaning here.
         if _ordered_log_path.exists():
             logger.info("Full log: %s", _ordered_log_path)
         if _diag.warning_count or _diag.error_count:
@@ -1360,39 +1372,80 @@ def collect_sccm(
     # Collection succeeded here — an exception in the try above would have
     # propagated past the finally and never reached this point. Chain the
     # remaining phases only when the operator asked for it.
-    if run_all:
-        _paths = _run_e2e_after_collect(
-            output_path, progress,
-            graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
-        )
-        # Re-surface every artifact's location in one block at the very end, so the
-        # operator doesn't have to scroll back through the collect/preproc/convert
-        # logs to find where each output landed.
-        _log_all_output_locations(
-            output_path, _paths, _ordered_log_path, log_path,
-            _diag.warning_count + _diag.error_count,
-        )
-        # --compare-to-zip and --run-integration-tests both need the graph convert
-        # just produced. _ts is the same run timestamp used for the collect logs
-        # above, so every artifact from this invocation shares one suffix.
-        graph_dir = _paths.graph_out
-        if compare_to_zip is not None:
-            from openhound_sccm.integration import compare_to_zip as _compare_to_zip
-            _compare_to_zip(
-                graph_dir, compare_to_zip,
-                out_path=output_path / f"compare-{_ts}.json", log=logger.info,
+    #
+    # con-2ca2: the whole chain runs inside its own try/finally so `_diag` -- the
+    # WARNING+ handler behind collect_issues_*.log -- survives into preprocess and
+    # convert. It used to be detached with the collect-phase handlers above, which
+    # meant every preproc failure went unrecorded: a transform that `_safe` skipped
+    # (or that failed outright) produced no line in ANY on-disk log, so grepping for
+    # the transform's own label returned nothing and there was no trail to follow.
+    # The finally is required rather than a trailing call because the integration
+    # suite below exits via `typer.Exit`.
+    try:
+        if run_all:
+            _paths = _run_e2e_after_collect(
+                output_path, progress,
+                graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
             )
-        if run_integration_tests:
-            from openhound_sccm.integration import run_integration_tests as _run_integration_tests
-            rc = _run_integration_tests(
-                graph_dir,
-                results_path=output_path / f"integration_results-{_ts}.json",
-                log=logger.info,
+            # Re-surface every artifact's location in one block at the very end, so the
+            # operator doesn't have to scroll back through the collect/preproc/convert
+            # logs to find where each output landed.
+            _log_all_output_locations(
+                output_path, _paths, _ordered_log_path, log_path,
+                _diag.warning_count + _diag.error_count,
             )
-            raise typer.Exit(code=rc)
-    else:
-        logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
+            # --compare-to-zip and --run-integration-tests both need the graph convert
+            # just produced. _ts is the same run timestamp used for the collect logs
+            # above, so every artifact from this invocation shares one suffix.
+            graph_dir = _paths.graph_out
+            if compare_to_zip is not None:
+                from openhound_sccm.integration import compare_to_zip as _compare_to_zip
+                _compare_to_zip(
+                    graph_dir, compare_to_zip,
+                    out_path=output_path / f"compare-{_ts}.json", log=logger.info,
+                )
+            if run_integration_tests:
+                rc = _run_integration_suite(
+                    graph_dir,
+                    output_path / f"integration_results-{_ts}.json",
+                    lowpriv=integration_lowpriv,
+                )
+                raise typer.Exit(code=rc)
+        else:
+            logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
+    finally:
+        logging.root.removeHandler(_diag)
     return load_info
+
+def _run_integration_suite(graph_dir: pathlib.Path, results_path: pathlib.Path,
+                           lowpriv: bool) -> int:
+    """Assert the graph in *graph_dir* against the built-in mayyhem lab fixtures.
+
+    *lowpriv* describes the COLLECTION, not the fixtures. Pass True for a graph
+    collected without AdminService/WMI: the harness then skips the cases marked
+    ``requires_privilege`` -- the SCCM-admin-only RBAC families (``SCCM_FullAdministrator`` /
+    ``SCCM_IsAssigned`` / ``SCCM_IsMappedTo`` / ``SCCM_AllPermissions`` and the
+    ``SCCM_AdminUser`` / ``SCCM_SecurityRole`` / ``SCCM_Collection`` nodes). Those
+    families have no AD or LDAP representation and RemoteRegistry does not expose
+    them, so asserting them against a low-privilege graph reports a failure for
+    behaving correctly. Everything else is still asserted, so a low-privilege run
+    stays a real gate rather than a weakened one.
+
+    Returns the harness's process-friendly exit code (1 if any case failed).
+    """
+    from openhound_sccm.integration import run_integration_tests as _run_integration_tests
+    if lowpriv:
+        logger.info("Integration suite: low-privilege mode -- skipping cases that "
+                    "require AdminService/WMI collection")
+    else:
+        logger.debug("Integration suite: privileged mode -- asserting every case")
+    return _run_integration_tests(
+        graph_dir,
+        results_path=results_path,
+        log=logger.info,
+        privileged=not lowpriv,
+    )
+
 
 def _normalize_row_counts(pipeline) -> dict[str, int]:
     """Return ``{table_name: rows}`` from *pipeline*'s most recent normalize step.

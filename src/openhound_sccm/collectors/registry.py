@@ -417,16 +417,38 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                 # Key absent: nothing to record
                 logger.verbose("No Multisite Component Servers key on %s", target)
             elif len(subkeys) == 0:
-                # Key present but empty: the site database is local to this site
-                # server, so this host carries both the SQL Server and Site Server
-                # roles.
-                logger.info("Site database is local to the site server: %s", target)
+                # Key present but empty: on a standalone primary site server this
+                # means the site database is local, so the host carries both the
+                # SQL Server and Site Server roles.
+                #
+                # But a PASSIVE site server has the same empty key while the site
+                # database lives elsewhere, so the SQL half is an inference, not a
+                # confirmation -- taken at face value it invents a SQL server
+                # (con-be15: ps1-psv, which runs no SQL, gained a spurious
+                # MSSQL_Server node and inflated every dependent MSSQL count).
+                #
+                # We cannot settle it here: the SQL Server registry keys are
+                # admin-gated (access-denied for a plain domain user) and the
+                # MSSQLSvc SPN lives on the service account, not the host -- a real
+                # site database running as LocalSystem has none. The 1433 probe that
+                # *would* settle it belongs to the MSSQL phase, which runs after
+                # RemoteRegistry. So emit the role and flag it, and let preprocess
+                # decide once every source has landed (_assumed_site_dbs).
+                logger.info(
+                    "Multisite Component Servers is empty on %s: the site database is "
+                    "local to this site server, OR this is a passive site server whose "
+                    "database lives elsewhere. Emitting the SQL Server role as assumed "
+                    "pending corroboration in preprocess.", target,
+                )
                 target_entry = ctx.target_hosts_by_hostname[target]
                 row = {
                     **(target_entry.ad_object or {}),
                     "source": "RemoteRegistry-MultisiteComponentServers",
                     "sccm_infra": True,
                     "sccm_site_system_roles": _roles(["SMS SQL Server", "SMS Site Server"], site_code),
+                    # Read by _assumed_site_dbs: the Site Server half is confirmed,
+                    # the SQL Server half needs a live-SQL signal to survive.
+                    "sql_role_assumed": True,
                 }
                 row.setdefault("name", target)
                 yield "remoteregistry_computers", row
@@ -561,6 +583,62 @@ def get_ntlm_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tup
     yield "remoteregistry_computers", row
 
 
+# SQL Server engine service control entries. The default instance's service is
+# literally named MSSQLSERVER; a named instance is MSSQL$<InstanceName>.
+MSSQL_SERVICE_KEY = r"SYSTEM\CurrentControlSet\Services\{service}"
+
+# HKLM\...\Services\<svc>\Start. Note this is the STARTUP TYPE, not live running
+# state -- only the service control manager knows that, and we are talking to the
+# registry. Disabled is conclusive proof the engine is not running; Automatic only
+# says it is meant to be. 0/1 (Boot/System) never apply to a SQL engine but are
+# mapped for completeness rather than falling through to None.
+MSSQL_START_TYPES = {0: "Boot", 1: "System", 2: "Automatic", 3: "Manual", 4: "Disabled"}
+
+
+def _mssql_service_name(instance_name: str) -> str:
+    """Registry service name for a SQL Server instance.
+
+    The default instance is registered as ``MSSQLSERVER``; every named instance is
+    ``MSSQL$<InstanceName>``. ``Instance Names\\SQL`` reports the default instance
+    as the literal string "MSSQLSERVER", so comparing against that name (rather
+    than looking for an empty/absent one) is what distinguishes the two.
+    """
+    if instance_name.upper() == "MSSQLSERVER":
+        return "MSSQLSERVER"
+    return f"MSSQL${instance_name}"
+
+
+def _read_mssql_service_state(
+    probe: _RegistryProbe, instance_names: Optional[list[str]]
+) -> tuple[Optional[str], Optional[str]]:
+    """Return ``(startup_type, service_account)`` for the SQL Server engine.
+
+    Read from the service control entry rather than inferred from a port probe: we
+    already hold a registry connection, and a firewall can hide a perfectly healthy
+    instance from 1433 while a stopped instance can still leave listening-looking
+    config behind. ``ObjectName`` on the same key is the account the engine runs as.
+
+    Only the first instance that answers is reported -- the row this feeds is one
+    per host, not one per instance. Every read is best-effort: the Services hive is
+    admin-gated, so a low-privilege run simply leaves these NULL rather than failing.
+    """
+    for instance in instance_names or ["MSSQLSERVER"]:
+        key = MSSQL_SERVICE_KEY.format(service=_mssql_service_name(instance))
+        start = probe.read_dword(key, "Start")
+        account = probe.read_value(key, "ObjectName")
+        if start is None and account is None:
+            logger.verbose("No readable service control entry at %s", key)
+            continue
+        start_type = MSSQL_START_TYPES.get(start) if start is not None else None
+        logger.info(
+            "SQL Server service %s on %s: startup=%s, account=%s",
+            key.rsplit("\\", 1)[-1], probe.hostname, start_type or "unknown",
+            account or "unknown",
+        )
+        return start_type, account
+    return None, None
+
+
 def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
     """Yield one row per SQL instance discovered via remote registry.
     """
@@ -627,6 +705,15 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
         instance_names = [name for name, _ in instance_name_values]
         logger.info("Found MSSQL instance names: %s", ", ".join(instance_names))
 
+    # Whether the engine is actually meant to run here, and as whom. A SQL Server
+    # can be installed -- leaving every key above readable -- on a host that never
+    # serves anything, which is how a passive site server acquired a spurious
+    # MSSQL_Server node (con-be15). The node is still emitted; these properties are
+    # what let a reader tell a live database from a dormant install.
+    service_start_type, service_account_name = _read_mssql_service_state(
+        probe, instance_names
+    )
+
     target_entry = ctx.target_hosts_by_hostname[probe.hostname]
 
     yield "remoteregistry_mssql_servers", {
@@ -637,4 +724,6 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
         "domain_computer_sid": target_entry.ad_object.get("object_sid") if target_entry.ad_object else None,
         "port": port if port else None,
         "instance_names": instance_names if instance_names else None,
+        "service_start_type": service_start_type,
+        "service_account_name": service_account_name,
     }

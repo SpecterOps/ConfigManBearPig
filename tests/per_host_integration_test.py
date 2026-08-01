@@ -14,7 +14,7 @@ from dlt.destinations import filesystem
 
 from openhound_sccm import main as main_mod
 from openhound_sccm.context import SourceContext
-from tests.per_host_phases_test import PER_HOST_PHASES, all_table_names
+from tests.stub_per_host_phases import PER_HOST_PHASES, all_table_names
 from openhound_sccm.phased_pipeline import WorkQueue
 
 

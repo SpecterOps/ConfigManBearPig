@@ -228,3 +228,55 @@ def test_node_site_ldap_distinguished_name_and_source_forest():
     ).fetchone()
     assert row[0] == "CN=CAS,CN=SMS-Site-CAS,CN=System,DC=lab,DC=local"
     assert row[1] == "lab.local"
+
+
+# --- con-3354: sites known only to a low-privilege source ------------------
+#
+# site_hierarchy sweeps every site-code source (its "D5" bare-code arm), but
+# _node_site's own arms read only AdminService/WMI/LDAP. A secondary site
+# discovered from SMB share comments or the RemoteRegistry triggers key
+# therefore reached site_hierarchy and stopped there: no SCCM_Site node was
+# created, so a low-privilege run silently lost the site. Against the mayyhem
+# lab this dropped the real SEC secondary -- site_hierarchy had CAS/PS1/SEC
+# while node_site had only CAS/PS1.
+
+def _seed_known_sites(con):
+    """CAS + PS1 from a privileged source, so the hierarchy has a root."""
+    con.execute(
+        "CREATE TABLE sccm.adminservice_site_definitions AS SELECT * FROM "
+        "(VALUES ('CAS', NULL, 4, NULL, NULL, NULL), "
+        "        ('PS1', 'CAS', 2, NULL, NULL, NULL)) "
+        "AS t(site_code, parent_site_code, site_type, site_guid, sql_server_name, sql_database_name)"
+    )
+
+
+def test_node_site_includes_site_known_only_to_a_bare_low_priv_source():
+    """A site code seen only by RemoteRegistry still becomes a node_site row."""
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA IF NOT EXISTS sccm")
+    _seed_known_sites(con)
+    # The two columns RemoteRegistry/SMB actually collect for a bare site code.
+    con.execute(
+        "CREATE TABLE sccm.remoteregistry_sites AS SELECT * FROM "
+        "(VALUES ('RemoteRegistry-Triggers', 'SEC')) AS t(source, site_code)"
+    )
+    transforms(con)
+    codes = [r[0] for r in
+             con.execute("SELECT site_code FROM sccm.node_site ORDER BY 1").fetchall()]
+    assert codes == ["CAS", "PS1", "SEC"]
+
+
+def test_low_priv_only_site_is_stamped_with_the_hierarchy_root():
+    """The recovered site still gets root_site_code, so it joins the hierarchy."""
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA IF NOT EXISTS sccm")
+    _seed_known_sites(con)
+    con.execute(
+        "CREATE TABLE sccm.smb_sites AS SELECT * FROM "
+        "(VALUES ('SMB-Shares', 'SEC')) AS t(source, site_code)"
+    )
+    transforms(con)
+    row = con.execute(
+        "SELECT site_code, root_site_code FROM sccm.node_site WHERE site_code='SEC'"
+    ).fetchone()
+    assert row == ("SEC", "CAS")

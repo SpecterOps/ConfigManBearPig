@@ -18,10 +18,10 @@ class SCCMEdgeCase(EdgeCase):
     MSSQL collector or any other consumer of the shared integration-testing engine.
 
     requires_privilege=True marks a case that can only be asserted against an
-    AdminService/WMI-privileged collection (design spec S:5, Tier D): the SCCM RBAC
+    AdminService/WMI-privileged collection (design spec S:5): the SCCM RBAC
     families with no AD/LDAP/RemoteRegistry representation (SCCM_FullAdministrator,
     SCCM_IsAssigned, SCCM_IsMappedTo, SCCM_AllPermissions). A low-priv test run
-    should filter these cases out rather than assert their absence -- Tier D means
+    should filter these cases out rather than assert their absence -- "requires SCCM admin" means
     "cannot check this without privilege", not "this must not exist".
     """
     requires_privilege: bool = False

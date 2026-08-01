@@ -32,13 +32,30 @@ MAYYHEM_NODE_CASES: list[NodeCase] = [
     ######################
     # SCCM_ClientDevice  #
     ######################
-    NodeCase(id="node-clientdevice-count", description="At least 19 SCCM client devices across the hierarchy",
-             kinds=["SCCM_ClientDevice"], count=CountSpec(at_least=19)),
+    # at_least 13, not 19: device-derived, so it must survive the lab gaining or
+    # losing a VM. A low-privilege run legitimately sees fewer than a privileged
+    # one (14 vs 19 measured 2026-07-31), and this case is not privilege-gated.
+    NodeCase(id="node-clientdevice-count", description="At least 13 SCCM client devices across the hierarchy",
+             kinds=["SCCM_ClientDevice"], count=CountSpec(at_least=13)),
+    # con-5e71: keeps the confirmed-vs-possible distinction covered.
+    #
+    # Three SameHostAs/HasClient cases used to pin their ClientDevice endpoint with
+    # id="GUID:*". That looked like it asserted the relationship; it actually asserted
+    # the PRIVILEGE LEVEL, because only a confirmed (enrolled, AdminService-seen) device
+    # gets an SMS-GUID id -- an SPN-inferred possible client is keyed "<sid>@<site>".
+    # The devices and edges are produced at low privilege too, so those cases now pin by
+    # name and this case carries the id-form assertion on its own, where it belongs.
+    # requires_privilege because the GUID form only exists in a privileged collection
+    # (mayyhem: 19 GUID-form privileged, 0 unprivileged).
+    SCCMNodeCase(id="node-clientdevice-confirmed-has-guid-id",
+                 description="Confirmed (enrolled) client devices are keyed by their SMS GUID",
+                 kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*"},
+                 count=CountSpec(at_least=1), requires_privilege=True),
 
     ###################
     # SCCM_Collection #
     ###################
-    # Tier D (design spec S:5): collections have no AD/LDAP/RemoteRegistry
+    # Requires SCCM admin (design spec S:5): collections have no AD/LDAP/RemoteRegistry
     # representation, so this count can only be checked against a privileged
     # (AdminService/WMI) collection.
     SCCMNodeCase(id="node-collection-count", description="At least 10 SCCM collections across the hierarchy",
@@ -47,28 +64,59 @@ MAYYHEM_NODE_CASES: list[NodeCase] = [
     #################
     # SCCM_AdminUser #
     #################
-    # Tier D: SCCM admin-user objects live in the site database's RBAC tables only.
+    # Requires SCCM admin: SCCM admin-user objects live in the site database's RBAC tables only.
     SCCMNodeCase(id="node-adminuser-count", description="At least 3 SCCM admin users across the hierarchy",
                  kinds=["SCCM_AdminUser"], count=CountSpec(at_least=3), requires_privilege=True),
 
     #####################
     # SCCM_SecurityRole #
     #####################
-    # Tier D: security roles are likewise site-database RBAC objects.
+    # Requires SCCM admin: security roles are likewise site-database RBAC objects.
     SCCMNodeCase(id="node-securityrole-count", description="At least 17 SCCM security roles across the hierarchy",
                  kinds=["SCCM_SecurityRole"], count=CountSpec(at_least=17), requires_privilege=True),
 
     ################################################
     # MSSQL_ node kinds (bonus coverage, not SCCM) #
     ################################################
-    NodeCase(id="node-mssql-server-count", description="3 MSSQL servers discovered (CAS-DB, PS1-DB, PS1-PSV)",
+    # PS1-PSV was named here in error: the passive site server runs no SQL. The
+    # third server is PS1-SEC, which hosts the SEC secondary's own site database.
+    NodeCase(id="node-mssql-server-count", description="3 MSSQL servers discovered (CAS-DB, PS1-DB, PS1-SEC)",
              kinds=["MSSQL_Server"], count=CountSpec(exact=3)),
-    NodeCase(id="node-mssql-database-count", description="At least 3 MSSQL databases (one CM_<SiteCode> per primary site)",
-             kinds=["MSSQL_Database"], count=CountSpec(at_least=3)),
+    # One CM_<SiteCode> per site that has its own site database -- in mayyhem that
+    # is two primary sites plus the SEC secondary, which carries its own.
+    # Requires SCCM admin: only 2 of the 3 site databases are characterized without it.
+    # NOT because ps1-sec is "correctly a plain MSSQL_Server" at low privilege, as an
+    # earlier revision of this comment said -- it IS SEC's site database, since Microsoft
+    # requires a secondary's database to run ON the secondary site server. Low privilege
+    # simply cannot PROVE SEC is a secondary (site_type stays NULL), and the
+    # secondary-site rules correctly decline to fire on an unconfirmed type, so CM_SEC
+    # does not materialise there. con-0394 tracks a domain-user-reachable positive signal.
+    SCCMNodeCase(id="node-mssql-database-count", description="At least 3 MSSQL databases (one CM_<SiteCode> per site with its own site database: two primary sites plus the SEC secondary)",
+                 kinds=["MSSQL_Database"], count=CountSpec(at_least=3), requires_privilege=True),
+    # These two stay at the SAME-SITE baseline (a Site Server or SMS Provider is sysadmin
+    # on its OWN site's database), which holds at BOTH privilege levels, so they keep
+    # asserting something in a low-priv run. The cross-site secondary logins are asserted
+    # separately by the two cases below, which are flagged because they need SEC
+    # characterized as a site database.
     NodeCase(id="node-mssql-login-count", description="At least 4 MSSQL logins (site server/provider machine accounts)",
              kinds=["MSSQL_Login"], count=CountSpec(at_least=4)),
     NodeCase(id="node-mssql-databaseuser-count", description="At least 4 MSSQL database users mapped from those logins",
              kinds=["MSSQL_DatabaseUser"], count=CountSpec(at_least=4)),
+    # Microsoft requires the parent primary computer account to hold sysadmin on a
+    # secondary site database, and matching the parent BY ROLE picks up the passive node
+    # too -- so PS1-PSS$ and PS1-PSV$ each gain a login on SEC's database, and neither the
+    # same-site rule nor PS1-SEC$ itself contributes one. Pinned by SCCMSite rather than by
+    # a hard-coded host SID. Requires SCCM admin only because SEC must first be CONFIRMED
+    # a secondary (see the PRIVILEGE_BY_ASSERTION_NOT_KIND block in
+    # tests/integration_lowpriv_fixtures_test.py and con-0394).
+    SCCMNodeCase(id="node-mssql-login-secondary-parent-primary",
+                 description="Exactly 2 MSSQL logins on the SEC secondary site database, both PS1 parent primary site servers (PS1-PSS$, PS1-PSV$) -- and none for PS1-SEC$ itself",
+                 kinds=["MSSQL_Login"], properties={"SCCMSite": "SEC"},
+                 count=CountSpec(exact=2), requires_privilege=True),
+    SCCMNodeCase(id="node-mssql-databaseuser-secondary-parent-primary",
+                 description="Those 2 SEC logins are mapped to database users in the SEC secondary site database",
+                 kinds=["MSSQL_DatabaseUser"], properties={"SCCMSite": "SEC"},
+                 count=CountSpec(exact=2), requires_privilege=True),
 ]
 
 

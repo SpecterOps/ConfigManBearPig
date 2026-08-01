@@ -1,4 +1,8 @@
-# tests/test_smb_sso.py
+# tests/smb_sso_test.py
+import base64
+
+import pytest
+
 from openhound_sccm.clients import smb_sso
 from openhound_sccm.collectors import registry
 
@@ -413,3 +417,21 @@ def test_connect_smb_ticket_prefers_explicit_user(monkeypatch):
                         kerberos_ticket="Zm9v", kdc_host="dc")
     method, user, _domain, _kdc, _tgt = created["smb"].calls[0]
     assert method == "kerberosLogin" and user == "admin"
+
+
+# --- --ticket decoding (con-8a33) ------------------------------------------
+#
+# A malformed --ticket used to surface as a raw binascii.Error ("Only base64
+# data is allowed") or a pyasn1 EndOfStreamError, neither of which names the
+# flag the operator got wrong. The empty-credentials case already raised a
+# clean ValueError naming --ticket; these two decode steps skip it.
+
+def test_load_ticket_rejects_non_base64():
+    with pytest.raises(ValueError, match="--ticket"):
+        smb_sso._load_ticket("not!base64!")
+
+
+def test_load_ticket_rejects_base64_that_is_not_a_krbcred():
+    not_a_ticket = base64.b64encode(b"hello world").decode()
+    with pytest.raises(ValueError, match="--ticket"):
+        smb_sso._load_ticket(not_a_ticket)

@@ -6,6 +6,10 @@ SMS ``Props`` array) without any network or DCOM. The client is SCCM-agnostic â€
 the caller supplies the namespace and class; site-code identification lives in
 the privileged collector (see test_privileged.py).
 """
+import base64
+
+import pytest
+
 from openhound_sccm.clients import wmi as w
 # Row normalization + the DCOM/pywin32 backends moved to the shared library
 # (SCCM's wmi now imports the backends from there), so test _normalize at its
@@ -149,3 +153,23 @@ def test_build_backend_maps_rungs_to_impacket_with_kerberos_flag():
     # NT hash flows into the LM:NT split impacket expects.
     assert ntlm._nthash == "8846f7eaee8fb117ad06bdd830b7586c"
     assert client._build_backend("anonymous") is None
+
+
+# --- --ticket decoding (con-8a33) ------------------------------------------
+#
+# Mirrors smb_sso_test.py: the WMI path decodes the same base64 KRB-CRED and
+# had the same unguarded pair of calls.
+
+def _ticket_client(value):
+    return w.WmiClient(target="host", domain="mayyhem.com", kerberos_ticket=value)
+
+
+def test_load_ticket_rejects_non_base64():
+    with pytest.raises(ValueError, match="--ticket"):
+        _ticket_client("not!base64!")._load_ticket()
+
+
+def test_load_ticket_rejects_base64_that_is_not_a_krbcred():
+    not_a_ticket = base64.b64encode(b"hello world").decode()
+    with pytest.raises(ValueError, match="--ticket"):
+        _ticket_client(not_a_ticket)._load_ticket()

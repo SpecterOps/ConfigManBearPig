@@ -1,6 +1,6 @@
 ---
 id: ope-feb0
-status: open
+status: closed
 deps: []
 links: [ope-8c44]
 created: 2026-07-28T17:42:09Z
@@ -18,3 +18,7 @@ The upload-only CLI paths (collect sccm --skip-collection and --upload-dir) run 
 **2026-07-28T19:58:25Z**
 
 IMPLEMENTED + live-verified 2026-07-28 (no-commit; owner to commit). Fix: _dispatch_bloodhound_upload now reports via typer.echo (stdout) independent of OpenHound's logging, and raises typer.Exit(1) on upload failure or missing-token; url-None stays a silent no-op. Surgical anchor-based edit to main.py (did NOT touch the concurrent --clean flag / ContainerNode / low-priv regions). +4 tests in bloodhound_cli_test.py (9/9 pass). Live: schema-only push -> exit 0 + 'BloodHound upload complete: 2 schema(s), 0 results file(s).'; bad token -> exit 1 + 'BloodHound upload FAILED (2 error(s)): ... HTTP 401 signature digest mismatch ...' + 'output on disk is intact'. README one-line note deferred (avoided touching shared doc during low-priv work). NOTE: pre-existing unrelated failures in tests/test_cli_option_panels.py (KeyError 'clean') come from the concurrent --clean flag work missing a 'clean' entry in EXPECTED_PANEL -- NOT this change.
+
+**2026-07-31T15:36:02Z**
+
+Status audit 2026-07-31: THE BUG IS UNREACHABLE -- the code it patches no longer exists -> closing as obsolete. This bug lived in openhound_sccm.main._dispatch_bloodhound_upload; that function, _resolve_upload_mode, and all 16 upload CLI options were deleted by ope-2419 on 2026-07-29 when the direct BloodHound CE upload was removed from both published packages. Code-verified 2026-07-31: no _dispatch_bloodhound_upload / _resolve_upload_mode anywhere under src/, and zero 'bloodhound' hits in the whole package. The fix described here (typer.echo start+result lines to stdout, typer.Exit(1) on failure) was implemented and live-verified on 2026-07-28, so it is preserved inside the fork archive at bloodhound-upload/ along with the rest of the feature. If direct upload returns, this observability fix is part of the re-wiring checklist rather than a separate open bug. Note for whoever picks that up: bloodhound_cli_test.py's 4 tests went with it, but tests/cli_option_panels_test.py:41-42 still names 'skip_collection' and 'upload_dir' -- two stale strings left behind by the removal.

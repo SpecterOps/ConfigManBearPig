@@ -170,7 +170,6 @@ dev = [
     # CI red. Adopting the wider set is a deliberate modernization pass, not a surprise.
     "ruff>=0.15.5,<0.16",
     "mypy>=1.19.1",
-    "zensical>=0.0.27",
     # Type stubs for the three untyped runtime deps that HAVE published stubs.
     # (impacket, openhound and sspi have none — those get ignore_missing_imports
     # overrides in [tool.mypy] instead.) Real signatures for ldap3 in particular
@@ -213,3 +212,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["openhound_collector_common.*"]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# Pinned to the *_test.py suffix only. pytest's default also accepts the test_*.py
+# prefix; allowing both is what let the suite drift into two conventions at once.
+# A consequence worth knowing: a file named test_something.py is now silently NOT
+# collected by `pytest tests`, so a new test added under the old prefix would pass
+# by never running. (Naming it explicitly on the command line still collects it.)
+python_files = "*_test.py"

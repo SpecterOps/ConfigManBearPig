@@ -22,3 +22,8 @@ Determine which attack-path edges use Authenticated Users or Domain Computers as
 
 Clear decision documented: which nodes are seeded by SCCM extension vs. expected from AD collection. No broken/dangling edges in standalone mode. ldap_group_memberships collector implemented if seeding is chosen.
 
+## Notes
+
+**2026-07-31T15:37:02Z**
+
+Status audit 2026-07-31: CORRECTLY IN PROGRESS -- partially satisfied. DONE: the Authenticated Users seed node is built, by preproc rather than by asking operators to run SharpHound first -- _node_authenticated_users (transforms.py:4853) synthesises one Group node per domain that actually produces a coerce-and-relay edge, keyed in SharpHound's well-known-SID form UPPER(FQDN)-S-1-5-11 (transforms.py:676-678) so it merges with any SharpHound-collected node, with environmentid resolved from a co-occurring domain computer because S-1-5-11 has no domain part of its own. That decision is documented (9 'Authenticated Users' references in README.md, 4 in ARCHITECTURE.md, incl. the explanatory block at README:1025), and edge-endpoint dangling is separately handled by _node_backfill. NOT DONE: the ldap_group_memberships collector named in the acceptance criteria does not exist -- zero references anywhere in src/ -- so the synthetic node carries no real membership edges; and the audit's central deliverable, a written decision covering the OTHER two seed principals the ticket names (Everyone and Domain Computers), has not been produced. Suggest narrowing this ticket to just that written decision, since the Authenticated Users half shipped with Stage 6 (ope-d820).

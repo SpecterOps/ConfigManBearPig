@@ -269,7 +269,12 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         id="edge-contains-ps1-server-ps1-pss-login",
         kind="MSSQL_Contains",
         description="The PS1 site database MSSQL server contains the PS1-PSS$ login",
-        source=NodePattern(kinds=["MSSQL_Server"], properties={"id": "*:1433"}),
+        # Server pinned by name, matching its CAS twin above. Unpinned, this matched any
+        # server holding a PS1-PSS$ login, and since 2026-08-01 that is two: PS1-PSS is
+        # also the parent primary of the SEC secondary, so it holds a documented sysadmin
+        # login on SEC's database too. The case is about the PS1 site database
+        # specifically, so pinning preserves its intent rather than raising the count.
+        source=NodePattern(kinds=["MSSQL_Server"], properties={"id": "*:1433", "name": "PS1-DB*"}),
         target=NodePattern(kinds=["MSSQL_Login"], properties={"id": "*ps1-pss$@*:1433"}),
         count=CountSpec(exact=1),
     ),
@@ -289,13 +294,27 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         target=NodePattern(kinds=["MSSQL_DatabaseUser"], properties={"id": "*ps1-pss$@*:1433\\CM_PS1"}),
         count=CountSpec(exact=1),
     ),
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-contains-servers-sysadmin-role",
         kind="MSSQL_Contains",
-        description="The MSSQL servers (cas-db, ps1-db, and ps1-psv) contain the sysadmin server role",
+        # ps1-psv was named here in error (same slip as nodes.py:81): the passive site
+        # server runs no SQL. The third instance is on ps1-sec, which hosts SEC's own
+        # site database because a secondary's database must be co-located with it.
+        description="The MSSQL servers (cas-db, ps1-db, and ps1-sec) contain the sysadmin server role",
         source=NodePattern(kinds=["MSSQL_Server"], properties={"id": "*:1433"}),
         target=NodePattern(kinds=["MSSQL_ServerRole"], properties={"id": "sysadmin@*:1433"}),
         count=CountSpec(exact=3),
+        # Requires SCCM admin -- but NOT, as an earlier revision of this comment claimed,
+        # because ps1-sec is "correctly a plain MSSQL_Server and NOT a site database" at
+        # low privilege. It IS SEC's site database: Microsoft requires a secondary's
+        # database to run ON the secondary site server. What low privilege cannot do is
+        # PROVE that SEC is a secondary, so its site_type stays NULL and the
+        # secondary-site rules correctly decline to fire on an unconfirmed type. That
+        # leaves 2 of the 3 site databases characterized. con-0394 tracks finding a
+        # domain-user-reachable signal that positively identifies a secondary; if one
+        # lands, this flag comes off. Full reasoning in the
+        # PRIVILEGE_BY_ASSERTION_NOT_KIND block of tests/integration_lowpriv_fixtures_test.py.
+        requires_privilege=True,
     ),
 
     ###################
@@ -313,13 +332,25 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
     #######################
     # MSSQL_ControlServer #
     #######################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-controlserver-sysadmin-server-instances",
         kind="MSSQL_ControlServer",
-        description="The sysadmin MSSQL server role controls the server instance on cas-db, ps1-db, and ps1-psv",
+        # ps1-psv named in error here too -- it runs no SQL; the third is ps1-sec.
+        description="The sysadmin MSSQL server role controls the server instance on cas-db, ps1-db, and ps1-sec",
         source=NodePattern(kinds=["MSSQL_ServerRole"], properties={"id": "sysadmin@*:1433"}),
         target=NodePattern(kinds=["MSSQL_Server"], properties={"id": "*:1433"}),
         count=CountSpec(exact=3),
+        # Requires SCCM admin -- but NOT, as an earlier revision of this comment claimed,
+        # because ps1-sec is "correctly a plain MSSQL_Server and NOT a site database" at
+        # low privilege. It IS SEC's site database: Microsoft requires a secondary's
+        # database to run ON the secondary site server. What low privilege cannot do is
+        # PROVE that SEC is a secondary, so its site_type stays NULL and the
+        # secondary-site rules correctly decline to fire on an unconfirmed type. That
+        # leaves 2 of the 3 site databases characterized. con-0394 tracks finding a
+        # domain-user-reachable signal that positively identifies a secondary; if one
+        # lands, this flag comes off. Full reasoning in the
+        # PRIVILEGE_BY_ASSERTION_NOT_KIND block of tests/integration_lowpriv_fixtures_test.py.
+        requires_privilege=True,
     ),
 
     #######################
@@ -373,7 +404,27 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         ),
         source=NodePattern(kinds=["Computer", "Base"], properties={"id": "S-1-5-21-*"}),
         target=NodePattern(kinds=["MSSQL_Login"], properties={"id": "*$@*:1433"}),
-        count=CountSpec(exact=4),
+        # Kept at the SAME-SITE baseline of 4, which holds at BOTH privilege levels, so
+        # this case still asserts something in a low-priv run. The 2 cross-site logins on
+        # the SEC secondary database are asserted by the flagged case below instead of
+        # being folded in here, which would have made the whole assertion admin-only.
+        count=CountSpec(at_least=4),
+    ),
+    SCCMEdgeCase(
+        id="edge-haslogin-parent-primary-secondary-database",
+        kind="MSSQL_HasLogin",
+        description=(
+            "The PS1 parent primary site servers (PS1-PSS, PS1-PSV) hold sysadmin logins on the SEC "
+            "secondary site database -- Microsoft requires the parent primary computer account to have "
+            "sysadmin there permanently, and a secondary's database is always co-located with its site server"
+        ),
+        source=NodePattern(kinds=["Computer", "Base"], properties={"id": "S-1-5-21-*"}),
+        target=NodePattern(kinds=["MSSQL_Login"], properties={"id": "*$@*:1433", "SCCMSite": "SEC"}),
+        count=CountSpec(exact=2),
+        # Requires SCCM admin only because SEC must first be CONFIRMED a secondary; AD
+        # publishes no mSSMSSite/mSSMSManagementPoint object for one, so a low-privilege
+        # run cannot establish site_type. See con-0394.
+        requires_privilege=True,
     ),
 
     #################
@@ -426,7 +477,22 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         ),
         source=NodePattern(kinds=["MSSQL_Login"], properties={"id": "*$@*:1433"}),
         target=NodePattern(kinds=["MSSQL_ServerRole"], properties={"id": "sysadmin@*:1433"}),
-        count=CountSpec(exact=4),
+        # Same-site baseline, true at both privilege levels; the SEC pair is asserted by
+        # the flagged case below. (See edge-haslogin-computers-logins for the reasoning.)
+        count=CountSpec(at_least=4),
+    ),
+    SCCMEdgeCase(
+        id="edge-memberof-secondary-parent-primary-sysadmin-role",
+        kind="MSSQL_MemberOf",
+        description=(
+            "The 2 PS1 parent primary site server logins on the SEC secondary site database are members of "
+            "its sysadmin server role"
+        ),
+        source=NodePattern(kinds=["MSSQL_Login"], properties={"id": "*$@*:1433", "SCCMSite": "SEC"}),
+        target=NodePattern(kinds=["MSSQL_ServerRole"], properties={"id": "sysadmin@*:1433"}),
+        count=CountSpec(exact=2),
+        # Requires SCCM admin only because SEC must first be CONFIRMED a secondary. con-0394.
+        requires_privilege=True,
     ),
 
     ###########################
@@ -448,7 +514,14 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         id="edge-samehostas-clientdevice-to-computer-ps1-dev",
         kind="SCCM_SameHostAs",
         description="The PS1 client device is the same host as the domain joined computer (bi-directional)",
-        source=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*"}),
+        # con-5e71: pinned by name, not by a "GUID:*" id. A CONFIRMED client
+        # (enrolled, seen by AdminService) gets an SMS-GUID id; an SPN-inferred
+        # possible client gets "<sid>@<site>". The device and both edges are
+        # genuinely produced at low privilege -- only the id FORM differs -- so a
+        # "GUID:*" pin asserted the privilege level rather than the relationship.
+        # The confirmed-vs-possible distinction is covered separately by
+        # node-clientdevice-confirmed-has-guid-id below.
+        source=NodePattern(kinds=["SCCM_ClientDevice"], properties={"name": "PS1-DEV@PS1"}),
         target=NodePattern(kinds=["Computer"], properties={"id": "S-1-5-21-*", "dNSHostName": "ps1-dev.mayyhem.com"}),
         count=CountSpec(exact=1),
     ),
@@ -456,8 +529,15 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         id="edge-samehostas-computer-to-clientdevice-ps1-dev",
         kind="SCCM_SameHostAs",
         description="The PS1 client device is the same host as the domain joined computer (bi-directional)",
+        # con-5e71: pinned by name, not by a "GUID:*" id. A CONFIRMED client
+        # (enrolled, seen by AdminService) gets an SMS-GUID id; an SPN-inferred
+        # possible client gets "<sid>@<site>". The device and both edges are
+        # genuinely produced at low privilege -- only the id FORM differs -- so a
+        # "GUID:*" pin asserted the privilege level rather than the relationship.
+        # The confirmed-vs-possible distinction is covered separately by
+        # node-clientdevice-confirmed-has-guid-id below.
         source=NodePattern(kinds=["Computer"], properties={"id": "S-1-5-21-*", "dNSHostName": "ps1-dev.mayyhem.com"}),
-        target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*"}),
+        target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"name": "PS1-DEV@PS1"}),
         count=CountSpec(exact=1),
     ),
 
@@ -500,7 +580,7 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         source=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "mayyhem\\domainadmin@*"}),
         target=NodePattern(kinds=["SCCM_Site"]),
         count=CountSpec(exact=2),
-        # Tier D (design spec S:5): SCCM RBAC has no AD/LDAP/RemoteRegistry
+        # Requires SCCM admin (design spec S:5): SCCM RBAC has no AD/LDAP/RemoteRegistry
         # representation, so this case can only be checked against a privileged
         # (AdminService/WMI) collection.
         requires_privilege=True,
@@ -540,29 +620,35 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
     #################
     # SCCM_Contains #
     #################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-contains-sites-admin-user",
         kind="SCCM_Contains",
         description="The CAS and PS1 primary sites contain an SCCM admin user",
         source=NodePattern(kinds=["SCCM_Site"], properties={"id": "*"}),
         target=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "mayyhem\\domainadmin@*"}),
-        count=CountSpec(exact=2),
+        count=CountSpec(at_least=2),
+        # con-c542: measured privilege-dependent -- the SCCM_AdminUser target is a SCCM-admin-only RBAC node.
+        requires_privilege=True,
     ),
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-contains-sites-full-admin-role",
         kind="SCCM_Contains",
         description="The CAS and PS1 primary sites contain the Full Administrator security role",
         source=NodePattern(kinds=["SCCM_Site"], properties={"id": "*"}),
         target=NodePattern(kinds=["SCCM_SecurityRole"], properties={"id": "SMS0001R@*"}),
-        count=CountSpec(exact=2),
+        count=CountSpec(at_least=2),
+        # con-c542: measured privilege-dependent -- the SCCM_SecurityRole target is a SCCM-admin-only RBAC node.
+        requires_privilege=True,
     ),
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-contains-sites-sms00001-collection",
         kind="SCCM_Contains",
         description="The CAS and PS1 primary sites contain the SMS00001 collection",
         source=NodePattern(kinds=["SCCM_Site"], properties={"id": "*"}),
         target=NodePattern(kinds=["SCCM_Collection"], properties={"id": "SMS00001@*"}),
-        count=CountSpec(exact=2),
+        count=CountSpec(at_least=2),
+        # con-c542: measured privilege-dependent -- the SCCM_Collection target is a SCCM-admin-only RBAC node.
+        requires_privilege=True,
     ),
 
     ##########################
@@ -574,21 +660,26 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         description="The domainadmin SCCM admin user has the Full Administrator security role over all client devices in the hierarchy",
         source=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "mayyhem\\domainadmin@*"}),
         target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*"}),
-        count=CountSpec(exact=14),
-        # Tier D (design spec S:5): AdminService/WMI-only RBAC fan-out.
+        # at_least, not exact: this fans out over every client device in the
+        # hierarchy, so adding a VM to the lab would otherwise break CI for a
+        # reason that has nothing to do with the collector.
+        count=CountSpec(at_least=13),
+        # Requires SCCM admin (design spec S:5): AdminService/WMI-only RBAC fan-out.
         requires_privilege=True,
     ),
 
     ###########################
     # SCCM_HasADLastLogonUser #
     ###########################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-hasadlastlogonuser-ps1-dev-domainuser",
         kind="SCCM_HasADLastLogonUser",
         description="The PS1 client device has domainuser as the last logged on user in Active Directory",
         source=NodePattern(kinds=["SCCM_ClientDevice"], properties={"name": "PS1-DEV@PS1"}),
         target=NodePattern(kinds=["User", "Base"], properties={"samAccountName": "domainuser", "id": "S-1-5-21-*"}),
         count=CountSpec(exact=1),
+        # con-c542: measured privilege-dependent -- device inventory comes from AdminService/WMI.
+        requires_privilege=True,
     ),
 
     ##################
@@ -599,44 +690,61 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         kind="SCCM_HasClient",
         description="PS1-DEV is a client of the PS1 site",
         source=NodePattern(kinds=["SCCM_Site"], properties={"id": "PS1"}),
-        target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*", "name": "PS1-DEV@PS1"}),
+        # con-5e71: pinned by name, not by a "GUID:*" id. A CONFIRMED client
+        # (enrolled, seen by AdminService) gets an SMS-GUID id; an SPN-inferred
+        # possible client gets "<sid>@<site>". The device and both edges are
+        # genuinely produced at low privilege -- only the id FORM differs -- so a
+        # "GUID:*" pin asserted the privilege level rather than the relationship.
+        # The confirmed-vs-possible distinction is covered separately by
+        # node-clientdevice-confirmed-has-guid-id below.
+        target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"name": "PS1-DEV@PS1"}),
         count=CountSpec(exact=1),
     ),
 
     #######################
     # SCCM_HasCurrentUser #
     #######################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-hascurrentuser-ps1-dev-domainuser",
         kind="SCCM_HasCurrentUser",
-        description="The PS1 client device has domainuser as the current logged on user (requires manual addition of user device affinity after Ludus lab build)",
+        # The user-device-affinity caveat that used to be on this case describes
+        # HasPrimaryUser, not this edge, and has been moved there. CurrentLogonUser
+        # is whoever was interactively logged on when SCCM last inventoried the
+        # device, so this asserts a live session on PS1-DEV at collection time.
+        description="The PS1 client device has domainuser as the current logged on user (requires domainuser to be logged on to PS1-DEV when SCCM last inventoried it)",
         source=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*", "name": "PS1-DEV@PS1"}),
         target=NodePattern(kinds=["User", "Base"], properties={"samAccountName": "domainuser", "id": "S-1-5-21-*"}),
         count=CountSpec(exact=1),
+        # con-c542: measured privilege-dependent -- CurrentLogonUser comes from AdminService/WMI.
+        requires_privilege=True,
     ),
 
     ##################
     # SCCM_HasMember #
     ##################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-hasmember-sms00001-ps1-dev",
         kind="SCCM_HasMember",
         description="The SMS00001 collection contains the PS1 client device",
         source=NodePattern(kinds=["SCCM_Collection"], properties={"id": "SMS00001@*"}),
         target=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*", "name": "PS1-DEV@PS1"}),
         count=CountSpec(exact=1),
+        # con-c542: measured privilege-dependent -- collection membership is a SCCM-admin-only RBAC family.
+        requires_privilege=True,
     ),
 
     #######################
     # SCCM_HasPrimaryUser #
     #######################
-    EdgeCase(
+    SCCMEdgeCase(
         id="edge-hasprimaryuser-ps1-dev-domainuser",
         kind="SCCM_HasPrimaryUser",
-        description="The PS1 client device has domainuser as the primary user",
+        description="The PS1 client device has domainuser as the primary user (requires manual addition of user device affinity after the Ludus lab build)",
         source=NodePattern(kinds=["SCCM_ClientDevice"], properties={"id": "GUID:*", "name": "PS1-DEV@PS1"}),
         target=NodePattern(kinds=["User", "Base"], properties={"samAccountName": "domainuser", "id": "S-1-5-21-*"}),
         count=CountSpec(exact=1),
+        # con-c542: measured privilege-dependent -- user-device affinity comes from AdminService/WMI.
+        requires_privilege=True,
     ),
 
     ###################
@@ -645,11 +753,15 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
     SCCMEdgeCase(
         id="edge-isassigned-domainadmin-full-admin-role",
         kind="SCCM_IsAssigned",
-        description="The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS root site (plus one dupe that BloodHound dedupes)",
+        description="The domainadmin SCCM admin user is assigned the Full Administrator security role in the CAS root site",
         source=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "mayyhem\\domainadmin@*"}),
         target=NodePattern(kinds=["SCCM_SecurityRole"], properties={"id": "SMS0001R@*"}),  # Full Administrator role ID
-        count=CountSpec(exact=2),
-        # Tier D (design spec S:5): security-role assignment is AdminService/WMI-only.
+        # Was exact=2 for "plus one dupe that BloodHound dedupes". The duplicate is
+        # no longer produced -- a privileged lab run emits exactly one, and nothing
+        # in the collector deliberately creates a second (the word "dupe" survived
+        # only in these fixture descriptions). Verified 2026-07-31.
+        count=CountSpec(exact=1),
+        # Requires SCCM admin (design spec S:5): security-role assignment is AdminService/WMI-only.
         requires_privilege=True,
     ),
 
@@ -659,11 +771,13 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
     SCCMEdgeCase(
         id="edge-ismappedto-sccm-domainadmin-adminuser",
         kind="SCCM_IsMappedTo",
-        description="The domainadmin user is mapped to an SCCM admin user in the CAS primary site (plus one dupe that BloodHound dedupes)",
+        description="The domainadmin user is mapped to an SCCM admin user in the CAS primary site",
         source=NodePattern(kinds=["User", "Base"], properties={"id": "S-1-5-21-*", "samAccountName": "domainadmin"}),
         target=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "mayyhem\\domainadmin@*"}),
-        count=CountSpec(exact=2),
-        # Tier D (design spec S:5): admin-user-to-domain-account mapping is
+        # Was exact=2 for the same retired "plus one dupe" assumption as
+        # edge-isassigned above; a privileged run emits exactly one.
+        count=CountSpec(exact=1),
+        # Requires SCCM admin (design spec S:5): admin-user-to-domain-account mapping is
         # AdminService/WMI-only. Not to be confused with MSSQL_IsMappedTo, an
         # unrelated (low-priv reachable) MSSQL scaffolding edge kind.
         requires_privilege=True,
@@ -675,6 +789,11 @@ MAYYHEM_EDGE_CASES: list[EdgeCase] = [
         source=NodePattern(kinds=["User", "Base"], properties={"id": "S-1-5-21-*", "samAccountName": "domainuser"}),
         target=NodePattern(kinds=["SCCM_AdminUser"], properties={"id": "domainuser@*"}),
         negative=True,
+        # Stays flagged even though it is a NEGATIVE case, and *because* it is:
+        # at low privilege the mapping cannot be collected at all, so 'correctly
+        # absent' is indistinguishable from 'never looked'. Skipping is honest;
+        # passing would be vacuous. (I argued for untagging this on the grounds
+        # that it 'passes trivially' -- that is the problem, not the reason.)
         requires_privilege=True,
     ),
 ]

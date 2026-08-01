@@ -99,7 +99,12 @@ def test_confirmed_site_db_scaffolding_is_not_marked_assumed():
     assert name == "CM_PS1"
     assert assumed is False
     assert basis is None
-    assert src == ["SCCM-SiteDBDefaultSchema"]
+    # collection_source now names the ORIGINATING COLLECTION PHASE rather than the
+    # static derivation tag it used to carry: 'SCCM-SiteDBDefaultSchema' said how the
+    # scaffolding was templated but not where the knowledge came from, which is the
+    # question provenance exists to answer. Assumedness is unaffected -- it still
+    # rides on `assumed` and `assumption_basis`, asserted alongside here.
+    assert src == ["RemoteRegistry-SiteSystemRole"]
 
 
 def test_assumed_site_db_scaffolding_is_marked():
@@ -117,7 +122,12 @@ def test_assumed_site_db_scaffolding_is_marked():
     assert name == "CM_PS1"
     assert assumed is True
     assert basis and "SPN" in basis
-    assert src == ["Assumed-SiteDB"]
+    # collection_source now names the ORIGINATING COLLECTION PHASE rather than the
+    # static derivation tag it used to carry: 'SCCM-SiteDBDefaultSchema' said how the
+    # scaffolding was templated but not where the knowledge came from, which is the
+    # question provenance exists to answer. Assumedness is unaffected -- it still
+    # rides on `assumed` and `assumption_basis`, asserted alongside here.
+    assert src == ["LDAP-MSSQLSvcSPN"]
 
 
 def test_builder_has_no_flag_of_its_own():
@@ -143,7 +153,7 @@ def test_node_mssql_server_arm1_provenance_matches_basis():
         f"SELECT assumed, collection_source FROM {SCHEMA}.node_mssql_server WHERE host_sid = 'S-1-DB'"
     ).fetchone()
     assert assumed is True
-    assert "Assumed-SiteDB" in src
+    assert "LDAP-MSSQLSvcSPN" in src
     # The old unconditional privileged tag must NOT leak onto an SPN+SCCM-inferred row.
     assert "SCCM_Add-MSSQLServerNodesAndEdges" not in src
 
@@ -158,11 +168,11 @@ def test_login_and_dbuser_inherit_assumed_stamp():
     login = con.execute(
         f"SELECT assumed, collection_source FROM {SCHEMA}.node_mssql_login"
     ).fetchone()
-    assert login[0] is True and login[1] == ["Assumed-SiteDB"]
+    assert login[0] is True and login[1] == ["LDAP-MSSQLSvcSPN"]
     dbuser = con.execute(
         f"SELECT assumed, collection_source FROM {SCHEMA}.node_mssql_database_user"
     ).fetchone()
-    assert dbuser[0] is True and dbuser[1] == ["Assumed-SiteDB"]
+    assert dbuser[0] is True and dbuser[1] == ["LDAP-MSSQLSvcSPN"]
 
 
 def test_roles_inherit_assumed_stamp():

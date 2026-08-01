@@ -182,3 +182,62 @@ def test_node_user_ad_attrs_any_value_coalesce():
         "WHERE sid='S-1-5-21-1-2-3-1300'"
     ).fetchone()
     assert r == ("CN=carol,DC=lab", "carol@lab")
+
+
+# --- con-c509 / con-2249: the MSSQLSvc SPN holder must become a real User -----
+#
+# node_user had seven INSERT arms and every one read an SCCM-privileged source
+# (adminservice_r_user, wmi_r_user, remoteregistry_users, adminservice_admins,
+# wmi_admins, adminservice_reserved_accounts, wmi_reserved_accounts). There was no
+# LDAP arm. So at low privilege the MSSQLSvc SPN holder -- resolved from AD, and
+# already logged by name -- had no node_user row, fell through to node_backfill, and
+# rendered as a bare stub whose only properties are its own SID.
+#
+# The edges themselves were never missing: MSSQL_GetTGS, MSSQL_GetAdminTGS,
+# MSSQL_ServiceAccountFor and HasSession all reach the graph identically at both
+# privilege levels. Five integration fixtures pin that shared endpoint by
+# samAccountName, so the stub failed to match and they reported "not found" --
+# a property gap masquerading as missing data.
+
+def _con_with_spn_holder(sid="S-1-5-21-1-2-3-1116", name="sqlsccmsvc",
+                         is_computer=False):
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA IF NOT EXISTS sccm")
+    con.execute(
+        "CREATE TABLE sccm.mssql_server_instances AS SELECT "
+        f"'MSSQL-ScanForEPA' AS source, 'PS1-DB' AS name, "
+        f"'S-1-5-21-1-2-3-1109' AS domain_computer_sid, 1433 AS port, "
+        f"true AS has_mssql_spn, true AS port_open, "
+        f"'{sid}' AS service_account_sid, {str(is_computer).lower()} AS service_account_is_computer, "
+        f"'{name}' AS service_account_name"
+    )
+    return con
+
+
+def test_spn_holder_becomes_a_user_node_with_its_sam():
+    """The SPN holder gets a real node_user row, not a bare backfill stub."""
+    con = _con_with_spn_holder()
+    transforms(con)
+    row = con.execute(
+        "SELECT sid, sam_account_name FROM sccm.node_user WHERE sid ILIKE '%-1116'"
+    ).fetchone()
+    assert row == ("S-1-5-21-1-2-3-1116", "sqlsccmsvc")
+
+
+def test_spn_holder_is_not_left_to_the_backfill_stub():
+    """Having a real User row must remove it from node_backfill."""
+    con = _con_with_spn_holder()
+    transforms(con)
+    stubs = con.execute(
+        "SELECT count(*) FROM sccm.node_backfill WHERE id ILIKE '%-1116'"
+    ).fetchone()[0]
+    assert stubs == 0
+
+
+def test_machine_account_spn_holder_is_not_filed_as_a_user():
+    """A computer holding the SPN belongs in node_computer, not node_user."""
+    con = _con_with_spn_holder(name="PS1-DB$", is_computer=True)
+    transforms(con)
+    assert con.execute(
+        "SELECT count(*) FROM sccm.node_user WHERE sid ILIKE '%-1116'"
+    ).fetchone()[0] == 0

@@ -1,6 +1,6 @@
 ---
 id: Ope-8wi2
-status: open
+status: closed
 deps: []
 links: [ope-8c44]
 created: 2026-05-28T13:31:15Z
@@ -31,3 +31,7 @@ CLI panel reserved (2026-07-22): during the collect-sccm --help reorg, the opera
 **2026-07-24T13:54:55Z**
 
 2026-07-24: Design PIVOTED during a grill with the owner. Original design (reuse OpenHound core's ingest DLT destination + --bhe-url/--bhe-token) was rejected. New locked design: port the Go MSSQLHound flow (PUT /api/v2/extensions for schema + POST /api/v2/file-upload/{start,{id},end} for a results zip; HMAC or Bearer auth; retry on 429/5xx) into a REUSABLE uploader in openhound-collector-common, then wire into SCCM collect (--run-all) and convert. Uploads BOTH schema.json + schema_MSSQL.json, honors --disable-possible-edges, adds --upload-dir + --skip-collection. Implementation tracked in linked ope-8c44. Full plan: sccm/sccm/docs/superpowers/plans/2026-07-24-bloodhound-direct-upload.md
+
+**2026-07-31T15:36:02Z**
+
+Status audit 2026-07-31: SUPERSEDED BY A PRODUCT DECISION -> closing. This feature was designed twice (the original core-ingest-destination design, then the 2026-07-24 pivot to a reusable uploader in openhound-collector-common) and implemented under the linked ope-8c44 on 2026-07-24. On 2026-07-29 ope-2419 removed direct BloodHound CE upload from BOTH published packages ahead of the PyPI publish and archived it in the fork at bloodhound-upload/ (24 files, incl. a re-wiring checklist and cli_integration.py extracted verbatim from the inline main.py code). Code-verified 2026-07-31: no upload flags on collect sccm or convert sccm, and zero 'bloodhound' hits under src/. The 'BloodHound Upload' rich_help_panel this ticket reserved was consequently never added, and should not be until the feature returns. Closing because the current answer to 'should the collector upload directly?' is a decided no for 2.0, not an open question. Reopen post-release if that changes.

@@ -786,6 +786,14 @@ class MSSQLServerProperties(NodeProperties):
     # port-added (no CMBP key)
     strictEncryption: bool | None = field(default=None, kw_only=True)
     instanceNames: list[str] = field(default_factory=list, kw_only=True)
+    # SQL Server engine startup type, read from
+    # HKLM\\SYSTEM\\CurrentControlSet\\Services\\{MSSQLSERVER|MSSQL$<instance>}\\Start.
+    # Read from the registry rather than a port probe so a firewall cannot hide a
+    # healthy instance. This is the STARTUP TYPE (Automatic / Manual / Disabled),
+    # not live running state -- the registry cannot report that, only the service
+    # control manager can. Stays unset at low privilege: the Services hive is
+    # admin-gated.
+    SQLServiceStartType: str | None = field(default=None, kw_only=True)
     assumed: bool | None = field(default=None, kw_only=True)
     assumptionBasis: str | None = field(default=None, kw_only=True)
 

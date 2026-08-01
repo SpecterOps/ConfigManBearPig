@@ -35,7 +35,7 @@ def _login(con, assumed):
         f"INSERT INTO {SCHEMA}.node_mssql_login VALUES "
         "('S-1-PSS$@S-1-DB:1433', 'S-1-DB:1433', ?, ?, ?)",
         [assumed, "SPN+SCCM site database" if assumed else None,
-         ["Assumed-SCCM-SiteDBDefaultSchema"] if assumed else ["SCCM-SiteDBDefaultSchema"]],
+         ["LDAP-MSSQLSvcSPN"] if assumed else ["RemoteRegistry-SiteSystemRole"]],
     )
 
 

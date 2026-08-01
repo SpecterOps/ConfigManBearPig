@@ -3,7 +3,6 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-yaml
-        exclude: mkdocs.yml
       - id: check-json
       - id: end-of-file-fixer
       - id: trailing-whitespace
@@ -12,4 +11,3 @@ repos:
     rev: 25.12.0
     hooks:
       - id: black
-        exclude: ^cookiecutter-templates/

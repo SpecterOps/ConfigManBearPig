@@ -5,9 +5,21 @@ from openhound_collector_common.integration_testing.graph import Node, Graph
 from openhound_collector_common.integration_testing.results import PASS, FAIL
 
 
-def test_edge_fixture_count_matches_ps_kit():
-    # The renamed PS kit has 61 $ExpectedEdges cases; the port must carry them all.
-    assert len(MAYYHEM_EDGE_CASES) == 61
+def test_edge_fixture_count_at_least_ps_kit():
+    """The port must carry all 61 PS-kit cases -- a FLOOR, not an equality.
+
+    Written as `== 61` originally, when the fixture set was a strict translation of the
+    PowerShell kit's $ExpectedEdges. It no longer is: cases have since been added for
+    behaviour CMBP never modelled, most recently the 2026-08-01 secondary-site pair
+    (edge-haslogin-parent-primary-secondary-database and
+    edge-memberof-secondary-parent-primary-sysadmin-role), which come from Microsoft's
+    secondary-site prerequisites rather than from the script.
+
+    Equality turned every such addition into a failure whose only remedy was bumping the
+    literal -- a step that proves nothing and trains you to bump it without looking. The
+    floor still catches the case worth catching: a PS-derived fixture silently dropped.
+    """
+    assert len(MAYYHEM_EDGE_CASES) >= 61
 
 
 def test_edge_fixture_ids_unique_and_typed():

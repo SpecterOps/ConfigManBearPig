@@ -62,3 +62,7 @@ Conditional-logging fix: register_target (context.py) returned None for two reas
 **2026-07-21T14:03:31Z**
 
 Umbrella for superseded-and-closed Ope-f3di (conditional-logging audit) and Ope-scp1 (variable-scope audit). Their scope must be covered here; reopened to in_progress on 2026-07-21 after status audit found only 1 of 5 cleanup areas complete.
+
+**2026-07-31T15:36:31Z**
+
+Status audit 2026-07-31: STAYS IN PROGRESS, but area 4 (Linting) is now GREEN and can be struck off. Verified in the project .venv: 'ruff check src tests' -> All checks passed, and 'mypy src/openhound_sccm' -> Success, no issues found in 63 source files. That was achieved under ope-60fe step 2e, which took 273 mypy errors (206 collector + 67 library) and 50 ruff errors to zero by fixing root causes rather than suppressing -- 88 logger.verbose errors resolved by routing 18 modules through the shared get_logger(), 85 import-untyped via ignore_missing_imports for impacket/openhound/sspi, 3 stub packages added, and 28 fetchone()[0] calls replaced with a _scalar() helper. Areas 1 (conditional logging on every non-happy branch), 2 (exception handling / no bare excepts), 3 (variable-scope hygiene) and 5 (general cleanup + move logic to preprocess/convert) have NOT been swept end to end and still carry the folded-in scope of the superseded-and-closed Ope-f3di and Ope-scp1. Ruff and mypy being clean is a floor, not a substitute for those four passes: neither tool detects a silently-skipped record with no log line, nor a per-record temporary hoisted outside its loop.

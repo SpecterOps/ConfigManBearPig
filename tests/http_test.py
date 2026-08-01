@@ -14,6 +14,7 @@ Behaviour under test reflects the two design decisions:
     probe target itself when no FQDN payload is available. Never a bare row.
 """
 import datetime
+import logging
 
 import pytest
 
@@ -136,6 +137,64 @@ def test_parse_sitesigncert_hex_rejects_short_payload():
 def test_cert_issuer_and_dns():
     issuer, dns = http._cert_issuer_and_dns(_site_server_cert_hex("siteserver.mayyhem.com"))
     assert issuer == "Site Server" and dns == "siteserver.mayyhem.com"
+
+
+# A payload that clears _parse_sitesigncert_hex's sanity checks (even length,
+# >= 20 chars) but is not hex at all, so bytes.fromhex() rejects it.
+_NON_HEX_PAYLOAD = "ZZ" * 12
+# Valid hex of sufficient length that is not a DER certificate, so the X.509
+# parser rejects it. These are the two distinct ways a hostile or broken
+# management point can defeat the parse.
+_NOT_A_CERT_PAYLOAD = "ab" * 12
+
+
+def test_cert_issuer_and_dns_warns_on_non_hex_payload(caplog):
+    """A non-hex payload yields (None, None) and names hex decoding as the reason.
+
+    Without this the ValueError escapes to collect_http's broad handler, which
+    reports every cause as "failed or not applicable" at VERBOSE.
+    """
+    with caplog.at_level(logging.WARNING, logger="openhound_sccm.collectors.http"):
+        assert http._cert_issuer_and_dns(_NON_HEX_PAYLOAD) == (None, None)
+    assert any("hex" in r.message.lower() and r.levelno == logging.WARNING
+               for r in caplog.records), caplog.text
+
+
+def test_cert_issuer_and_dns_warns_on_undecodable_certificate(caplog):
+    """Valid hex that is not a certificate yields (None, None) and says so.
+
+    Distinct from the hex failure: this is the branch cryptography 49.0.0 would
+    newly reach for certs with NULL AlgorithmIdentifier params.
+    """
+    with caplog.at_level(logging.WARNING, logger="openhound_sccm.collectors.http"):
+        assert http._cert_issuer_and_dns(_NOT_A_CERT_PAYLOAD) == (None, None)
+    assert any("certificate" in r.message.lower() and r.levelno == logging.WARNING
+               for r in caplog.records), caplog.text
+
+
+def test_sitesigncert_probe_diagnoses_unparseable_certificate(monkeypatch, caplog):
+    """Through the full probe path, an unparseable cert is diagnosed, not swallowed.
+
+    Previously the ValueError escaped to collect_http's ``except Exception``, which
+    logs "failed or not applicable" at VERBOSE -- collapsing endpoint-absent,
+    network-failure and parser-rejected into one message. The probe must still fail
+    soft (it is the only credential-free way to identify the Site Server), but the
+    reason has to survive at WARNING.
+    """
+    xml = f"<X509Certificate>{_NON_HEX_PAYLOAD}</X509Certificate>".encode()
+    fake = _FakeHttp({"sitesigncert": HttpResult(200, xml, ErrorClass.RESPONSE)})
+    monkeypatch.setattr(http.HttpClient, "from_context", classmethod(lambda cls, *a, **k: fake))
+    ctx = _Ctx()
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.http"):
+        rows = list(http.collect_http("mp.mayyhem.com", ctx))
+    # Fails soft: no site server registered, collection continues.
+    assert not any(src == "HTTP-sitesigncert" for _, src, _ in ctx.registered)
+    assert all(t != "http_site_servers" for t, _ in rows)
+    # Audibly: a WARNING names the reason ...
+    assert any(r.levelno == logging.WARNING and "hex" in r.message.lower()
+               for r in caplog.records), caplog.text
+    # ... rather than escaping to the generic best-effort swallow.
+    assert not any("failed or not applicable" in r.message for r in caplog.records), caplog.text
 
 
 # --- gating ----------------------------------------------------------------
@@ -294,15 +353,24 @@ def test_unresolved_host_emits_no_row_but_still_registers(monkeypatch):
 
 # --- connection failure short-circuit --------------------------------------
 
-def test_connection_failure_stops_all_probing(monkeypatch):
+def test_connection_failure_stops_protocol_loop_probing(monkeypatch):
+    """A connection failure short-circuits the protocol loop (PS1 $connectionFailed).
+
+    con-7741 carved out one deliberate exception: the SMS Provider probe. It is
+    HTTPS-only by construction, so gating it on a port-80 failure cost hosts a role
+    they were serving perfectly well on 443. Everything driven by the loop protocol --
+    the https MP retry and the DP probe -- is still suppressed as before.
+    """
     fake = _FakeHttp(fail_on=("MPKEYINFORMATION",))
     _use_fake(monkeypatch, fake)
     rows = list(http.collect_http("dead.mayyhem.com", _Ctx()))
 
     assert rows == []
-    # http MPKEYINFORMATION failed -> protocol loop breaks: no https retry, no DP/SMS
+    # http MPKEYINFORMATION failed -> protocol loop breaks: no https retry, no DP.
     assert sum(1 for c in fake.calls if "MPKEYINFORMATION" in c) == 1
-    assert not any("SMS_DP_SMSPKG" in c or "SMS_Identification" in c for c in fake.calls)
+    assert not any("SMS_DP_SMSPKG" in c for c in fake.calls)
+    # ... but the HTTPS-only SMS Provider probe still runs, exactly once.
+    assert sum(1 for c in fake.calls if "SMS_Identification" in c) == 1
 
 
 # --- sitesigncert site server ----------------------------------------------
@@ -415,3 +483,42 @@ def test_should_run_phase_skips_http_when_method_disabled():
     from openhound_sccm.per_host_phases import should_run_phase
     entry = TargetEntry(hostname="h", ad_object=None)
     assert should_run_phase("h", _http_phase(), _GateCtx({"h": entry}, enabled=False)) is False
+
+
+# --- con-7741: a filtered port 80 must not hide an HTTPS-only SMS Provider ---
+#
+# The role loop runs http then https, breaking out on the first connection failure
+# (PS1's $connectionFailed parity). But sms_provider() is HTTPS-only by construction
+# -- it builds an https:// URL regardless of the loop protocol -- yet it sat behind
+# those breaks. So a host with 80 filtered and 443 serving the AdminService lost its
+# SMS Provider tag entirely, on a port that was never the problem.
+#
+# That tag is load-bearing: SCCM_AssignAllPermissions and the
+# SCCM_CoerceAndRelayToAdminService pair list are both built from it, so the loss is
+# silent and downstream rather than a visible probe error.
+
+def test_sms_provider_detected_when_port_80_is_filtered(monkeypatch):
+    """80 filtered, 443 serving the AdminService -> still tagged SMS Provider."""
+    fake = _FakeHttp(
+        {"AdminService/wmi/SMS_Identification": HttpResult(401, b"", ErrorClass.RESPONSE)},
+        fail_on=("http://",),          # every plaintext URL refuses
+    )
+    monkeypatch.setattr(http.HttpClient, "from_context", classmethod(lambda cls, *a, **k: fake))
+    ctx = _Ctx()
+    rows = list(http.collect_http("ps1-sms.mayyhem.com", ctx))
+    provider_rows = [r for t, r in rows if t == "http_smsproviders"]
+    assert provider_rows, (
+        "SMS Provider missed: the probe is HTTPS-only, so a filtered port 80 "
+        f"must not suppress it. URLs tried: {fake.calls}"
+    )
+
+
+def test_sms_provider_still_probed_only_once_when_http_succeeds(monkeypatch):
+    """The normal path must not gain a duplicate probe from the hoist."""
+    fake = _FakeHttp(
+        {"AdminService/wmi/SMS_Identification": HttpResult(401, b"", ErrorClass.RESPONSE)},
+    )
+    monkeypatch.setattr(http.HttpClient, "from_context", classmethod(lambda cls, *a, **k: fake))
+    list(http.collect_http("ps1-sms.mayyhem.com", _Ctx()))
+    hits = [u for u in fake.calls if "SMS_Identification" in u]
+    assert len(hits) == 1, f"expected one AdminService probe, got {hits}"

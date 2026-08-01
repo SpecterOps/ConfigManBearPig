@@ -75,6 +75,7 @@ EXPECTED_PANEL = {
     "data_type": "Output",
     # Testing — assert/diff the graph a run just produced; both imply --run-all.
     "run_integration_tests": "Testing",
+    "integration_lowpriv": "Testing",
     "compare_to_zip": "Testing",
     # Logging
     "verbose": "Logging",

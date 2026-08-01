@@ -17,7 +17,7 @@ silently does not run. No collector behavior changes, and no test body changes a
 **Architecture (approach):** Housekeeping, and deliberately body-free. Every one of the 35 file moves is a
 pure `git mv`; the only content edits in the whole plan are three import lines, one docstring paragraph,
 two config files, and three documentation edits. That makes the collected-test count an exact invariant
-rather than an approximate one: it must read **897** at every checkpoint, and each individual file's count
+rather than an approximate one: it must read **901** at every checkpoint, and each individual file's count
 must be unchanged too. Package root is `src/openhound_sccm/`; tests are flat in `tests/`. Everything
 removed stays recoverable from git history.
 
@@ -81,8 +81,13 @@ From the original grilling (2026-07-24) and two rounds of rescoping (2026-07-30)
 - **Behavior must not change.** No collector, graph, CLI, or emitted-property change. The only content
   edits are three import lines (Task 2), one docstring paragraph (Task 2), `pyproject.toml`,
   `.pre-commit-config.yaml`, and the three documentation edits in Task 6.
-- **Collected-test count is an exact invariant: 897.** Captured 2026-07-30 with
-  `.venv\Scripts\python -m pytest --collect-only -q`. It must read **897 tests collected** at the end of
+- **Collected-test count is an exact invariant: 901.** It was 897 when this plan was drafted and shifted
+  twice during execution, both times from concurrent work in files this plan does not own: **+1** from the
+  committed `feat: emit MSSQL nodes/edges under source_kind=MSSQL` (tests added to
+  `edge_mssql_structural_test.py`, `graph_edges_coercion_cols_test.py`, `graph_edges_split_test.py`), and
+  **+3** from ticket `con-0170` adding sitesigncert-parse guard tests to `http_test.py` mid-execution. Every
+  one of those files already used the suffix convention, so none was renamed here. Captured with
+  `.venv\Scripts\python -m pytest --collect-only -q`. It must read **901 tests collected** at the end of
   every task. Per-file counts must also hold: `privileged_test.py` 22 → 22 under its new name,
   `privileged_user_group_test.py` 3, `registry_collect_test.py` 9, `registry_current_user_test.py` 1,
   `per_host_phases_test.py` 7.
@@ -167,7 +172,7 @@ reads as a test *of* `__init__.py`, which it is not — and it sits next to the 
 .venv\Scripts\python.exe -m pytest --collect-only -q | Select-Object -Last 1
 ```
 
-Expected: `897 tests collected`. If it is not 897, **stop** — the tree has moved and every later count
+Expected: `901 tests collected`. If it is not 901, **stop** — the tree has moved and every later count
 assertion is void. Report the number rather than adjusting it silently.
 
 - [ ] **Step 2: Rename the 30 non-colliding files**
@@ -236,7 +241,7 @@ git mv tests/__init___test.py tests/models_main_import_test.py
 git ls-files 'tests/test_*.py'
 ```
 
-Expected: `897 tests collected`, and the `git ls-files` output is exactly these three lines:
+Expected: `901 tests collected`, and the `git ls-files` output is exactly these three lines:
 
 ```
 tests/test_per_host_phases.py
@@ -279,7 +284,7 @@ which is what it actually asserts (openhound_sccm.models and .main import
 cleanly, the latter registering the collect/preproc/convert phases).
 
 Pure renames via git mv; no test body changed. Collected count unchanged
-at 897. The three name collisions are handled separately.
+at 901. The three name collisions are handled separately.
 ```
 
 ---
@@ -457,7 +462,7 @@ imports the *production* module, and running it proves Step 2's re-export did no
 .venv\Scripts\python.exe -m pytest --collect-only -q | Select-Object -Last 1
 ```
 
-Expected: `no tests collected`, then `897 tests collected`.
+Expected: `no tests collected`, then `901 tests collected`.
 
 Worth understanding precisely, because it is easy to over-read: naming a file explicitly makes pytest
 import and collect it **regardless** of `python_files` — the glob governs directory recursion, not named
@@ -479,7 +484,7 @@ all_table_names is now imported from openhound_sccm.per_host_phases instead
 of duplicated. Docstring records why the stub list has 5 phases (there is no
 stub_wmi) and why the file is not named *_test.py.
 
-Collected count unchanged at 897.
+Collected count unchanged at 901.
 ```
 
 ---
@@ -569,7 +574,7 @@ git ls-files 'tests/test_*.py'
 .venv\Scripts\ruff.exe check src tests
 ```
 
-Expected: `git ls-files` returns **nothing**; `897 tests collected`; ruff clean.
+Expected: `git ls-files` returns **nothing**; `901 tests collected`; ruff clean.
 
 - [ ] **Step 6: Show the diff and ask Meatbag whether to commit**
 
@@ -586,7 +591,7 @@ testing collectors/privileged.py is the convention rather than drift.
   registry_current_user_test.py            -> unchanged, already correct
 
 Pure renames; no test body touched. Per-file counts 22/3/9/1 unchanged,
-total unchanged at 897. No test_*.py files remain.
+total unchanged at 901. No test_*.py files remain.
 ```
 
 ---
@@ -632,7 +637,7 @@ python_files = "*_test.py"
 .venv\Scripts\python.exe -m pytest --collect-only -q | Select-Object -Last 1
 ```
 
-Expected: `897 tests collected`. Because Tasks 1–3 left zero `test_*.py` files, narrowing the glob must
+Expected: `901 tests collected`. Because Tasks 1–3 left zero `test_*.py` files, narrowing the glob must
 change nothing — if the number drops, a file was missed and Step 1 ran against a stale tree.
 
 - [ ] **Step 4: Confirm the stub module is still excluded and still importable**
@@ -651,7 +656,7 @@ chore(tests): pin python_files to the *_test.py convention
 
 pytest's default accepts both test_*.py and *_test.py, which is how the suite
 ended up running two conventions at once. Now that every file uses the suffix
-form, pin it. Collected count unchanged at 897.
+form, pin it. Collected count unchanged at 901.
 ```
 
 ---
@@ -746,9 +751,16 @@ git diff --stat uv.lock
 Select-String -Path uv.lock -Pattern 'zensical'
 ```
 
-Expected: `uv.lock` shrinks — the `zensical` entry and its `mkdocs`, `mkdocs-autorefs`,
-`mkdocs-get-deps` transitive tree drop out — and no `zensical` matches remain. `uv lock` writes only the
-lockfile; it creates no environment, so the repository-local `.venv` is left alone per `AGENTS.md` §5.
+Expected: `Resolved 118 packages`, with exactly three removals — `zensical` plus its own private
+dependencies `deepmerge` and `tomli` — and no `zensical` matches remain.
+
+**Corrected during execution:** an earlier draft of this step predicted the `mkdocs`, `mkdocs-autorefs`
+and `mkdocs-get-deps` tree would drop too. It does not, and should not. Those come in via
+`openhound` → `mkdocstrings[python]`, so they are the framework's transitive dependencies, not
+`zensical`'s. Their staying is correct; only `zensical`'s own subtree leaves.
+
+`uv lock` writes only the lockfile; it creates no environment, so the repository-local `.venv` is left
+alone per `AGENTS.md` §5.
 
 - [ ] **Step 6: Verify nothing broke**
 
@@ -758,7 +770,7 @@ lockfile; it creates no environment, so the repository-local `.venv` is left alo
 .venv\Scripts\mypy.exe src\openhound_sccm
 ```
 
-Expected: `897 tests collected`; ruff clean; mypy as clean as before this task (record before/after if it
+Expected: `901 tests collected`; ruff clean; mypy as clean as before this task (record before/after if it
 reports anything, since none of these edits can affect it). `.venv\Scripts\zensical.exe` still exists —
 this plan deliberately does not sync the venv. It becomes unreachable at Meatbag's next `uv sync`.
 
@@ -914,15 +926,13 @@ Changelog rows naming old test filenames are left as dated records.
 Surfaced for Meatbag to decide, each with a recommendation. Two of these correct claims the 2026-07-24
 plan got wrong, because the repo changed underneath them.
 
-- **`TICKETS-BY-STATUS.md` is untracked.** The file **does** exist (20,829 bytes, header says "Generated
-  from `gtk list --json`", reports 116 tickets), regenerated at 13:44 on 2026-07-30 — almost certainly by
-  `con-3be4`, which created ticket `con-3be4.md`. But `git status` shows it as `??`. It has never been
-  committed, so the `TICKETS-BY-STATUS.md merge=ours` attribute in `.gitattributes` is currently inert:
-  git cannot apply a merge driver to a file it does not track. `.gitattributes` also documents the
-  one-time `git config merge.ours.driver true` each clone needs.
-  **Recommendation: commit it, as part of `con-3be4`'s commit** — that agent generated it and owns the
-  ticket whose creation changed it. Committing activates the merge driver and satisfies the requirement
-  `CLAUDE.md` line 38 and `AGENTS.md` both impose.
+- **~~`TICKETS-BY-STATUS.md` is untracked~~ — RESOLVED during execution, by someone else.** The flag was
+  raised when the file existed but had never been committed, leaving the `merge=ours` attribute in
+  `.gitattributes` inert (git cannot apply a merge driver to a file it does not track). It has since been
+  committed **and relocated** to `.tickets/_TICKETS-BY-STATUS.md`, with `.gitattributes`, `AGENTS.md`,
+  `CLAUDE.md`, `PUBLISHING.md` and the `README.md` merge-driver note updated to match. No action remains
+  here. The one-time `git config merge.ours.driver true` per clone is still required, and is still
+  documented in `.gitattributes`.
 - **~~`docs/proposals/` is unreferenced and probably prunable~~ — WRONG as of 2026-07-30.**
   `ARCHITECTURE.md` line 797 links `docs/proposals/2026-06-16-convert-read-from-duckdb.md` and line 824
   links `docs/proposals/2026-06-16-computer-node-multi-driver-merge.md`;
@@ -1002,12 +1012,12 @@ plan got wrong, because the repo changed underneath them.
 ## Execution order & final validation
 
 1. **Baseline first.** `.venv\Scripts\python.exe -m pytest --collect-only -q` must read
-   **897 tests collected** before any change. If not, stop and report.
-2. **Task 1** (30 renames + the smoke-test rename) → count still 897.
+   **901 tests collected** before any change. If not, stop and report.
+2. **Task 1** (30 renames + the smoke-test rename) → count still 901.
 3. **Task 2** (stub data renamed out of the test namespace, real test claims the name, 3 imports
-   repointed, `all_table_names` de-duplicated) → count still 897.
+   repointed, `all_table_names` de-duplicated) → count still 901.
 4. **Task 3** (two topical renames + one, zero bodies touched) → per-file counts 22/3/9/1 unchanged, total
-   897, and `git ls-files 'tests/test_*.py'` returns nothing.
+   901, and `git ls-files 'tests/test_*.py'` returns nothing.
 5. **Task 4** (pin `python_files`) — **only** after step 4's `git ls-files` check is empty.
 6. **Task 5** (retire the docs-site scaffolding) — independent; may run at any point.
 7. **Task 6** (the three doc edits) — **last**, and only after `con-3be4` has committed. Check whether it
@@ -1029,7 +1039,7 @@ Then the whole-suite collection check one last time:
 .venv\Scripts\python.exe -m pytest --collect-only -q | Select-Object -Last 1
 ```
 
-Expected: **897 tests collected.** That number is the whole proof of this plan — 35 renames, one
+Expected: **901 tests collected.** That number is the whole proof of this plan — 35 renames, one
 de-duplicated helper, three repointed imports and a narrowed collection glob, with not a single test lost
 and not a single test body touched.
 

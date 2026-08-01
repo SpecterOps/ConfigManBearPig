@@ -202,8 +202,20 @@ def _load_ticket(kerberos_ticket: str):
     """
     from impacket.krb5.ccache import CCache
 
+    # Both decode steps get their own guard so the operator learns *which* part of
+    # --ticket is wrong. Unguarded, bad base64 surfaces as binascii's "Only base64
+    # data is allowed" and a non-KRB-CRED payload as a raw pyasn1 EndOfStreamError --
+    # neither names the flag. No log here: the raised message is the report, and
+    # logging it too would double-report the same failure.
+    try:
+        krb_cred = base64.b64decode(kerberos_ticket, validate=True)
+    except ValueError as ex:  # binascii.Error subclasses ValueError
+        raise ValueError(f"--ticket is not valid base64: {ex}") from ex
     ccache = CCache()
-    ccache.fromKRBCRED(base64.b64decode(kerberos_ticket, validate=True))
+    try:
+        ccache.fromKRBCRED(krb_cred)
+    except Exception as ex:  # noqa: BLE001 - impacket/pyasn1 raise many types here
+        raise ValueError(f"--ticket is not a valid KRB-CRED (.kirbi): {ex}") from ex
     if not ccache.credentials:
         raise ValueError("--ticket contains no usable credentials")
     cred = ccache.credentials[0]

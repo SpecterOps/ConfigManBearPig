@@ -2,7 +2,7 @@
 
 <img width="256" height="384" alt="ConfigManBearPig" src="https://github.com/user-attachments/assets/f40c4268-431d-4dbc-9134-ed6d0e7309a0" />
 
-***ConfigManBearPig*** brings Microsoft Configuration Manager (formerly SCCM) attack paths to [BloodHound](https://github.com/SpecterOps/BloodHound) using [OpenGraph](https://specterops.io/opengraph). It is a Python port of [ConfigManBearPig](https://specterops.io/blog/2026/01/13/introducing-configmanbearpig-a-bloodhound-opengraph-collector-for-sccm/), the PowerShell SCCM collector by Chris Thompson ([@_Mayyhem](https://x.com/_Mayyhem)) at [SpecterOps](https://x.com/SpecterOps). It is written on top of the [OpenHound](https://github.com/SpecterOps/openhound) collector framework by SpecterOps.
+***ConfigManBearPig*** brings Microsoft Configuration Manager (formerly SCCM) attack paths to [BloodHound](https://github.com/SpecterOps/BloodHound) using [OpenGraph](https://specterops.io/opengraph). It is a Python rewrite of [ConfigManBearPig](https://specterops.io/blog/2026/01/13/introducing-configmanbearpig-a-bloodhound-opengraph-collector-for-sccm/), the PowerShell SCCM collector by Chris Thompson ([@_Mayyhem](https://x.com/_Mayyhem)) at [SpecterOps](https://x.com/SpecterOps). It is written on top of the [OpenHound](https://github.com/SpecterOps/openhound) collector framework by SpecterOps.
 
 Where the PowerShell tool was a single self-contained script, this version runs on the OpenHound framework's three-stage pipeline (`collect` → `preprocess` → `convert`), producing an OpenGraph dataset you can upload to BloodHound's **File Ingest**.
 
@@ -338,9 +338,18 @@ Everything the collector emits falls into one of two buckets: **confirmed** (bui
 data — a probed setting, an ACL, a resource table) or **assumed** (templated/inferred, the way
 ConfigManBearPig's own post-processing fills gaps it can't directly observe). Assumed nodes and edges stay
 **traversable** — BloodHound's attack-path engine still follows them — but they carry a machine-readable
-provenance stamp so an operator can tell the two apart: `assumed = true`, a human-readable
-`assumptionBasis` string, and an `Assumed-<Family>` tag folded into `collectionSource`. A confirmed
-node/edge simply omits all three (they show as absent/null in BloodHound's entity panel, not `false`).
+provenance stamp so an operator can tell the two apart: `assumed = true` and a human-readable
+`assumptionBasis` string. A confirmed node/edge simply omits both (they show as absent/null in
+BloodHound's entity panel, not `false`).
+
+> **`collectionSource` names the collection phase, not the assumption.** Most assumed families also
+> fold an `Assumed-<Family>` tag into `collectionSource`. The **MSSQL site-database scaffolding** no
+> longer does: as of 2026-07-31 its `collectionSource` carries the originating collection phase
+> instead — `RemoteRegistry-MultisiteComponentServers`, `AdminService-SiteDefinition`,
+> `LDAP-MSSQLSvcSPN`, `MSSQL-ScanForEPA` — so a reader can see *which transport and therefore which
+> privilege level* produced a node, which the old static `SCCM-SiteDBDefaultSchema` tag could not.
+> Nothing is lost: assumedness still rides on `assumed` and `assumptionBasis` for that family exactly
+> as for every other.
 
 The table below is the full catalog — one row per assumed family — with its inference rule, the data it's
 built from, whether `--disable-possible-edges` removes it, and the caveat that makes it a false-positive
@@ -352,7 +361,7 @@ risk:
 | `site_hierarchy` root, when 2+ untyped sites exist and none was observed as a CAS / `RootSiteCode` / parentless Primary | Picking one of several untyped sites as the hierarchy root is a guess, made alphabetically | LDAP `ldap_sites`, RemoteRegistry, HTTP, SMB, DNS (every source that reports only a bare site code, no type) | **Yes** — the root is left unresolved instead of guessed (SCCM-native node ids lose their `@<root>` scope) | The wrong root anchors every SCCM-native node id minted in the run; a **single** untyped site is deduction, not a guess, and is unaffected by the flag |
 | MSSQL site-database identity via the `SPN+SCCM` basis — feeds `MSSQL_Server.SCCMSite`/`.SCCMInfra`/`.databases`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`, their `Contains`/`MemberOf`/`HasLogin`/`IsMappedTo`/`Control*` edges, and `MSSQL_GetTGS`/`MSSQL_GetAdminTGS` off that login | A host with an `MSSQLSvc` SPN that is *also* SCCM-related (carries an SMS role, or `sccm_infra`) is treated as **the** site database, not merely a co-located SQL Server | AD (`MSSQLSvc` SPN, via `mssql_server_instances.has_mssql_spn`) + `node_computer` site-system role tags | **Yes** — the whole basis is dropped; a **confirmed** site database (RemoteRegistry / AdminService / WMI) keeps its full scaffolding in **both** modes with **no** stamp, since the schema SCCM requires there follows from the confirmed fact, not a guess | Nothing confirms this SQL Server is *this* site's database rather than an unrelated one that merely happens to sit on an SCCM-tagged host |
 | `SCCM_AssignAllPermissions` (`Computer` SMS Provider → `SCCM_Site`) | Hosting the SMS Provider role is templated as implying hierarchy-wide RBAC control, not read from an actual grant | RemoteRegistry / HTTP / LDAP role tag + site hierarchy | No — CMBP itself emits this family under its own `-DisablePossibleEdges` | A role tag attributed to the wrong site would overstate an admin's real reach |
-| `SCCM_LocalAdminRequired` | Co-location as site systems of the same site is templated as mutual local-administrator rights, not read from a local-group membership list | Role tags (RemoteRegistry/HTTP/LDAP) + site hierarchy | No | An admin who removed the default grant during a hardening pass, or a role tag attributed to the wrong site, makes this overstate real access |
+| `SCCM_LocalAdminRequired` | Two rules, neither reading a local-group membership list. **Within a site:** co-location as site systems of the same site is templated as mutual local-administrator rights. **Parent primary → child secondary:** Microsoft's documented setup prerequisite (the parent primary's computer account is added to the secondary site server's Administrators group) is templated as still being in force | Role tags (RemoteRegistry/HTTP/LDAP) + site hierarchy; the cross-site rule additionally needs a **positively known** `siteType = 1` on the child | No | An admin who removed the default grant during a hardening pass, or a role tag attributed to the wrong site, makes this overstate real access. The cross-site rule is silent where secondary-ness could not be established, so at low privilege it emits nothing rather than guessing |
 | `SCCM_CoerceAndRelayToAdminService` | An unset (`null`) inbound-NTLM restriction on the SMS Provider is treated as vulnerable — this **is** the Windows default (0 = allow all inbound NTLM), so it is a measured fact about the default rather than a guess | RemoteRegistry NTLM setting on the Provider + role/site topology | No — the "unset = vulnerable" reasoning holds in both modes | Suppressed on a site confirmed to run SCCM 2509+ (rejects NTLM); an unknown/unparseable version fails **open** and may false-positive |
 | `SCCM_CoerceAndRelayToSMB` | Same NTLM reasoning as above; SMB signing itself is never assumed — it must still be **confirmed** not required | RemoteRegistry/SMB-negotiate signing check + NTLM setting + role/site topology | No | Same NTLM caveat as above |
 | `MSSQL_CoerceAndRelayToMSSQL` | NTLM uses the same unconditional "unset = vulnerable" rule as the other two relay families. Extended Protection is different: a null/uncollected EPA setting is *also* treated as vulnerable by default (an actual assumption, not a Windows-default fact) | RemoteRegistry/MSSQL EPA probe (EPA) + RemoteRegistry NTLM (coerced host) | **Partially** — only the EPA half: with the flag, EPA must be **explicitly** `Off` | `assumed`/`assumptionBasis` are stamped **per row**, only when EPA was never measured — a measured `Off` is evidence, not an assumption, so those rows are unstamped even by default |
@@ -374,16 +383,31 @@ jumping from "almost nothing" to "everything" the moment AdminService is reachab
 |---|---|---|
 | **Anonymous** — no domain credentials at all (HTTP + DNS, both unauthenticated) | A site code; Management Point / Distribution Point / SMS Provider / Site Server role tags from the unauthenticated HTTP probes (including the site-signing-certificate probe, the *only* credential-free way to identify the Site Server); DNS-discovered Management Points; the relay-feasibility edges those roles and the site hierarchy alone support (`SCCM_LocalAdminRequired`, `SCCM_CoerceAndRelayToAdminService`). Adding the SMB phase's signing-required check (also unauthenticated — `-m HTTP,DNS,SMB`) additionally **confirms** which of those site systems don't require SMB signing, which is what `SCCM_CoerceAndRelayToSMB` needs (that check is the only thing this edge never assumes). | `-m HTTP,DNS --sc <site_code> -c <known_mp_or_site_server>` |
 | **+ domain user** — any authenticated account, no local-admin/AdminService rights | The LDAP-derived hierarchy with real type/parent/true root (LDAP management-point capabilities); the Fallback Status Point role; SMB share-based role/site discovery; RemoteRegistry-confirmed roles plus the current-user `HasSession` edge on any host the account happens to be a local admin on; the System Management container's `Container`/`GenericAll`/nested `MemberOf` graph; `MSSQLSvc`-SPN-based `MSSQL_Server`/`Computer` nodes (confirmed the moment the SPN exists, even with 1433 filtered) and the low-priv `MSSQL_ServiceAccountFor`/`HasSession`/`MSSQL_GetTGS`/`MSSQL_GetAdminTGS` edges off the SPN holder | `-m LDAP,RemoteRegistry,SMB,MSSQL,HTTP,DNS` (or `All`) |
-| **+ AdminService/WMI** — SMS Provider or SCCM RBAC read access | Everything above, **plus** the Tier D families below that no lower privilege level can produce at all | `-m All` (the default) |
+| **+ AdminService/WMI** — SMS Provider or SCCM RBAC read access | Everything above, **plus** the SCCM-admin-only families below that no lower privilege level can produce at all | `-m All` (the default) |
 
-> **Tier D — requires privileged collection.** `SCCM_FullAdministrator`, `SCCM_ApplicationAuthor`,
+> **Requires SCCM admin access.** Two groups need SMS Provider or SCCM RBAC read access, because
+> nothing at a lower privilege level can produce them at all.
+>
+> **RBAC families** — `SCCM_FullAdministrator`, `SCCM_ApplicationAuthor`,
 > `SCCM_ApplicationAdministrator`, `SCCM_ComplianceSettingsManager`, `SCCM_OSDManager`,
 > `SCCM_OperationsAdministrator`, `SCCM_SecurityAdministrator`, `SCCM_AllPermissions`, `SCCM_IsAssigned`,
 > `SCCM_IsMappedTo`, `SCCM_HasMember`, and the `SCCM_AdminUser` / `SCCM_SecurityRole` / `SCCM_Collection`
-> nodes themselves have no AD/LDAP representation, and RemoteRegistry does not expose them either — neither
-> this collector nor a non-privileged attacker can derive them without AdminService or WMI access. Their
-> absence from a low-privilege run is **correct behavior, not a bug**: do not expect them until you collect
-> with AdminService/WMI reachable.
+> nodes themselves have no AD/LDAP representation, and RemoteRegistry does not expose them either.
+> `SCCM_Contains` edges that *target* one of those three node kinds inherit the same requirement — the
+> edge cannot exist without its endpoint.
+>
+> **Device inventory** — `SCCM_HasPrimaryUser`, `SCCM_HasCurrentUser` and `SCCM_HasADLastLogonUser` come
+> from the SCCM device record (user-device affinity, current logon user, AD last-logon user), which lives
+> only in the site database. A domain user can enumerate the *computer* from AD but never SCCM's view of
+> who uses it.
+>
+> Their absence from a low-privilege run is **correct behavior, not a bug**: do not expect them until you
+> collect with AdminService/WMI reachable, and pass
+> [`--integration-lowpriv`](#testing) so the fixture suite skips rather than asserts them.
+>
+> Not everything missing from a low-privilege run belongs here, though. `SCCM_HasClient`,
+> `SCCM_SameHostAs` and `HasSession` are *intended* to work without SCCM admin — if they are absent, that
+> is a collector gap rather than a privilege boundary.
 
 Credential-free example against the `mayyhem.com` lab (no `-u`/`-p` at all — just HTTP and DNS against a
 known management point):
@@ -612,12 +636,23 @@ openhound convert sccm .\out-confirmed\sccm .\graph-confirmed --lookup-file .\ou
 | Option | Description |
 |---|---|
 | `--run-integration-tests` | Implies `--run-all`; asserts the collected graph against the built-in mayyhem lab fixtures — build that lab with [Mayyhem/ludus_sccm](https://github.com/Mayyhem/ludus_sccm) (see [Validate against a real hierarchy](#validate-against-a-real-hierarchy)). Prints PASS/FAIL/SKIP + summary + coverage, writes `integration_results-<ts>.json`, exits non-zero on any failure. |
+| `--integration-lowpriv` | Pairs with `--run-integration-tests`: asserts only what a low-privilege collection can produce, skipping the 5 edge and 3 node cases marked `requires_privilege`. Those are the SCCM-admin-only RBAC families (`SCCM_FullAdministrator`, `SCCM_IsAssigned`, `SCCM_IsMappedTo`, `SCCM_AllPermissions` and the `SCCM_AdminUser` / `SCCM_SecurityRole` / `SCCM_Collection` nodes), which have no AD/LDAP representation and which RemoteRegistry does not expose — see [Collection privilege tiers](#collection-privilege-tiers). Without the flag they are asserted even on a run that could never collect them, so they fail for behaving correctly. Everything else is still asserted, so a low-privilege run stays a real gate. |
 | `--compare-to-zip <path>` | Implies `--run-all`; deep-diffs this run's graph against an arbitrary node/edge payload (a CMBP zip or another OpenHound run) down to property name/value, with a by-kind rollup. Writes `compare-<ts>.json`. Always exits 0 (informational). |
+
+> **Which mode matches your run?** `--integration-lowpriv` describes the *collection*, not the
+> fixtures. Use it whenever AdminService and WMI were unreachable — including any run authenticating
+> as a plain domain user. Omit it only when you collected with SMS Provider or SCCM RBAC read access,
+> where the SCCM-admin-only families genuinely should be present.
 
 **Examples (mayyhem.com lab):**
 ```bash
-# Assert this collection matches the known-good SCCM graph (implies --run-all):
-uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --run-integration-tests
+# Assert this collection matches the known-good SCCM graph (implies --run-all).
+# These credentials are a plain domain user, so AdminService/WMI never collect --
+# --integration-lowpriv keeps the SCCM-admin-only cases from failing for behaving correctly:
+uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --run-integration-tests --integration-lowpriv
+
+# With SMS Provider / SCCM RBAC read access, assert the full graph including Requires SCCM admin:
+uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\sccmadmin" -p "Passw0rd!" --run-integration-tests
 
 # Diff this collection against a saved CMBP or OpenHound payload (implies --run-all):
 uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --compare-to-zip ./bloodhound-sccm-baseline.zip
@@ -637,6 +672,41 @@ host-by-host for the per-host phases and resource-by-resource for discovery — 
 readable after the fact without re-running. `collect_issues_<timestamp>.log` holds only warnings and
 errors, each with a traceback, and is not created at all by a clean run. `--debug` additionally folds
 the `dlt`/`ldap3` internals into the full log.
+
+#### Capturing console output (CI, `> log.txt`, piping)
+
+Two things about the console stream will surprise you if you try to capture it, and both come from
+the OpenHound framework's logging setup rather than this collector:
+
+- **On a terminal, console logs go to stderr, not stdout.** The framework binds its Rich handler to
+  `Console(stderr=True)`, so `openhound collect sccm ... > out.txt` captures *nothing* while the
+  same run prints normally to your screen. Redirect stderr (`2>`) or both (`> out.txt 2>&1`).
+- **Redirecting stdout at all silences the console entirely.** The framework picks its logging mode
+  by asking `sys.stdout.isatty()`: a TTY gets the Rich console handler, and anything else falls
+  through to *service* mode, which installs **only** a file handler. So a redirected or piped run
+  produces zero console output no matter which stream you capture — the handler does not exist.
+
+Set **`LOG_CONTAINER=1`** to force the framework into container mode, which logs to stdout with a
+plain `StreamHandler` and is therefore capturable:
+
+```bash
+# Nothing captured -- service mode, no console handler at all:
+uv run openhound collect sccm ./out -d mayyhem.com > run.log 2>&1     # run.log is empty
+
+# Captured -- container mode logs to stdout:
+LOG_CONTAINER=1 uv run openhound collect sccm ./out -d mayyhem.com > run.log 2>&1
+```
+
+```powershell
+# PowerShell equivalent
+$env:LOG_CONTAINER = "1"
+uv run openhound collect sccm .\out -d mayyhem.com *> run.log
+```
+
+Either way the on-disk logs in the output directory are always written, so
+`collect_full_<timestamp>.log` remains the most complete record — reach for it before fighting the
+console stream. This matters most in CI, where an empty job log next to a non-zero exit code looks
+like a crash and is really just service mode.
 
 ### Proxying / pivoting
 
@@ -1264,7 +1334,7 @@ The SCCM site database on an MSSQL_Server (always named `CM_<siteCode>`). One no
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Either `["Assumed-SiteDB"]` or `["SCCM-SiteDBDefaultSchema"]` (see `assumed` below), inherited from the site-DB row this database is templated from — not a live SQL read either way. |
+| `collectionSource` | list\<string\> | Every collection phase that contributed to the site-database row this is derived from — e.g. `["AdminService-SiteDefinition", "RemoteRegistry-MultisiteComponentServers"]`. Not a live SQL read: the schema is templated from SCCM topology, and `assumed` below records whether that topology was confirmed or inferred. |
 | `isTrustworthy` | bool | Always `true` — SCCM requires the `TRUSTWORTHY` database property for CLR execution. |
 | `SCCMInfra` | bool | Always `true` for an SCCM site database. |
 | `SCCMSite` | string | Site code of the SCCM site (e.g. `PS1`). |
@@ -1286,7 +1356,7 @@ The fixed `db_owner` database role in an MSSQL_Database. One node per SCCM site 
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Either `["Assumed-SiteDB"]` or `["SCCM-SiteDBDefaultSchema"]` (see `assumed` below), inherited from the database this role is templated from. |
+| `collectionSource` | list\<string\> | Every collection phase that contributed to the database this role is templated from — e.g. `["AdminService-SiteDefinition", "RemoteRegistry-MultisiteComponentServers"]`. Not a live SQL read: the schema is templated from SCCM topology, and `assumed` below records whether that topology was confirmed or inferred. |
 | `database` | string | Database name this role belongs to (e.g. `CM_PS1`). |
 | `isFixedRole` | bool | Always `true` — `db_owner` is a SQL Server fixed database role. |
 | `members` | list\<string\> | DatabaseUser node IDs that are members of this role. |
@@ -1309,7 +1379,7 @@ A database user mapped into the SCCM site database. **Inferred from SCCM topolog
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Either `["Assumed-SiteDB"]` or `["SCCM-SiteDBDefaultSchema"]` (see `assumed` below), inherited from the login this database user is mapped from. |
+| `collectionSource` | list\<string\> | Every collection phase that contributed to the login this database user is mapped from — e.g. `["AdminService-SiteDefinition", "RemoteRegistry-MultisiteComponentServers"]`. Not a live SQL read: the schema is templated from SCCM topology, and `assumed` below records whether that topology was confirmed or inferred. |
 | `database` | string | Database name this user belongs to (e.g. `CM_PS1`). |
 | `login` | string | Login name this database user is mapped from. |
 | `memberOfRoles` | list\<string\> | DatabaseRole node IDs this user belongs to (always `["db_owner@<database_id>"]`). |
@@ -1325,7 +1395,13 @@ A database user mapped into the SCCM site database. **Inferred from SCCM topolog
 
 ![MSSQL_Login node icon — Font Awesome user-gear, #dd42f5](https://api.iconify.design/fa6-solid:user-gear.svg?color=%23dd42f5&height=24)
 
-A Windows machine-account login on the SCCM site database's SQL Server. **Inferred from SCCM topology** — not enumerated from SQL. One login is created per (SQL host, sysadmin computer) pair, where the sysadmin computer is a Primary Site Server or SMS Provider for the same site as the SQL host (excluding the SQL host itself). The login name format follows CMBP's convention using the first DNS domain label as the NETBIOS name. Model: [models/mssql_login.py](src/openhound_sccm/models/mssql_login.py).
+A Windows machine-account login on the SCCM site database's SQL Server. **Inferred from SCCM topology** — not enumerated from SQL. One login is created per (SQL host, sysadmin computer) pair, from two rules. The login name format follows CMBP's convention using the first DNS domain label as the NETBIOS name. Model: [models/mssql_login.py](src/openhound_sccm/models/mssql_login.py).
+
+**Same site** — the sysadmin computer is a Primary Site Server or SMS Provider for the same site as the SQL host, excluding the SQL host itself.
+
+**Parent primary → secondary site database** — on a site positively known to be a Secondary, the sysadmin computers are the site servers of its **parent primary**. Microsoft requires a secondary's database to run *on* the secondary site server, so the same-site rule can never produce a login there: the site's only Site Server is the SQL host, and the self-exclusion removes it. The [prerequisites page](https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prerequisites-for-installing-sites#bkmk_secondary) names who actually holds sysadmin — the parent primary's computer account, permanently. That grant holds on both install paths: directly when the SQL instance pre-existed, and transitively through `BUILTIN\Administrators` when setup installed SQL Express, so no discrimination between them is needed.
+
+Two things are deliberately **not** emitted here. The secondary site server's own machine account gets no login on its own instance: because the database is co-located, that principal authenticates locally as `NT AUTHORITY\SYSTEM` rather than over the network, and NTLM cannot be reflected back to the same host — it would be a node with no traversable edge. And the broader Express-only fact that *every* member of the secondary's local Administrators group holds sysadmin is not emitted either; that needs a signal distinguishing the two install paths, tracked separately.
 
 - **Node id:** `<NETBIOS>\<samAccountName>@<UPPER_HOST_SID>:<port>` (e.g. `MAYYHEM\PS1-SMS$@S-1-5-21-11-22-33-1104:1433`), where `NETBIOS` = the first domain label of the sysadmin computer's FQDN (`split_part(dnshostname, '.', 2)`, e.g. `PS1SRV.mayyhem.com` → `MAYYHEM`).
 - **`environmentid`:** the AD domain SID of the SQL host.
@@ -1335,7 +1411,7 @@ A Windows machine-account login on the SCCM site database's SQL Server. **Inferr
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Either `["Assumed-SiteDB"]` or `["SCCM-SiteDBDefaultSchema"]` (see `assumed` below), inherited from the site database this login maps into. |
+| `collectionSource` | list\<string\> | Every collection phase that contributed to the site database this login maps into — e.g. `["AdminService-SiteDefinition", "RemoteRegistry-MultisiteComponentServers"]`. Not a live SQL read: the schema is templated from SCCM topology, and `assumed` below records whether that topology was confirmed or inferred. |
 | `loginType` | string | Always `"Windows"` — all inferred logins are Windows machine-account logins. |
 | `memberOfRoles` | list\<string\> | Server role node IDs this login belongs to (always `["sysadmin@<server_id>"]`). |
 | `SCCMInfra` | bool | Always `true`. |
@@ -1360,7 +1436,7 @@ A SQL Server instance discovered by the MSSQL EPA scan, RemoteRegistry, or SCCM 
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Every source that contributed to this node, unioned across its (up to three) discovery arms: `MSSQL-ScanForEPA` (the EPA scan actually reached the port) or `MSSQL-SPN` (an `MSSQLSvc` SPN exists but the port was filtered — decision **D2a** of the low-privilege assumed-edges plan, [`docs/superpowers/plans/2026-07-23-low-priv-assumed-edges.md`](docs/superpowers/plans/2026-07-23-low-priv-assumed-edges.md), which resolves the SPN holder when the port itself can't be reached), `RemoteRegistry-MSSQL`, and — only when this server is also characterized as an SCCM site database — either `Assumed-SiteDB` or `SCCM-SiteDBDefaultSchema` (see `assumed` below). |
+| `collectionSource` | list\<string\> | Every source that contributed to this node, unioned across its (up to three) discovery arms: `MSSQL-ScanForEPA` (the EPA scan actually reached the port) or `MSSQL-SPN` (an `MSSQLSvc` SPN exists but the port was filtered — decision **D2a** of the low-privilege assumed-edges plan, [`docs/superpowers/plans/2026-07-23-low-priv-assumed-edges.md`](docs/superpowers/plans/2026-07-23-low-priv-assumed-edges.md), which resolves the SPN holder when the port itself can't be reached), `RemoteRegistry-MSSQL`, and — only when this server is also characterized as an SCCM site database — every collection phase that established that (e.g. `AdminService-SiteDefinition`, `RemoteRegistry-MultisiteComponentServers`; see `assumed` below). |
 | `dnsHostName` | string | DNS hostname of the SQL Server host. |
 | `SQLServicePort` | string | TCP port the SQL Server listens on. |
 | `SCCMInfra` | bool | `true` if this SQL Server hosts an SCCM site database. |
@@ -1389,7 +1465,7 @@ The fixed `sysadmin` server role on an SCCM-linked SQL Server. One node per SCCM
 
 | Property | Type | Description |
 |---|---|---|
-| `collectionSource` | list\<string\> | Either `["Assumed-SiteDB"]` or `["SCCM-SiteDBDefaultSchema"]` (see `assumed` below), inherited from the server this role is templated from. |
+| `collectionSource` | list\<string\> | Every collection phase that contributed to the server this role is templated from — e.g. `["AdminService-SiteDefinition", "RemoteRegistry-MultisiteComponentServers"]`. Not a live SQL read: the schema is templated from SCCM topology, and `assumed` below records whether that topology was confirmed or inferred. |
 | `isFixedRole` | bool | Always `true` — `sysadmin` is a SQL Server fixed server role. |
 | `members` | list\<string\> | Login node IDs that are members of this role (e.g. `MAYYHEM\PS1-SMS$@S-1-5-21-…:1433`). |
 | `SCCMSite` | string | Site code of the SCCM site. |
@@ -1663,13 +1739,19 @@ Links an AD user or group to its corresponding `SCCM_AdminUser` object — the S
 
 ## SCCM_LocalAdminRequired
 
-Links each site server (`Computer` hosting `SMS Site Server@<site>`) to every other site system in the same non-secondary site. A site server requires local-administrator rights on its peer site systems (CMBP `ps1:1882-1909`). Self-edges and secondary-site computers are excluded.
+Built from two independent rules.
+
+**Within a site** — links each site server (`Computer` hosting `SMS Site Server@<site>`) to every other site system in the same non-secondary site. A site server requires local-administrator rights on its peer site systems (CMBP `ps1:1882-1909`). Self-edges and secondary-site computers are excluded.
+
+**Parent primary → child secondary** — links the site servers of a parent primary to the site server of its child secondary, across sites. Microsoft states this as a setup prerequisite: *"Add the computer account of the parent primary site to the Administrators group on the secondary site server"* ([prerequisites for installing sites](https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prerequisites-for-installing-sites#bkmk_secondary)). It matters beyond local admin — on a secondary whose SQL Express instance SCCM installed, `BUILTIN\Administrators` holds sysadmin, so this membership is also the parent's route to the secondary's database.
+
+The parent is matched **by role**, so a site server running in passive mode is included: both the active and passive nodes carry `SMS Site Server@<parent>`, and both genuinely appear in the secondary's local Administrators group. The rule fires only where the child's `siteType` is **positively known** to be Secondary — an unknown type is excluded rather than assumed, so a low-privilege run (which cannot establish that a site is a secondary; see [Limitations](#limitations)) produces no cross-site edges.
 
 - **Start:** `Computer` (site server)
-- **End:** `Computer` (peer site system in the same non-secondary site)
+- **End:** `Computer` (peer site system in the same non-secondary site, **or** the site server of a child secondary)
 - **Traversable:** yes
 - **`collectionSource`:** `["SCCM_Invoke-PostProcessing", "Assumed-LocalAdminRequired"]`
-- **`assumed`:** always `true` — co-location as site systems of the same site is templated as mutual local-admin rights, not read from an actual local-group membership list. **Not** gated by `--disable-possible-edges`.
+- **`assumed`:** always `true` for both rules, and **not** gated by `--disable-possible-edges`. The `assumptionBasis` differs so the entity panel shows which rule fired: the within-a-site rule templates co-location as mutual local-admin rights, while the parent→secondary rule cites the documented setup prerequisite. Neither reads an actual local-group membership list.
 
 ## SCCM_OperationsAdministrator
 
@@ -2029,8 +2111,10 @@ outside a project context.
 
 Every command below is `uv run …`, which uses this environment.
 
-> **Why `git config merge.ours.driver true`?** `.gitattributes` marks the generated
-> `TICKETS-BY-STATUS.md` as `merge=ours` so git never tries to merge its ~3,500-character lines.
+> **Why `git config merge.ours.driver true`?** `.gitattributes` marks the generated ticket index
+> `.tickets/_TICKETS-BY-STATUS.md` as `merge=ours` so git never tries to merge it — two branches
+> that each closed a different ticket both rewrite it, and the resolution is always "regenerate",
+> never "merge".
 > `ours` is **not** one of git's built-in merge drivers (those are `text`, `binary` and `union`), so
 > it must be defined per clone — and `.git/config` cannot be committed, which is why this is a manual
 > step rather than something the repository can do for you.
@@ -2097,6 +2181,12 @@ uv run pytest tests\extension_metadata_test.py tests\integration_wiring_test.py 
 The pytest list is deliberately a named subset — those are the files that pass with no lab, no live
 AdminService and no cached DuckDB. The full suite is `uv run pytest tests`; most of it is offline, and
 the remainder skips itself without a hierarchy to talk to.
+
+**Name a new test file `<subject>_test.py`.** [pyproject.toml](pyproject.toml) pins
+`python_files = "*_test.py"`, so pytest collects the suffix form only. A file named
+`test_something.py` is **not collected** when you run `pytest tests` — it does not run, it does not
+fail, and nothing warns you. (Naming it explicitly on the command line *does* collect it, which is a
+good way to be misled into thinking it is wired up.)
 
 For a change to **preprocess or convert**, the cheapest strong check is to re-run both stages over a
 cached collection bucket and diff the emitted graph. That holds collection constant, so the only thing

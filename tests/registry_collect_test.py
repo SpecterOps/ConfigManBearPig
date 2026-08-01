@@ -34,9 +34,16 @@ class FakeProbe:
     return (``None`` = key absent). ``read_values_result`` backs CurrentUser.
     """
 
-    def __init__(self, enum_results=None, read_values_result=None):
+    def __init__(self, enum_results=None, read_values_result=None,
+                 values_by_key=None, dword_results=None, value_results=None):
         self._enum_results = enum_results or {}
         self._read_values_result = read_values_result
+        # Per-key overrides for the MSSQL paths, which need more than one key to
+        # answer differently: {key_path: [(name, data), ...]} for read_values, and
+        # {(key_path, value_name): data} for read_dword / read_value.
+        self._values_by_key = values_by_key or {}
+        self._dword_results = dword_results or {}
+        self._value_results = value_results or {}
         self.hostname = TARGET
         # The real _RegistryProbe holds an SMB connection; get_ntlm_settings reads
         # the negotiated signing flag off it when the registry DWORD is absent.
@@ -53,15 +60,17 @@ class FakeProbe:
         return self._enum_results.get(key_path)
 
     def read_values(self, key_path):
+        if key_path in self._values_by_key:
+            return self._values_by_key[key_path]
         return self._read_values_result
 
     def read_dword(self, key_path, value_name):
-        # NTLM/MSSQL settings are not under test here; return None so
-        # get_ntlm_settings / get_mssql_settings run without error.
-        return None
+        # Defaults to None so get_ntlm_settings / get_mssql_settings run without
+        # error in the tests that do not care about them.
+        return self._dword_results.get((key_path, value_name))
 
     def read_value(self, key_path, value_name):
-        return None
+        return self._value_results.get((key_path, value_name))
 
 
 class FakeCtx:
@@ -216,3 +225,117 @@ def test_multisite_absent_key_emits_no_database_row(monkeypatch):
         if table == "remoteregistry_computers" and row["source"] == "RemoteRegistry-MultisiteComponentServers"
     ]
     assert db_rows == []
+
+
+# --- con-be15: the empty-key SQL role is an inference, not a confirmation ---
+#
+# "Multisite Component Servers present but empty" means the site database is
+# local *for a standalone primary site server*. A PASSIVE site server has the
+# same empty key while the site database lives elsewhere, so asserting
+# "SMS SQL Server" from the key alone invents a SQL server. Against the mayyhem
+# lab this produced a spurious MSSQL_Server for ps1-psv, which runs no SQL, and
+# inflated every dependent MSSQL count. The role is still emitted -- preprocess
+# decides -- but it must be marked so preprocess can tell it apart from the
+# populated-key branch, where the named servers really are site databases.
+
+def test_multisite_empty_key_marks_the_sql_role_as_assumed(monkeypatch):
+    """The local-site-database inference flags itself as unverified."""
+    ctx = FakeCtx()
+    ctx.target_hosts_by_hostname[TARGET] = _Entry(ad_object={"name": "PS1-PSS"})
+    _, rows = _run(
+        monkeypatch, enum_results=_site_server(**{MULTISITE: []}),
+        read_values_result=[], ctx=ctx,
+    )
+    row = next(r for t, r in rows
+               if t == "remoteregistry_computers"
+               and r["source"] == "RemoteRegistry-MultisiteComponentServers")
+    assert row["sql_role_assumed"] is True
+
+
+def test_multisite_remote_server_sql_role_is_not_assumed(monkeypatch):
+    """A named remote database server is confirmed, so it carries no flag."""
+    _, rows = _run(
+        monkeypatch, enum_results=_site_server(**{MULTISITE: ["PS1-DB.MAYYHEM.COM"]}),
+        read_values_result=[], ctx=FakeCtx(),
+    )
+    row = next(r for t, r in rows
+               if t == "remoteregistry_computers"
+               and r["source"] == "RemoteRegistry-MultisiteComponentServers")
+    assert not row.get("sql_role_assumed")
+
+
+# --- con-be15: SQL Server service state + account from the registry ---------
+#
+# We reach these hosts over RemoteRegistry anyway, so read the service control
+# entry directly rather than inferring "is there really SQL here" from a port
+# probe -- a firewall can hide a running instance, and a stopped instance can
+# still hold a listening-looking config. The service key also carries ObjectName,
+# which is the account the engine runs as.
+#
+# Note Start is the STARTUP TYPE, not live running state (only the SCM knows
+# that): 2=Automatic, 3=Manual, 4=Disabled. Disabled is conclusive proof the
+# engine is not running; Automatic only says it should be.
+
+SUPERSOCKET = (r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.MSSQLSERVER"
+               r"\MSSQLServer\SuperSocketNetLib")
+INSTANCE_NAMES = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
+
+
+def _mssql_probe(instance="MSSQLSERVER", start=None, object_name=None):
+    """A probe that finds SQL Server and answers for one instance's service key."""
+    service = "MSSQLSERVER" if instance.upper() == "MSSQLSERVER" else f"MSSQL${instance}"
+    svc_key = rf"SYSTEM\CurrentControlSet\Services\{service}"
+    dwords, values = {}, {}
+    if start is not None:
+        dwords[(svc_key, "Start")] = start
+    if object_name is not None:
+        values[(svc_key, "ObjectName")] = object_name
+    return FakeProbe(
+        values_by_key={SUPERSOCKET: [], INSTANCE_NAMES: [(instance, instance)]},
+        dword_results=dwords, value_results=values,
+    )
+
+
+def _mssql_row(probe):
+    ctx = FakeCtx()
+    ctx.target_hosts_by_hostname[TARGET] = _Entry(ad_object={"name": "PS1-PSV"})
+    probe.hostname = TARGET
+    rows = list(registry.get_mssql_settings(probe, ctx))
+    return next(r for t, r in rows if t == "remoteregistry_mssql_servers")
+
+
+def test_mssql_default_instance_reports_startup_type_and_account():
+    """Default instance -> service MSSQLSERVER; Start and ObjectName are surfaced."""
+    row = _mssql_row(_mssql_probe(start=2, object_name="MAYYHEM\sqlsccmsvc"))
+    assert row["service_start_type"] == "Automatic"
+    assert row["service_account_name"] == "MAYYHEM\sqlsccmsvc"
+
+
+def test_mssql_named_instance_uses_the_dollar_service_name():
+    """A named instance's service is MSSQL$<name>, not MSSQLSERVER."""
+    row = _mssql_row(_mssql_probe(instance="CONFIGMGRSEC", start=4,
+                                  object_name="LocalSystem"))
+    assert row["service_start_type"] == "Disabled"
+    assert row["service_account_name"] == "LocalSystem"
+
+
+def test_mssql_disabled_service_is_reported():
+    """Start=4 is the one value that proves the engine is not running."""
+    row = _mssql_row(_mssql_probe(start=4))
+    assert row["service_start_type"] == "Disabled"
+
+
+def test_mssql_manual_service_is_reported():
+    """Start=3 is Manual -- it may or may not be up; we report only what we read."""
+    row = _mssql_row(_mssql_probe(start=3))
+    assert row["service_start_type"] == "Manual"
+
+
+def test_mssql_unreadable_service_key_leaves_fields_unset():
+    """Access-denied or absent service key must not break collection.
+
+    This is the normal low-privilege case: the Services hive is admin-gated.
+    """
+    row = _mssql_row(_mssql_probe())
+    assert row["service_start_type"] is None
+    assert row["service_account_name"] is None

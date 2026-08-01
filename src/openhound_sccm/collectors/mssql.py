@@ -60,6 +60,7 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
     # actually runs as.
     service_account_sid = None
     service_account_is_computer = None
+    service_account_name = None
     if not any(s.upper().startswith("MSSQLSVC/") for s in spns):
         holder = ctx.ad.find_mssql_spn_holder(target)
         if holder:
@@ -67,6 +68,14 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
             # services test_epa can bind against.
             spns = list(spns) + holder["spns"]
             service_account_sid = holder.get("object_sid")
+            # con-c509/con-2249: keep the NAME, not just the SID. The LDAP lookup
+            # already resolved it (and logs it), but dropping it here left the account
+            # with no node_user row at low privilege -- every arm of _node_user reads an
+            # SCCM-privileged source -- so it degraded to a bare node_backfill stub whose
+            # only property is its own SID. The MSSQL_GetTGS / MSSQL_GetAdminTGS /
+            # MSSQL_ServiceAccountFor / HasSession edges pointing at it were emitted
+            # correctly all along; they just pointed at an anonymous node.
+            service_account_name = holder.get("sam_account_name")
             service_account_is_computer = "computer" in [
                 c.lower() for c in (holder.get("object_class") or [])
             ]
@@ -162,6 +171,9 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
         # separate service account to report in that case.
         "service_account_sid": service_account_sid,
         "service_account_is_computer": service_account_is_computer,
+        # The holder's sAMAccountName, so preproc can build a real User node for it
+        # rather than a SID-only stub (con-c509 / con-2249).
+        "service_account_name": service_account_name,
     }
 
     logger.info("MSSQL collection completed for %s:%d", target, port)

@@ -206,7 +206,7 @@ def test_raw_table_is_populated_after_a_full_collect_shaped_run(tmp_path):
 
     from openhound_sccm import main as main_mod
     from openhound_sccm.phased_pipeline import WorkQueue
-    from tests.per_host_phases_test import PER_HOST_PHASES
+    from tests.stub_per_host_phases import PER_HOST_PHASES
 
     wq = WorkQueue()
     wq.submit("hostA")

@@ -155,3 +155,58 @@ def test_mssql_relay_assumed_stamp_is_per_row_not_per_family():
     inferred = _run(None)
     assert inferred and inferred[0][0] is True, inferred
     assert inferred[0][1] and "never measured" in inferred[0][1]
+
+
+# --- reflective self-relay must never be emitted -----------------------------
+#
+# This builder used to have NO self-check of its own -- its docstring delegated
+# "can't relay to self" to _node_mssql_login's exclusion of the SQL host from being
+# its own sysadmin. That is a correctness guarantee borrowed from another function:
+# nothing here fails if that exclusion is ever loosened, and the SCCM secondary-site
+# work is exactly such a case (Microsoft co-locates a secondary's database ON the
+# secondary site server, so its Local System IS a sysadmin on its own instance).
+# Relaying NTLM from a host back to that same host is blocked by Windows' reflection
+# defences, so such an edge is a pure false positive. The guard now lives here too.
+
+def _seed_self_sysadmin(con, epa=None):
+    """A login whose sysadmin computer IS the SQL host -- the co-located case."""
+    con.execute("CREATE SCHEMA IF NOT EXISTS sccm")
+    con.execute(
+        "CREATE TABLE sccm.node_computer AS SELECT * FROM (VALUES "
+        "('S-1-5-21-1-2-3-5001','SEC01.mayyhem.com', NULL)"
+        ") AS t(sid, dnshostname, restrict_receiving_ntlm_traffic)"
+    )
+    con.execute(
+        "CREATE TABLE sccm.node_mssql_server AS SELECT "
+        "'S-1-5-21-1-2-3-5001:1433' AS server_id, 'SEC01.mayyhem.com' AS dns_host_name, "
+        "'SEC01.mayyhem.com' AS name, '1433' AS port, ? AS extended_protection, "
+        "NULL AS port_open, "
+        "['MSSQL-ScanForEPA'] AS collection_source",
+        [epa],
+    )
+    con.execute(
+        "CREATE TABLE sccm.node_mssql_login AS SELECT "
+        "'MAYYHEM\\SEC01$@S-1-5-21-1-2-3-5001:1433' AS login_id, "
+        "'S-1-5-21-1-2-3-5001:1433' AS server_id, 'S-1-5-21-1-2-3-5001' AS host_sid, "
+        # the SAME sid as host_sid -- a host that is a sysadmin on its own instance
+        "'S-1-5-21-1-2-3-5001' AS sysadmin_computer_sid"
+    )
+    _graph_edges_init(con, "sccm")
+
+
+def test_mssql_relay_never_targets_the_coercion_victim_itself():
+    """Coerce X, relay to X is reflection -- blocked by Windows, so never an edge."""
+    con = duckdb.connect()
+    _seed_self_sysadmin(con, epa="Off")   # every other gate wide open
+    _edge_coerce_relay_mssql(con, "sccm", disable_possible=False)
+    rows = con.execute(
+        "SELECT coercion_victim_and_relay_target_pairs FROM sccm.graph_edges"
+    ).fetchall()
+    assert rows == [], f"emitted a reflective self-relay: {rows}"
+
+
+def test_mssql_relay_self_guard_holds_under_the_flag_too():
+    con = duckdb.connect()
+    _seed_self_sysadmin(con, epa="Off")
+    _edge_coerce_relay_mssql(con, "sccm", disable_possible=True)
+    assert con.execute("SELECT count(*) FROM sccm.graph_edges").fetchone()[0] == 0

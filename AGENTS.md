@@ -132,8 +132,14 @@ Carried over from the development fork when this repository became the collector
 ## Tickets
 
 Work is tracked with a CLI ticket system whose files live in `.tickets/`. Run `gtk help` for the
-commands. Update `TICKETS-BY-STATUS.md` after changing any ticket's status — that file is generated
-from `gtk list`, so never hand-edit it as a source of truth.
+commands. Update [`.tickets/_TICKETS-BY-STATUS.md`](.tickets/_TICKETS-BY-STATUS.md) after changing
+any ticket's status — that file is generated from the ticket files, so never hand-edit it as a
+source of truth. It sits beside the tickets rather than at the repo root so its links are plain
+sibling filenames, and the leading underscore sorts it above them.
+
+`gtk` does **not** recurse into subdirectories of `.tickets/`. A ticket moved into a nested folder
+becomes invisible to `list`, `show`, `close`, `reopen`, `dep` and `link` — they all report
+`ticket not found` — so keep every ticket flat in `.tickets/`.
 
 `.gitattributes` marks it `merge=ours`. That attribute needs a one-time
 `git config merge.ours.driver true` in each clone, because `ours` is not one of git's built-in merge

@@ -245,3 +245,76 @@ def test_non_privileged_pair_reaches_mssql_sql_servers():
         f"FROM {SCHEMA}._mssql_sql_servers WHERE host_sid = 'S-1-DB'"
     ).fetchone()
     assert row == ("PS1", "PS1", "S-1-DB", "SQL01.mayyhem.com", "1433", "CM_PS1")
+
+
+# --- con-be15: an assumed SQL role needs a live-SQL signal to survive -------
+#
+# The RemoteRegistry arm treats the mere presence of an 'SMS SQL Server@<site>'
+# tag as confirmed. That tag can come from the registry collector's empty-key
+# inference ("Multisite Component Servers present but empty" -> the site database
+# is local), which is wrong for a PASSIVE site server whose database lives
+# elsewhere. The collector now flags those rows sql_role_assumed=True; here we
+# require corroboration before believing them. Corroboration is a live answer on
+# 1433 (mssql_server_instances.port_open), because the other candidate signals do
+# not work: the SQL registry keys are admin-gated, and the MSSQLSvc SPN sits on
+# the service account, so a real site database running as LocalSystem has none.
+
+def _add_assumed_sql_role(con, host_sid, assumed=True):
+    """Fixture remoteregistry_computers as the collector emits it.
+
+    sccm_site_system_roles is typed JSON here, not VARCHAR[], because that is what
+    dlt actually lands for this table -- confirmed against a real collection. An
+    earlier version of this fixture used VARCHAR[]; the tests passed while the gate
+    silently no-opped in production, because list_filter() cannot bind on a JSON
+    column and _safe swallowed the BinderException. Keep this matching reality.
+    """
+    con.execute(
+        f"CREATE TABLE IF NOT EXISTS {SCHEMA}.remoteregistry_computers "
+        "(object_sid VARCHAR, sccm_site_system_roles JSON, sql_role_assumed BOOLEAN)"
+    )
+    con.execute(
+        f"INSERT INTO {SCHEMA}.remoteregistry_computers VALUES (?, ?, ?)",
+        [host_sid, '["SMS SQL Server@PS1", "SMS Site Server@PS1"]', assumed],
+    )
+
+
+def _add_live_sql(con, host_sid, port_open=True):
+    con.execute(
+        f"CREATE TABLE IF NOT EXISTS {SCHEMA}.mssql_server_instances "
+        "(domain_computer_sid VARCHAR, has_mssql_spn BOOLEAN, port_open BOOLEAN)"
+    )
+    con.execute(
+        f"INSERT INTO {SCHEMA}.mssql_server_instances VALUES (?, ?, ?)",
+        [host_sid, False, port_open],
+    )
+
+
+def test_assumed_sql_role_without_live_sql_is_dropped():
+    """A passive site server: empty key, nothing listening on 1433 -> not a site DB."""
+    con = _con_with_computers([("S-1-PSV", ["SMS SQL Server@PS1"], True)])
+    _add_assumed_sql_role(con, "S-1-PSV")
+    _assumed_site_dbs(con, SCHEMA, disable_possible_edges=False)
+    assert con.execute(
+        f"SELECT count(*) FROM {SCHEMA}.assumed_site_dbs WHERE host_sid='S-1-PSV'"
+    ).fetchone()[0] == 0
+
+
+def test_assumed_sql_role_with_live_sql_is_kept():
+    """A real local site database (mayyhem's SEC secondary) still classifies."""
+    con = _con_with_computers([("S-1-SEC", ["SMS SQL Server@PS1"], True)])
+    _add_assumed_sql_role(con, "S-1-SEC")
+    _add_live_sql(con, "S-1-SEC", port_open=True)
+    _assumed_site_dbs(con, SCHEMA, disable_possible_edges=False)
+    assert con.execute(
+        f"SELECT basis FROM {SCHEMA}.assumed_site_dbs WHERE host_sid='S-1-SEC'"
+    ).fetchone()[0] == "RemoteRegistry"
+
+
+def test_unflagged_sql_role_is_kept_without_corroboration():
+    """The populated-key branch names real database servers -- no gate applies."""
+    con = _con_with_computers([("S-1-DB", ["SMS SQL Server@PS1"], True)])
+    _add_assumed_sql_role(con, "S-1-DB", assumed=False)
+    _assumed_site_dbs(con, SCHEMA, disable_possible_edges=False)
+    assert con.execute(
+        f"SELECT basis FROM {SCHEMA}.assumed_site_dbs WHERE host_sid='S-1-DB'"
+    ).fetchone()[0] == "RemoteRegistry"
