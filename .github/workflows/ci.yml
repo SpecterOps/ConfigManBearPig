@@ -37,4 +37,6 @@ jobs:
       - run: >
           uv run pytest tests/extension_metadata_test.py
           tests/integration_wiring_test.py tests/convert_pipeline_test.py
-          tests/integration_fixtures_test.py -q
+          tests/integration_fixtures_test.py tests/integration_privilege_test.py
+          tests/integration_cli_flags_test.py tests/collect_exit_code_test.py
+          tests/ab_matrix_test.py tests/regen_ticket_index_test.py -q

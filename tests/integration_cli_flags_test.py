@@ -37,36 +37,30 @@ def test_compare_to_zip_takes_a_path():
     assert "--compare-to-zip" in out
 
 
-# --- low-privilege fixture mode (con-6677) ---------------------------------
+# --- privilege selection (con-6677, superseded by --integration-privilege) ----
 #
-# integration.run_integration_tests has always accepted privileged=False for a
-# graph collected without AdminService/WMI, but nothing outside the unit tests
-# could reach it: main.py called the harness without the argument, so SCCM-admin-only RBAC
-# cases were asserted even on a low-privilege run and failed for behaving
-# correctly. These cover the flag and the negation that translates it.
+# --integration-lowpriv was a boolean the operator had to remember, and forgetting
+# it on a low-privilege run asserted SCCM-admin-only cases that could never have
+# been collected. The three-way flag replaces it: `low` is that boolean, `high`
+# forces the full set for a partially-privileged collection, and `auto` -- the
+# default -- reads the run's own AdminService/WMI row counts.
 
-def test_integration_lowpriv_registered_in_help():
+def test_integration_privilege_registered_in_help():
     out = _help_output()
-    assert "--integration-lowpriv" in out
+    assert "--integration-privilege" in out
     assert "Testing" in out  # same rich_help_panel as the other testing flags
 
 
-def test_lowpriv_flag_selects_unprivileged_assertions(monkeypatch):
-    """``lowpriv=True`` must reach the harness as ``privileged=False``."""
+def test_superseded_boolean_flag_is_gone():
+    assert "--integration-lowpriv" not in _help_output()
+
+
+def test_suite_translates_privileged_to_the_harness(monkeypatch):
+    """``privileged`` reaches the harness verbatim -- no double negative in between."""
     import openhound_sccm.integration as integ
     seen = {}
     monkeypatch.setattr(integ, "run_integration_tests",
                         lambda graph_dir, **kw: seen.update(kw) or 0)
-    rc = main._run_integration_suite(Path("graph"), Path("results.json"), lowpriv=True)
+    rc = main._run_integration_suite(Path("graph"), Path("results.json"), privileged=False)
     assert rc == 0
     assert seen["privileged"] is False
-
-
-def test_default_keeps_privileged_assertions(monkeypatch):
-    """Absent the flag, behaviour is unchanged: every case is still asserted."""
-    import openhound_sccm.integration as integ
-    seen = {}
-    monkeypatch.setattr(integ, "run_integration_tests",
-                        lambda graph_dir, **kw: seen.update(kw) or 0)
-    main._run_integration_suite(Path("graph"), Path("results.json"), lowpriv=False)
-    assert seen["privileged"] is True

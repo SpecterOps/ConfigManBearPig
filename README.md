@@ -402,8 +402,9 @@ jumping from "almost nothing" to "everything" the moment AdminService is reachab
 > who uses it.
 >
 > Their absence from a low-privilege run is **correct behavior, not a bug**: do not expect them until you
-> collect with AdminService/WMI reachable, and pass
-> [`--integration-lowpriv`](#testing) so the fixture suite skips rather than asserts them.
+> collect with AdminService/WMI reachable. The fixture suite skips rather than asserts them on such a run
+> without you having to say so — [`--integration-privilege`](#testing) defaults to `auto`, which reads
+> whether AdminService/WMI actually returned any rows.
 >
 > Not everything missing from a low-privilege run belongs here, though. `SCCM_HasClient`,
 > `SCCM_SameHostAs` and `HasSession` are *intended* to work without SCCM admin — if they are absent, that
@@ -636,25 +637,28 @@ openhound convert sccm .\out-confirmed\sccm .\graph-confirmed --lookup-file .\ou
 | Option | Description |
 |---|---|
 | `--run-integration-tests` | Implies `--run-all`; asserts the collected graph against the built-in mayyhem lab fixtures — build that lab with [Mayyhem/ludus_sccm](https://github.com/Mayyhem/ludus_sccm) (see [Validate against a real hierarchy](#validate-against-a-real-hierarchy)). Prints PASS/FAIL/SKIP + summary + coverage, writes `integration_results-<ts>.json`, exits non-zero on any failure. |
-| `--integration-lowpriv` | Pairs with `--run-integration-tests`: asserts only what a low-privilege collection can produce, skipping the 5 edge and 3 node cases marked `requires_privilege`. Those are the SCCM-admin-only RBAC families (`SCCM_FullAdministrator`, `SCCM_IsAssigned`, `SCCM_IsMappedTo`, `SCCM_AllPermissions` and the `SCCM_AdminUser` / `SCCM_SecurityRole` / `SCCM_Collection` nodes), which have no AD/LDAP representation and which RemoteRegistry does not expose — see [Collection privilege tiers](#collection-privilege-tiers). Without the flag they are asserted even on a run that could never collect them, so they fail for behaving correctly. Everything else is still asserted, so a low-privilege run stays a real gate. |
-| `--compare-to-zip <path>` | Implies `--run-all`; deep-diffs this run's graph against an arbitrary node/edge payload (a CMBP zip or another OpenHound run) down to property name/value, with a by-kind rollup. Writes `compare-<ts>.json`. Always exits 0 (informational). |
+| `--integration-privilege <auto\|high\|low>` | Which fixture set `--run-integration-tests` asserts. Describes the **collection**, not the fixtures. `auto` (the default) decides from whether any `adminservice_*` / `wmi_*` table actually returned rows this run. `low` skips the cases marked `requires_privilege` — the SCCM-admin-only RBAC families (`SCCM_FullAdministrator`, `SCCM_IsAssigned`, `SCCM_IsMappedTo`, `SCCM_AllPermissions` and the `SCCM_AdminUser` / `SCCM_SecurityRole` / `SCCM_Collection` nodes), which have no AD/LDAP representation and which RemoteRegistry does not expose — see [Collection privilege tiers](#collection-privilege-tiers). `high` asserts every case. Everything outside that set is asserted in all modes, so a low-privilege run stays a real gate. |
+| `--compare-to-zip <path>` | Implies `--run-all`; deep-diffs this run's graph against an arbitrary node/edge payload (a CMBP zip or another OpenHound run) down to property name/value, with a by-kind rollup. The saved payload is the **baseline**; this run is the candidate. Writes `compare-<ts>.json` and **exits non-zero if this run lost anything the baseline had**. |
 
-> **Which mode matches your run?** `--integration-lowpriv` describes the *collection*, not the
-> fixtures. Use it whenever AdminService and WMI were unreachable — including any run authenticating
-> as a plain domain user. Omit it only when you collected with SMS Provider or SCCM RBAC read access,
-> where the SCCM-admin-only families genuinely should be present.
+> **Which privilege mode?** Normally none — `auto` reads this run's own AdminService/WMI row counts
+> and picks. Reach for `--integration-privilege low` when a run did reach those services but you know
+> the data is unrepresentative, and `high` when a partially privileged run should still be held to the
+> full fixture set. The verdict and the evidence behind it are logged either way.
 
 **Examples (mayyhem.com lab):**
 ```bash
 # Assert this collection matches the known-good SCCM graph (implies --run-all).
 # These credentials are a plain domain user, so AdminService/WMI never collect --
-# --integration-lowpriv keeps the SCCM-admin-only cases from failing for behaving correctly:
-uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --run-integration-tests --integration-lowpriv
+# auto detects that and skips the SCCM-admin-only cases instead of failing them:
+uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --run-integration-tests
 
-# With SMS Provider / SCCM RBAC read access, assert the full graph including Requires SCCM admin:
-uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\sccmadmin" -p "Passw0rd!" --run-integration-tests
+# Hold a partially privileged run to the full fixture set, SCCM-admin-only cases included:
+uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\sccmadmin" -p "Passw0rd!" --run-integration-tests --integration-privilege high
 
-# Diff this collection against a saved CMBP or OpenHound payload (implies --run-all):
+# Diff this collection against a saved payload. The zip is the BASELINE; this run is the
+# candidate. Exits non-zero if this run lost anything the zip had -- which a CMBP zip always
+# will, since the two tools emit different sets. That is a true statement about the two
+# payloads, not a defect in the run:
 uv run openhound collect sccm ./out -d mayyhem.com --dc dc01.mayyhem.com -u "MAYYHEM\lowpriv" -p "Passw0rd!" --compare-to-zip ./bloodhound-sccm-baseline.zip
 ```
 
@@ -2168,14 +2172,17 @@ Two alternatives that look right and are not — both tested:
 
 ## Run the checks
 
-These four are exactly what [`ci.yml`](.github/workflows/ci.yml) runs, so a green local run means a
+These three are exactly what [`ci.yml`](.github/workflows/ci.yml) runs, so a green local run means a
 green pull request:
 
 ```powershell
 uv run ruff check src tests
 uv run mypy src\openhound_sccm
 uv run pytest tests\extension_metadata_test.py tests\integration_wiring_test.py `
-    tests\convert_pipeline_test.py tests\integration_fixtures_test.py -q
+    tests\convert_pipeline_test.py tests\integration_fixtures_test.py `
+    tests\integration_privilege_test.py tests\integration_cli_flags_test.py `
+    tests\collect_exit_code_test.py tests\ab_matrix_test.py `
+    tests\regen_ticket_index_test.py -q
 ```
 
 The pytest list is deliberately a named subset — those are the files that pass with no lab, no live
@@ -2203,6 +2210,54 @@ uv run openhound convert sccm C:\ohcheck C:\ohcheck\graph --lookup-file C:\ohche
 
 Expect a handful of list-valued properties to be *identical*, not merely equivalent: array properties
 are sorted at the emit boundary precisely so this diff is meaningful.
+
+## Before and after a change
+
+`openhound-compare` ships with the shared library and diffs any two payloads — a `.zip` or a `convert`
+output directory on either side — with no collection involved:
+
+```powershell
+openhound-compare .\baselines\lowpriv-pe-on.zip .\out\graph
+```
+
+The **baseline is what came first**. The command exits non-zero if the candidate lost anything the
+baseline had: a dropped node or edge, a lost property, a property emptied to null, a list-valued
+property that lost items, or a property name that no longer appears on a kind at all. Additions and
+ordinary value changes are listed under `ADDED` and exit 0. There is no flag to disable the exit code.
+
+The strongest form of this check holds collection constant and varies only your code — reprocess one
+frozen raw bucket with both versions, so the only thing that can move is your change:
+
+```powershell
+Copy-Item -Recurse .\out\sccm C:\ohcheck\sccm
+uv run openhound preprocess sccm C:\ohcheck C:\ohcheck\lookup.duckdb
+# ...on the baseline code:
+uv run openhound convert sccm C:\ohcheck C:\ohcheck\graph-before --lookup-file C:\ohcheck\lookup.duckdb
+# ...make your change, then:
+uv run openhound convert sccm C:\ohcheck C:\ohcheck\graph-after  --lookup-file C:\ohcheck\lookup.duckdb
+openhound-compare C:\ohcheck\graph-before C:\ohcheck\graph-after
+```
+
+Two *live* collections will also differ from ordinary lab churn — a decommissioned host, an ended
+session — so per-instance differences there are not all regressions. Prefer the frozen-bucket form when
+you want the diff to mean only your change.
+
+For the full matrix — several identities × both possible-edge states — [`dev/ab_matrix.py`](dev/ab_matrix.py)
+runs each cell and compares it against that cell's baseline in one command. Credentials come from the
+environment, never the command line, and every cell is forced to a fresh directory:
+
+```powershell
+$env:SCCM_LAB_PASSWORD_LOWPRIV = "..."
+uv run python dev\ab_matrix.py --identity lowpriv:low --identity domainadmin:high `
+    --domain mayyhem.com --dc dc.mayyhem.com `
+    --baselines .\baselines --out-root .\ab-20260801
+```
+
+The `:low` / `:high` suffix pins [`--integration-privilege`](#testing) for that identity's cells. Pinning
+matters in a matrix: the default `auto` reads each run's own row counts, so a detection that flips
+between runs would show up as a diff even though your code did not change. Add `--dry-run` to print the
+planned cells without collecting, and `--with-cmbp` to also run the deprecated PowerShell collector for
+a side-by-side parity pass (Windows only, and the shell must already be running as the target identity).
 
 ## Validate against a real hierarchy
 
@@ -2239,9 +2294,10 @@ load packages and preprocess merges every accumulated run into one graph, so raw
 the number of runs in the directory, and any table this run finds empty keeps the previous run's rows.
 
 Two flags exist for exactly this comparison, both implying `--run-all`:
-`--run-integration-tests` asserts the graph against the bundled fixtures and exits non-zero on failure;
-`--compare-to-zip <payload>` diffs this run against a saved payload property-by-property and always
-exits 0.
+`--run-integration-tests` asserts the graph against the bundled fixtures, and `--compare-to-zip <payload>`
+diffs this run against a saved payload property-by-property. Both exit non-zero on failure — for the
+comparison, "failure" means this run lost something the saved payload had. When both are passed, both
+run to completion so you get both reports, and the process reports the worse of the two outcomes.
 
 The `dev/` scripts drive individual subsystems against a single host without a full collection. They
 read credentials from the environment, never from the source:

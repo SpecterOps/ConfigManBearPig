@@ -35,7 +35,7 @@ Write logs of appropriate level (error, warning, info, verbose, debug) for every
 
 If you encounter bugs as you go, raise the issue and ask what to do.
 
-This project uses a CLI ticket system for task management. Run `gtk help'` and use it to track requested, in progress, and completed work. Update .tickets/_TICKETS-BY-STATUS.md after updating the status of any ticket. Keep tickets flat in .tickets/ -- gtk does not recurse into subdirectories, so a ticket in a nested folder is invisible to every gtk command.
+This project uses a CLI ticket system for task management. Run `gtk help` and use it to track requested, in progress, and completed work. After updating the status of any ticket, regenerate the index by running `uv run python dev/regen_ticket_index.py` -- never hand-edit .tickets/_TICKETS-BY-STATUS.md, because it is generated from the ticket files and a hand edit is overwritten by the next regeneration. `uv run python dev/regen_ticket_index.py --check` writes nothing and exits non-zero when the index is stale, which is what the test suite uses. Keep tickets flat in .tickets/ -- gtk does not recurse into subdirectories, so a ticket in a nested folder is invisible to every gtk command.
 
 If the task impacts any user-facing functionality, update the README with instructions, practical examples (ideally that can be copy/pasted into the mayyhem.com domain environment), diagrams, tables, etc. as needed.
 

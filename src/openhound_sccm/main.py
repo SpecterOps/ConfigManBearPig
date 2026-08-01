@@ -81,6 +81,26 @@ logger = get_logger(__name__)
 # NULL_COLLECTOR, so we express "off" as a tiny stand-in whose `.value` is None
 # rather than touching OpenHound core.
 # ---------------------------------------------------------------------------
+class IntegrationPrivilege(str, Enum):
+    """Which fixture set --run-integration-tests asserts.
+
+    Describes the COLLECTION, not the fixtures. `auto` derives it from how much the
+    run actually collected; the two explicit values exist for the case auto cannot
+    see -- a partially-privileged run, where AdminService reached one site and not
+    another, looks privileged by row count but should often be asserted as low.
+    """
+    auto = "auto"
+    high = "high"
+    low = "low"
+
+
+# AdminService and WMI are the two privileged per-host transports. The prefixes are
+# matched with startswith, never a substring test: local_wmi_sms_authority,
+# local_wmi_sms_lookupmp and local_wmi_ccm_client are DISCOVERY resources reading
+# WMI on the collector host itself, which any domain user can do.
+_PRIVILEGED_TABLE_PREFIXES = ("adminservice_", "wmi_")
+
+
 class ProgressOption(str, Enum):
     off = "off"
     tqdm = "tqdm"
@@ -1160,14 +1180,15 @@ def collect_sccm(
              "lab fixtures. Prints PASS/FAIL/SKIP + summary + coverage, writes "
              "integration_results-<ts>.json, and exits non-zero if any case fails.",
     ),
-    integration_lowpriv: bool = typer.Option(
-        False, "--integration-lowpriv", rich_help_panel="Testing",
-        help="With --run-integration-tests, assert only what a low-privilege collection can "
-             "produce: skips the SCCM-admin-only RBAC cases (SCCM_FullAdministrator, SCCM_IsAssigned, "
-             "SCCM_IsMappedTo, SCCM_AllPermissions and the SCCM_AdminUser / SCCM_SecurityRole / "
-             "SCCM_Collection nodes) that need AdminService or WMI access. Without this flag "
-             "those cases are asserted even on a run that could never collect them, and fail "
-             "for behaving correctly.",
+    integration_privilege: IntegrationPrivilege = typer.Option(
+        IntegrationPrivilege.auto, "--integration-privilege", rich_help_panel="Testing",
+        help="Which fixture set --run-integration-tests asserts. Describes the COLLECTION, "
+             "not the fixtures. 'auto' (default) decides from whether AdminService/WMI "
+             "actually returned rows this run. 'low' skips the SCCM-admin-only RBAC cases "
+             "(SCCM_FullAdministrator, SCCM_IsAssigned, SCCM_IsMappedTo, SCCM_AllPermissions "
+             "and the SCCM_AdminUser / SCCM_SecurityRole / SCCM_Collection nodes) that need "
+             "AdminService or WMI, so they cannot fail for behaving correctly. 'high' asserts "
+             "every case -- use it when a partially-privileged run should be held to the full set.",
     ),
     compare_to_zip: Optional[pathlib.Path] = typer.Option(
         None, "--compare-to-zip", rich_help_panel="Testing",
@@ -1191,6 +1212,12 @@ def collect_sccm(
     # pass both.
     if run_integration_tests or compare_to_zip is not None:
         run_all = True
+
+    # This run's merged per-table row counts, read by --integration-privilege auto
+    # after collection. Initialised here rather than inside the collection try block
+    # so mypy's possibly-undefined check (enabled in pyproject) is satisfied on every
+    # path, including the one where collection raises before any counts exist.
+    collect_counts: dict[str, int] = {}
 
     _ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1337,6 +1364,9 @@ def collect_sccm(
             _log_collect_summary(
                 discovery_counts, per_host_counts, per_host_expected, output_path, run_all=run_all
             )
+        # Keep the merged counts for --integration-privilege auto below; the summary
+        # above merges the same two dicts for display, this keeps them for a decision.
+        collect_counts = _merge_row_counts(discovery_counts, per_host_counts)
     finally:
         for lg, lvl in _debug_logger_levels:
             lg.setLevel(lvl)
@@ -1398,30 +1428,94 @@ def collect_sccm(
             # just produced. _ts is the same run timestamp used for the collect logs
             # above, so every artifact from this invocation shares one suffix.
             graph_dir = _paths.graph_out
+            # Both testing flags run to completion before either decides the exit
+            # code, so an operator who passed both always gets both reports rather
+            # than having the first failure hide the second's findings.
+            rc_compare = 0
             if compare_to_zip is not None:
                 from openhound_sccm.integration import compare_to_zip as _compare_to_zip
-                _compare_to_zip(
+                rc_compare = _compare_to_zip(
                     graph_dir, compare_to_zip,
                     out_path=output_path / f"compare-{_ts}.json", log=logger.info,
                 )
+            rc_suite = 0
             if run_integration_tests:
-                rc = _run_integration_suite(
+                rc_suite = _run_integration_suite(
                     graph_dir,
                     output_path / f"integration_results-{_ts}.json",
-                    lowpriv=integration_lowpriv,
+                    privileged=_resolve_integration_privileged(
+                        integration_privilege, collect_counts),
                 )
-                raise typer.Exit(code=rc)
+            if compare_to_zip is not None or run_integration_tests:
+                raise typer.Exit(code=_combined_testing_exit_code(rc_compare, rc_suite))
         else:
             logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
     finally:
         logging.root.removeHandler(_diag)
     return load_info
 
+def _merge_row_counts(discovery: dict[str, int], per_host: dict[str, int]) -> dict[str, int]:
+    """Combine the two collection stages' per-table row counts.
+
+    Their table sets are disjoint today (discovery emits ldap_*/dns_*/local_*/
+    collection_settings; per-host emits the rest), but sum on overlap so a future
+    shared table can never silently drop rows -- same rule _log_collect_summary uses.
+    """
+    counts = dict(discovery)
+    for table, rows in per_host.items():
+        counts[table] = counts.get(table, 0) + rows
+    return counts
+
+
+def _detect_privileged(counts: dict[str, int]) -> tuple[bool, int]:
+    """Return (privileged, rows) from this run's per-table row counts.
+
+    Privileged means AdminService or WMI actually returned data. This measures the
+    collection INPUT deliberately: inferring from the emitted graph would be
+    circular, because a broken privileged builder emits nothing, would read as
+    low-privilege, and would skip exactly the cases that would have caught it.
+    """
+    rows = sum(n for table, n in counts.items()
+               if table.startswith(_PRIVILEGED_TABLE_PREFIXES))
+    return rows > 0, rows
+
+
+def _resolve_integration_privileged(choice: IntegrationPrivilege,
+                                    counts: dict[str, int]) -> bool:
+    """Resolve --integration-privilege into the boolean the harness takes."""
+    if choice is IntegrationPrivilege.high:
+        logger.info("Integration suite: --integration-privilege high; asserting every "
+                    "case including the SCCM-admin-only RBAC families")
+        return True
+    if choice is IntegrationPrivilege.low:
+        logger.info("Integration suite: --integration-privilege low; skipping the cases "
+                    "that require AdminService/WMI collection")
+        return False
+    privileged, rows = _detect_privileged(counts)
+    if privileged:
+        logger.info("Integration suite: privileged collection detected (%d row(s) across "
+                    "AdminService/WMI tables); asserting every case", rows)
+    else:
+        logger.info("Integration suite: low-privilege collection detected (no rows in any "
+                    "AdminService/WMI table); skipping the cases that require them. "
+                    "Pass --integration-privilege high to assert them anyway.")
+    return privileged
+
+
+def _combined_testing_exit_code(rc_compare: int, rc_suite: int) -> int:
+    """Non-zero if EITHER testing flag failed.
+
+    Both always run so the operator gets both reports; the process then reports
+    the worse of the two outcomes rather than letting one mask the other.
+    """
+    return 1 if (rc_compare or rc_suite) else 0
+
+
 def _run_integration_suite(graph_dir: pathlib.Path, results_path: pathlib.Path,
-                           lowpriv: bool) -> int:
+                           privileged: bool) -> int:
     """Assert the graph in *graph_dir* against the built-in mayyhem lab fixtures.
 
-    *lowpriv* describes the COLLECTION, not the fixtures. Pass True for a graph
+    *privileged* describes the COLLECTION, not the fixtures. Pass False for a graph
     collected without AdminService/WMI: the harness then skips the cases marked
     ``requires_privilege`` -- the SCCM-admin-only RBAC families (``SCCM_FullAdministrator`` /
     ``SCCM_IsAssigned`` / ``SCCM_IsMappedTo`` / ``SCCM_AllPermissions`` and the
@@ -1431,19 +1525,17 @@ def _run_integration_suite(graph_dir: pathlib.Path, results_path: pathlib.Path,
     behaving correctly. Everything else is still asserted, so a low-privilege run
     stays a real gate rather than a weakened one.
 
+    The verdict itself is decided and logged by _resolve_integration_privileged, so
+    nothing is logged here -- a second message would imply a second decision.
+
     Returns the harness's process-friendly exit code (1 if any case failed).
     """
     from openhound_sccm.integration import run_integration_tests as _run_integration_tests
-    if lowpriv:
-        logger.info("Integration suite: low-privilege mode -- skipping cases that "
-                    "require AdminService/WMI collection")
-    else:
-        logger.debug("Integration suite: privileged mode -- asserting every case")
     return _run_integration_tests(
         graph_dir,
         results_path=results_path,
         log=logger.info,
-        privileged=not lowpriv,
+        privileged=privileged,
     )
 
 

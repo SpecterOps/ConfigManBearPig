@@ -132,10 +132,20 @@ Carried over from the development fork when this repository became the collector
 ## Tickets
 
 Work is tracked with a CLI ticket system whose files live in `.tickets/`. Run `gtk help` for the
-commands. Update [`.tickets/_TICKETS-BY-STATUS.md`](.tickets/_TICKETS-BY-STATUS.md) after changing
-any ticket's status — that file is generated from the ticket files, so never hand-edit it as a
-source of truth. It sits beside the tickets rather than at the repo root so its links are plain
-sibling filenames, and the leading underscore sorts it above them.
+commands. After changing any ticket's status, regenerate
+[`.tickets/_TICKETS-BY-STATUS.md`](.tickets/_TICKETS-BY-STATUS.md):
+
+```bash
+uv run python dev/regen_ticket_index.py            # rewrite the index
+uv run python dev/regen_ticket_index.py --check    # exit 1 if it is stale; writes nothing
+```
+
+That file is generated from the ticket files, so **never hand-edit it** — the next regeneration
+discards the edit. `gtk` has no subcommand that rebuilds it, which is why the file drifted before
+this script existed: every agent that changed a status either rewrote the table by hand or forgot.
+`tests/regen_ticket_index_test.py` runs `--check`, so a forgotten regeneration fails the suite
+rather than showing up as a mystery diff later. The index sits beside the tickets rather than at the
+repo root so its links are plain sibling filenames, and the leading underscore sorts it above them.
 
 `gtk` does **not** recurse into subdirectories of `.tickets/`. A ticket moved into a nested folder
 becomes invisible to `list`, `show`, `close`, `reopen`, `dep` and `link` — they all report

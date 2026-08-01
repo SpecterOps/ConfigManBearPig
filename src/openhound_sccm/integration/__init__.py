@@ -59,14 +59,28 @@ def run_integration_tests(graph_dir: Path, results_path: Path | None = None,
 
 def compare_to_zip(graph_dir: Path, zip_path: Path, out_path: Path | None = None,
                    log: Callable[[str], None] = logger.info) -> int:
-    """Diff a freshly-collected graph against a previously collected OpenGraph zip.
+    """Diff this run's freshly-converted graph against a previously saved payload.
 
-    Informational only -- always returns 0 so a drift report never fails a CI run.
+    The saved payload is the BASELINE -- it is what came first -- and this run's
+    graph is the candidate. Returns 1 when the candidate lost something the
+    baseline had, else 0.
+
+    Comparing against a payload from a DIFFERENT tool (a CMBP zip) will normally
+    return 1: each tool emits nodes, kinds and properties the other does not. That
+    is a true statement about the two payloads, not a defect in this run. There is
+    deliberately no flag to suppress it.
     """
-    a = load_graph(graph_dir)
-    b = load_graph(zip_path)
-    report = compare_graphs(a, b)
+    baseline = load_graph(zip_path)
+    candidate = load_graph(graph_dir)
+    report = compare_graphs(baseline, candidate)
     report.render(log=log)
     if out_path is not None:
         Path(out_path).write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
-    return 0  # informational: never fails the process
+        logger.debug("Comparison report written to %s", out_path)
+    regressions = report.regressions()
+    if regressions:
+        logger.warning("Comparison: the candidate lost content the baseline had "
+                       "(%d regression(s))", len(regressions))
+        return 1
+    logger.info("Comparison: no regressions against the baseline")
+    return 0
