@@ -9,7 +9,8 @@ a fault -- the same collection run as a local admin produced zero (con-8a28).
 So the contract these tests pin down is:
 
 * a denied read logs at VERBOSE, not ERROR -- detail stays in collect_full_<ts>.log;
-* each host emits exactly ONE WARNING naming the capabilities it lost;
+* each host emits exactly ONE WARNING listing the keys it could not read;
+* no message repeats the hostname -- LogContextFilter prefixes [target][phase];
 * a host that was denied nothing says nothing;
 * a genuinely broken read is still an ERROR;
 * "denied" and "absent" are distinguishable, so a refused SMS\\Triggers read stops
@@ -83,14 +84,13 @@ def test_unexpected_failure_is_still_an_error(caplog):
 
 # --- the per-host summary ------------------------------------------------------
 
-def test_summary_is_one_warning_naming_each_lost_capability(caplog):
-    """Twelve denied reads collapse to one line listing what was lost, deduplicated."""
+def test_summary_is_one_warning_listing_each_denied_key(caplog):
+    """Denied reads collapse to one WARNING listing the keys, one per line."""
     probe = _probe()
     probe._log_read_failure("a", LANMAN, Exception(DENIED))
     probe._log_read_failure("b", LSA, Exception(DENIED))
     probe._log_read_failure("c", registry.SCCM_REG_KEYS["msv10"], Exception(DENIED))
-    for suffix in ("MSSQL16", "MSSQL15", "MSSQL14"):
-        probe._log_read_failure("d", SQL_2022.replace("MSSQL16", suffix), Exception(DENIED))
+    probe._log_read_failure("d", SQL_2022, Exception(DENIED))
 
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
         probe.log_denied_summary()
@@ -98,12 +98,47 @@ def test_summary_is_one_warning_naming_each_lost_capability(caplog):
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
-    assert "6 registry read(s) denied" in message      # every read counted...
-    assert message.count("SQL Server encryption") == 1  # ...but each capability named once
-    assert "SMB signing requirement" in message
-    assert "NTLM restrictions" in message
-    assert "local Administrators" in message            # tells the operator what to do
-    assert HOST in message
+
+    assert "4 registry key(s)" in message, message
+    for key in (LANMAN, LSA, registry.SCCM_REG_KEYS["msv10"], SQL_2022):
+        assert key in message, f"{key} missing from:\n{message}"
+    # One key per line, each indented -- seven paths semicolon-joined is a
+    # 300-character wall that wraps at arbitrary points.
+    assert message.count("\n") == 4, message
+    assert "\n    " + LANMAN in message, message
+
+
+def test_summary_counts_distinct_keys_not_reads(caplog):
+    """Several values under ONE key are one entry, and the count matches the list.
+
+    _read_mssql_service_state reads Start and ObjectName under the same service key,
+    so a read count can exceed the number of paths. A message saying "2" above one
+    path reads as a bug.
+    """
+    probe = _probe()
+    probe._log_read_failure("DWORD value Start under " + LSA, LSA, Exception(DENIED))
+    probe._log_read_failure("DWORD value DisableLoopbackCheck under " + LSA, LSA, Exception(DENIED))
+
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        probe.log_denied_summary()
+
+    message = [r for r in caplog.records if r.levelno == logging.WARNING][0].getMessage()
+    assert "1 registry key(s)" in message, message
+    assert message.count(LSA) == 1, message
+
+
+def test_no_message_repeats_the_hostname(caplog):
+    """LogContextFilter already prefixes [target][phase]; repeating it is duplication."""
+    probe = _probe()
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        probe._log_read_failure(f"registry key {LANMAN}", LANMAN, Exception(DENIED))
+        probe._log_read_failure(f"registry key {SQL_2022}", SQL_2022, Exception("ERROR_FILE_NOT_FOUND"))
+        probe._log_read_failure(f"registry key {LSA}", LSA, Exception("connection reset by peer"))
+        probe.log_denied_summary()
+
+    for record in caplog.records:
+        assert HOST not in record.getMessage(), \
+            f"{record.levelname} repeats the hostname: {record.getMessage()}"
 
 
 def test_summary_is_silent_when_nothing_was_denied(caplog):
@@ -123,10 +158,5 @@ def test_summary_fires_on_context_exit_even_when_the_phase_returns_early(caplog)
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
         probe.__exit__(None, None, None)
 
-    assert any(r.levelno == logging.WARNING and "registry read(s) denied" in r.getMessage()
+    assert any(r.levelno == logging.WARNING and "registry key(s)" in r.getMessage()
                for r in caplog.records)
-
-
-def test_unmapped_path_falls_back_to_the_raw_key():
-    """A newly added SCCM_REG_KEYS entry with no capability label still gets named."""
-    assert registry._capability_for(r"SOFTWARE\Vendor\Unmapped") == r"SOFTWARE\Vendor\Unmapped"

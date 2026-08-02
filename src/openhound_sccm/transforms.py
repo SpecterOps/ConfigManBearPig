@@ -49,7 +49,7 @@ def _sccm_expected_miss(con: duckdb.DuckDBPyConnection, missing: str) -> bool:
     """`expected_miss` predicate for the shared `safe_execute`: return True to
     downgrade a missing-source-table log from WARNING to DEBUG.
 
-    Two benign-miss cases are specific to this collector:
+    Three benign-miss cases are specific to this collector:
 
     1. Fallback-phase skip (http_ / smb_ tables). Handled by
        ``_privileged_transport_ran``: when a privileged transport ran this
@@ -59,6 +59,13 @@ def _sccm_expected_miss(con: duckdb.DuckDBPyConnection, missing: str) -> bool:
     2. Transport-mirror (wmi_ <-> adminservice_). The collector produces EITHER
        wmi_<X> OR adminservice_<X> per data type — whichever transport was
        available. A missing one whose sibling exists is a normal, expected miss.
+
+    3. No privileged transport at all (wmi_ and adminservice_ both absent). If the
+       catalog holds no privileged table whatsoever, the AdminService/WMI phases
+       produced nothing this run, so their tables are expected to be missing — this
+       is the unprivileged run, and it was 106 of the 146 WARNINGs a healthy
+       low-privilege collection emitted. If some privileged tables ARE present, an
+       absent one is a real gap and stays a WARNING.
 
     Any other missing table has no such excuse and stays a WARNING. The catalog
     lookups are schema-agnostic (match on table_name across schemas); under the
@@ -85,7 +92,17 @@ def _sccm_expected_miss(con: duckdb.DuckDBPyConnection, missing: str) -> bool:
     except duckdb.Error:
         # Can't query the catalog — stay safe and treat as a real miss (WARNING).
         return False
-    return found is not None
+    if found is not None:
+        # Case 2: the other transport produced this data under the sibling name.
+        return True
+
+    # Case 3: NEITHER transport produced this table. When no adminservice_*/wmi_*
+    # table exists at all the privileged phases never ran, so every table they would
+    # have built is expected to be absent — that is an unprivileged run behaving
+    # correctly, and it accounted for 106 of the 146 WARNINGs in a low-privilege lab
+    # run. But when some DID land, this one query came back empty while its transport
+    # was working, which is a real gap and stays a WARNING.
+    return not _privileged_transport_ran(con)
 
 
 def _safe(con: duckdb.DuckDBPyConnection, label: str, sql: str) -> None:

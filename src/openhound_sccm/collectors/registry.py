@@ -72,33 +72,6 @@ def _is_access_denied(error_text: str) -> bool:
     return any(marker in error_text for marker in _ACCESS_DENIED_MARKERS)
 
 
-# What the operator actually loses when a read is denied, keyed by the registry
-# path we tried. The per-host summary reports *capabilities*, not key paths: one
-# non-admin host denies eight SuperSocketNetLib paths that all mean the same
-# thing, and a list of raw paths buries that under repetition. Longest-prefix
-# order is not needed -- the paths below do not nest -- but the SQL Server entries
-# are listed before the generic SMS one for readability.
-_DENIED_CAPABILITIES: tuple[tuple[str, str], ...] = (
-    (r"SYSTEM\CurrentControlSet\Services\LanManServer\Parameters", "SMB signing requirement"),
-    (r"SYSTEM\CurrentControlSet\Control\Lsa", "NTLM restrictions and loopback-check setting"),
-    (r"SOFTWARE\Microsoft\Microsoft SQL Server", "SQL Server encryption / Extended Protection settings"),
-    (r"SOFTWARE\Microsoft\MSSQLServer", "SQL Server encryption / Extended Protection settings"),
-    (r"SYSTEM\CurrentControlSet\Services\MSSQL", "SQL Server service startup type and service account"),
-    (r"SOFTWARE\Microsoft\SMS", "SCCM site code, site-system roles and logged-on user"),
-)
-
-
-def _capability_for(key_path: str) -> str:
-    """Human name for what *key_path* would have told us, for the denial summary."""
-    for prefix, capability in _DENIED_CAPABILITIES:
-        if key_path.startswith(prefix):
-            return capability
-    # An unmapped path is still worth naming -- better a raw key than silence, and
-    # it flags that a newly added SCCM_REG_KEYS entry needs a capability label.
-    logger.debug("No capability label for denied registry path %s; reporting the raw path.", key_path)
-    return key_path
-
-
 class _RegistryProbe:
     """Lightweight remote-registry helper used by the registry resources.
 
@@ -222,29 +195,41 @@ class _RegistryProbe:
         return key_path in self._denied
 
     def log_denied_summary(self) -> None:
-        """Report this host's refused reads as one actionable line, or nothing.
+        """Report this host's refused reads as one WARNING listing the keys, or nothing.
 
         A non-admin run against a site system is refused on the order of a dozen
-        reads -- the host-hardening values, all eight SQL Server SuperSocketNetLib
-        paths, and on tightly-ACL'd hosts the SMS keys too. Logged individually
-        those were ~120 of the 125 ERRORs in a low-privilege lab run, none of them
-        a fault: the same run as a local admin produced zero. So each read logs at
-        verbose (still in collect_full_<ts>.log for anyone diagnosing a specific
-        key) and the host emits this single WARNING naming what was lost and how
-        to get it.
+        reads -- the host-hardening values, the SQL Server paths, and on tightly-ACL'd
+        hosts the SMS keys too. Logged individually those were ~120 of the 125 ERRORs
+        in a low-privilege lab run, none of them a fault: the same run as a local admin
+        produced zero. So each read logs at verbose (still in collect_full_<ts>.log for
+        anyone diagnosing a specific key) and the host emits this one line.
+
+        Keys rather than capability names, and no remediation prose: the operator reads
+        a registry path faster than a sentence about it, and README's "What a
+        low-privilege run looks like" already explains once that these keys are
+        admin-gated. One key per line -- seven paths semicolon-joined is a
+        300-character wall that wraps at arbitrary points.
+
+        The count is of DISTINCT keys, not reads, so it always equals the length of the
+        list beneath it. Several values under one key can each be refused (e.g.
+        _read_mssql_service_state reads Start and ObjectName under one service key),
+        which would otherwise print a number larger than the list.
+
+        No hostname in the text: LogContextFilter prefixes [target][phase] already.
+        The four-space indent is explicit because only Rich aligns a multi-line message
+        to its own column; the two file handlers use a plain logging.Formatter, so
+        without it the paths would start at column 0 in collect_issues_<ts>.log.
         """
         if not self._denied:
             # Either everything was readable or nothing was tried; no news is fine.
-            logger.debug("No registry reads were denied on %s.", self.hostname)
+            logger.debug("No registry reads were denied.")
             return
-        # dict.fromkeys keeps first-seen order, so capabilities read in the order
-        # the phase actually attempted them rather than an arbitrary set order.
-        capabilities = list(dict.fromkeys(_capability_for(path) for path in self._denied))
+        # dict.fromkeys keeps first-seen order, so keys appear in the order the phase
+        # actually attempted them rather than an arbitrary set order.
+        keys = list(dict.fromkeys(self._denied))
         logger.warning(
-            "%d registry read(s) denied on %s -- not collected: %s. The host-hardening and "
-            "SQL Server keys require local Administrators on the target; re-run with an "
-            "administrative account to collect them. Per-read detail is in the full log.",
-            len(self._denied), self.hostname, "; ".join(capabilities),
+            "Access denied reading %d registry key(s):\n%s",
+            len(keys), "\n".join(f"    {key}" for key in keys),
         )
 
     # ----- read helpers ------------------------------------------------------
@@ -263,13 +248,14 @@ class _RegistryProbe:
         place instead of being repeated (and drifting) per helper.
         """
         error_text = str(ex)
+        # No hostname in any of the three: LogContextFilter prefixes [target][phase].
         if "ERROR_FILE_NOT_FOUND" in error_text:
-            logger.verbose("%s not found on %s", description, self.hostname)
+            logger.verbose("%s not found", description)
         elif _is_access_denied(error_text):
             self._denied.append(key_path)
-            logger.verbose("Access denied reading %s on %s", description, self.hostname)
+            logger.verbose("Access denied reading %s", description)
         else:
-            logger.error("Failed to read %s on %s: %s", description, self.hostname, ex)
+            logger.error("Failed to read %s: %s", description, ex)
 
     def read_value(self, key_path: str, value_name: str) -> Optional[str]:
         from impacket.dcerpc.v5 import rrp
@@ -455,10 +441,8 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                 # code the component-server roles cannot be interpreted), but now
                 # the reason is honest.
                 logger.warning(
-                    "Access denied reading %s on %s, so the site code is unknown and the "
-                    "remaining Remote Registry checks are skipped. This host may still be a "
-                    "site system -- re-run with an account that can read the key to find out.",
-                    SCCM_REG_KEYS["triggers"], target,
+                    "Access denied reading %s, skipping remaining Remote Registry checks",
+                    SCCM_REG_KEYS["triggers"],
                 )
                 logger.info("Remote Registry collection completed for %s", target)
                 return
