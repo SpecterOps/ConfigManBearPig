@@ -41,7 +41,7 @@ cosmetic — it is what makes the `[tool.uv.sources]` paths in steps 9 and 13 co
 
 | Decision | Reason |
 |---|---|
-| **Shared library publishes first** | `configmanbearpig` declares `openhound-collector-common>=0.1.0,<0.2.0`. Until that exists on PyPI, nothing resolves. An ordering constraint, not a preference. |
+| **Shared library publishes first** | `configmanbearpig` declares `openhound-collector-common>=0.1.3,<0.2.0`. Until that exists on PyPI, nothing resolves. An ordering constraint, not a preference. |
 | **Archive the PowerShell script before touching anything** | People `iwr` the raw `main` URL. A tag + Release gives it a permanent home first, so restructuring cannot orphan it. |
 | **Restructure `main` directly — no branch anywhere** | MSSQLHound already did this: `powershell_deprecated/` sits at the root of its `main` today. The tag is what publishes, so a branch adds no protection over "don't tag until step 10 passes" — and it subtracts some, by creating a second commit a tag could point at. On `main` only, there is exactly one. Rejected alternatives are in the design record. |
 | **The new repo gets a tree, not a history** | `git archive` writes exactly the tracked files — no `.venv`, no `*.duckdb`, no `out/`, and no pre-scrub lab credentials from old commits. You publish what you can see. The 106 porting commits stay in the fork on `origin/integration` and under the recovery tag from step 3. |

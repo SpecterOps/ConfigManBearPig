@@ -4,9 +4,15 @@ ui_catalog.db
 notebooks
 site/
 output
-# Collector output from live lab runs -- graph JSON, logs and lookup.duckdb for a real
-# environment. Must never reach a public repo. `output` above covers the older default
-# directory name; `out/` is what --run-all examples use now.
+# Collector output from live runs -- graph JSON, logs and lookup.duckdb. The risk this
+# guards against is someone collecting a REAL environment and committing the result, so
+# the working output directories are ignored wholesale rather than curated. `output`
+# above covers the older default directory name; `out/` is what --run-all examples use now.
+#
+# sample_data/ is the deliberate exception and is tracked: a handful of captures from the
+# purpose-built mayyhem.com test lab, published so the collector's output can be inspected
+# without building an SCCM hierarchy. Adding to it is an explicit decision each time --
+# never a matter of moving a file out of out/ because git stopped complaining.
 out/
 graph
 logs
@@ -227,3 +233,9 @@ __marimo__/
 # committed -- they contain live lab credentials. Previously covered only by the fork
 # root's .gitignore, which does not survive the repo split.
 .sdd/
+
+# Exception to the stock `*.log` rule inherited from the Python/Django template above:
+# sample_data/ publishes the full DEBUG log alongside each lab capture, and that template
+# rule quietly swallowed all four (they copied in fine and simply never appeared in
+# `git status`). Negations are last-match-wins, so this must stay BELOW `*.log` to work.
+!sample_data/*.log

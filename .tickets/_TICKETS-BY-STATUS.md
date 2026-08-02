@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**145 tickets** — 6 in progress · 29 open · 110 closed
+**147 tickets** — 6 in progress · 29 open · 112 closed
 
 ## In progress (6)
 
@@ -28,6 +28,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-t7kv`](Ope-t7kv.md) | 1 | feature | CRED-2: Machine Account Registration and Policy Decryption (HTTP) | sccm, cred-2, http, credentials |
 | [`Ope-txs0`](Ope-txs0.md) | 1 | feature | Search Other Discovered Domains via LDAP | sccm, ldap, multi-domain |
 | [`Ope-zaja`](Ope-zaja.md) | 1 | feature | Relay to Management Point | sccm, http, relay, takeover |
+| [`con-0289`](con-0289.md) | 2 | bug | Integration fixtures cannot be gated on possible-edges, so low-priv + --disable-possible-edges reports 4 false failures | sccm, integration, fixtures, possible-edges |
 | [`con-0394`](con-0394.md) | 2 | task | Positively identify a secondary site or site server as a plain domain user | sccm, lowpriv, secondary, discovery |
 | [`con-2ca2`](con-2ca2.md) | 2 | bug | _safe silently swallows BinderException, turning transform bugs into no-ops | preproc, diagnostics, transforms, testing |
 | [`con-c542`](con-c542.md) | 2 | task | Tag fixture cases from measured privileged/unprivileged A/B | testing, integration, fixtures, lowpriv |
@@ -42,7 +43,6 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-padv`](Ope-padv.md) | 2 | feature | CRED-4: Local CIM Repository Scraping (Bad Opsec) | sccm, cred-4, local, credentials, bad-opsec |
 | [`Ope-pofz`](Ope-pofz.md) | 2 | feature | Add --skip-ad-enum option to suppress AD-derived object creation | — |
 | [`con-53eb`](con-53eb.md) | 3 | task | Emit BUILTIN\Administrators as sysadmin on an SCCM-installed Express secondary site database | sccm, mssql, secondary, bloodhound |
-| [`con-a4ec`](con-a4ec.md) | 3 | task | Adopt StagePaths.graph_zip once openhound-collector-common is released | sccm, run-all, shared-lib |
 | [`con-d061`](con-d061.md) | 3 | task | Investigate emitting SCCM default collections as soon as a site is known | sccm, graph, collections, design |
 | [`ope-00df`](ope-00df.md) | 3 | task | Add --no-diagnostics-log / --no-collect-log to suppress on-disk logs individually | — |
 | [`ope-6b93`](ope-6b93.md) | 3 | task | Local-only/low-priv collector host gets no SCCM_ClientDevice node (CMBP builds it via Local Upsert-Node) | sccm, clientdevice, lowpriv, collection |
@@ -52,7 +52,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (110)
+## Closed (112)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -154,9 +154,11 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-l6fu`](Ope-l6fu.md) | 2 | feature | TDS and EPA Implementation Coverage | sccm, mssql, relay |
 | [`Ope-scp1`](Ope-scp1.md) | 2 | task | Audit Variables Leaking Across Python Scopes | sccm, audit, python, scope |
 | [`Ope-vpdw`](Ope-vpdw.md) | 2 | feature | Add --resolver option for custom DNS nameserver | — |
+| [`con-727a`](con-727a.md) | 3 | task | edge-hascurrentuser-ps1-dev-domainuser fails on lab state, not code -- domainuser is not logged on to PS1-DEV | sccm, integration, fixtures, lab |
 | [`con-7741`](con-7741.md) | 3 | task | SMS Provider probe is skipped when port 80 is filtered despite being HTTPS-only | sccm, http, lowpriv, collection |
 | [`con-894a`](con-894a.md) | 3 | task | Expose the System Management container's DN as a queryable lowercase distinguishedname property | cypher, container, graph |
 | [`con-8a33`](con-8a33.md) | 3 | bug | Guard --ticket base64/KRB-CRED decoding in smb_sso.py and wmi.py | sccm, auth, kerberos, ux, robustness |
+| [`con-a4ec`](con-a4ec.md) | 3 | task | Adopt StagePaths.graph_zip once openhound-collector-common is released | sccm, run-all, shared-lib |
 | [`con-edee`](con-edee.md) | 3 | task | Reconcile SCCM_AssignAllPermissions SMS-Provider-hosts count against PS1 logic | sccm, fixtures, mssql, lowpriv |
 | [`ope-272e`](ope-272e.md) | 3 | task | LDAP pass-the-hash (--nt-hash) support — placeholder | sccm, ldap, pth, placeholder |
 | [`ope-50cc`](ope-50cc.md) | 3 | bug | edge_help scope test red since GenericAll became an emitted kind | tests, edge-help, sccm |

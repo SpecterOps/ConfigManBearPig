@@ -107,6 +107,11 @@ The collector is an OpenHound extension: it plugs into the `openhound` CLI as
 > limited to writing the queries yourself (the [saved queries](#3-upload-to-bloodhound) below help).
 > https://bloodhound.specterops.io/get-started/custom-installation#postgresql
 
+> **No SCCM lab handy?** [`sample_data/`](sample_data/) holds four real collections from the mayyhem.com
+> test lab — privileged and unprivileged, each with and without `--disable-possible-edges` — as
+> upload-ready zips, plus the full DEBUG log for each run. Enough to see the graph and read a
+> collection end-to-end before building a hierarchy of your own.
+
 ### 1. Install
 
 ```powershell
@@ -2145,7 +2150,7 @@ separate published package, shared with the sibling **MSSQL collector**, declare
 [pyproject.toml](pyproject.toml):
 
 ```toml
-"openhound-collector-common>=0.1.0,<0.2.0",
+"openhound-collector-common>=0.1.3,<0.2.0",
 ```
 
 It resolves from PyPI like any other dependency — there is deliberately no path redirect, and one must

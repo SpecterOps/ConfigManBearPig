@@ -42,7 +42,9 @@ dependencies = [
     #
     # Capped below 0.2 because a 0.x library makes no API-stability promise — an
     # uncapped floor would let a breaking 0.2 land silently in users' installs.
-    "openhound-collector-common>=0.1.2,<0.2.0",
+    # Floor is 0.1.3: that release added StagePaths.graph_zip, which the --run-all
+    # output summary reads to name the archive the chain actually wrote.
+    "openhound-collector-common>=0.1.3,<0.2.0",
     # LDAP client used by the LDAP collection phase (clients/ad.py).
     # 2.10.2rc4 is the first ldap3 release that exports ENCRYPT and
     # TLS_CHANNEL_BINDING constants, required for NTLM sign-and-seal and

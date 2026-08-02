@@ -1457,12 +1457,13 @@ def collect_sccm(
     # suite below exits via `typer.Exit`.
     try:
         if run_all:
-            # Named once and shared: the chain writes the archive under this name and
-            # the summary below reports it, so the two cannot drift apart. _ts is the
-            # same run timestamp the collect logs carry.
-            _graph_zip_name = f"configmanbearpig_collection_{_ts}.zip"
+            # _ts is the same run timestamp the collect logs carry, so every artifact
+            # from this invocation shares one suffix. The name only needs to go one
+            # way now: the chain writes the archive and reports it back on
+            # StagePaths.graph_zip, which the summary reads.
             _paths = _run_e2e_after_collect(
-                output_path, progress, graph_zip_name=_graph_zip_name,
+                output_path, progress,
+                graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
             )
             # Re-surface every artifact's location in one block at the very end, so the
             # operator doesn't have to scroll back through the collect/preproc/convert
@@ -1470,7 +1471,6 @@ def collect_sccm(
             _log_all_output_locations(
                 output_path, _paths, _ordered_log_path, log_path,
                 _diag.warning_count + _diag.error_count,
-                _graph_zip_name,
             )
             # --compare-to-zip and --run-integration-tests both need the graph convert
             # just produced. _ts is the same run timestamp used for the collect logs
@@ -1863,7 +1863,6 @@ def _log_all_output_locations(
     collect_log_path: pathlib.Path,
     collect_diag_path: pathlib.Path,
     diag_issue_count: int,
-    graph_zip_name: str,
 ) -> None:
     """Log a consolidated list of every artifact a ``--run-all`` run produced.
 
@@ -1874,9 +1873,11 @@ def _log_all_output_locations(
 
     The bundled zip closes the block deliberately: of everything listed here it is
     the only artifact the operator does something *with* (upload to BloodHound File
-    Ingest), so it is the line their eye lands on last. Its name is passed in rather
-    than rediscovered, because the caller is what named it — the same run timestamp
-    the collect logs use.
+    Ingest), so it is the line their eye lands on last. It is read straight off
+    ``paths.graph_zip`` — the archive ``run_end_to_end`` reports having written
+    (``None`` when convert emitted no ``*.json``), rather than a path rebuilt from
+    the name we asked for. Those two can disagree; only the one that came back is
+    evidence. Needs openhound-collector-common >= 0.1.3, which added the field.
     """
     # output_path, the raw dataset dir, and the lookup DB always exist on the
     # success path (a completed run_end_to_end guarantees them), so they are listed
@@ -1920,12 +1921,11 @@ def _log_all_output_locations(
 
     # Last line, and the only one that is an instruction rather than a location.
     # zip_graph_output skips the archive when convert wrote no .json (it logs why),
-    # so guard on existence rather than assuming the run produced one.
-    graph_zip = paths.graph_out / graph_zip_name
-    if graph_zip.exists():
-        logger.info("    Upload to BloodHound: %s", graph_zip)
+    # which surfaces here as graph_zip being None.
+    if paths.graph_zip is not None:
+        logger.info("    Upload to BloodHound: %s", paths.graph_zip)
     else:
-        logger.warning("    No graph archive was written (expected %s).", graph_zip)
+        logger.warning("    No graph archive was written: convert emitted no .json to bundle.")
 
 
 # Set at module scope so `CollectorManager.validate_extension` (which runs at

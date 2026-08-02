@@ -96,10 +96,13 @@ def test_output_locations_summary_lists_every_artifact(tmp_path, caplog):
     (graph / "ad_edges-1.json").write_text("{}")
     zip_name = "configmanbearpig_collection_20260801_193720.zip"
     (graph / zip_name).write_text("zip")
-    paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
+    # graph_zip is what run_end_to_end reports having written (>=0.1.3), not a path
+    # the summary rebuilds from the name it asked for.
+    paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph,
+                       graph_zip=graph / zip_name)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 2, zip_name)
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 2)
     messages = [r.getMessage() for r in caplog.records]
     text = "\n".join(messages)
 
@@ -135,13 +138,13 @@ def test_output_locations_summary_handles_no_warnings_and_empty_graph(tmp_path, 
     paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0, "cmbp.zip")
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0)
     text = "\n".join(r.getMessage() for r in caplog.records)
 
     assert "no warnings/errors" in text
     assert "has no .json files" in text
-    # No .json means zip_graph_output wrote no archive; say so rather than printing
-    # a path to a file that isn't there.
+    # No .json means zip_graph_output bundled nothing and reported graph_zip=None
+    # (the StagePaths default here); say so rather than naming a file that isn't there.
     assert "No graph archive was written" in text
 
 
@@ -162,7 +165,7 @@ def test_output_locations_summary_omits_absent_logs_and_flags_missing_graph(tmp_
     paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0, "cmbp.zip")
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0)
 
     # Absent logs are dropped to DEBUG (filtered at INFO), so they never appear in
     # the operator-facing summary; the lookup DB still does.
@@ -195,3 +198,58 @@ def test_run_e2e_forwards_configmanbearpig_zip_name(monkeypatch, tmp_path):
         graph_zip_name="configmanbearpig_collection_20260730_101112.zip",
     )
     assert captured["graph_zip_name"] == "configmanbearpig_collection_20260730_101112.zip"
+
+
+def test_summary_reports_the_archive_the_chain_returned_not_a_rebuilt_path(tmp_path, caplog):
+    """The distinguishing test for reading StagePaths.graph_zip (>=0.1.3) rather than
+    reconstructing graph_out / <requested name>.
+
+    The graph dir here holds a DIFFERENT archive than the one run_end_to_end reports,
+    which is what a stale zip from an earlier run into the same directory looks like.
+    A summary that rebuilt the path from a name would have to guess between them; one
+    that reads the returned field cannot get it wrong.
+    """
+    from openhound_collector_common.orchestration import StagePaths
+
+    (tmp_path / "sccm").mkdir()
+    lookup = tmp_path / "lookup.duckdb"
+    lookup.write_text("db")
+    graph = tmp_path / "graph"
+    graph.mkdir()
+    (graph / "sccm_nodes-1.json").write_text("{}")
+    written = graph / "configmanbearpig_collection_20260802_090000.zip"
+    written.write_text("this run")
+    stale = graph / "configmanbearpig_collection_20260801_193720.zip"
+    stale.write_text("a previous run into the same directory")
+
+    paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph,
+                       graph_zip=written)
+    with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
+        m._log_all_output_locations(tmp_path, paths, tmp_path / "absent.log",
+                                    tmp_path / "absent_diag.log", 0)
+    last = [r.getMessage() for r in caplog.records][-1]
+
+    assert str(written) in last
+    assert str(stale) not in last
+
+
+def test_summary_warns_when_the_chain_reported_no_archive(tmp_path, caplog):
+    """graph_zip=None means zip_graph_output bundled nothing -- even if the graph dir
+    still holds an archive from an earlier run, this run produced none and says so."""
+    from openhound_collector_common.orchestration import StagePaths
+
+    (tmp_path / "sccm").mkdir()
+    lookup = tmp_path / "lookup.duckdb"
+    lookup.write_text("db")
+    graph = tmp_path / "graph"
+    graph.mkdir()
+    (graph / "sccm_nodes-1.json").write_text("{}")
+    (graph / "configmanbearpig_collection_20260801_193720.zip").write_text("previous run")
+
+    paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
+    with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
+        m._log_all_output_locations(tmp_path, paths, tmp_path / "absent.log",
+                                    tmp_path / "absent_diag.log", 0)
+
+    assert any("No graph archive was written" in r.getMessage()
+               and r.levelno == logging.WARNING for r in caplog.records)
