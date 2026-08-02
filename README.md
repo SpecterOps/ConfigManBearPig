@@ -711,17 +711,36 @@ the console:
 
 - **Refused registry reads.** Roughly a dozen reads per site system are admin-gated (the SMB-signing,
   NTLM and SQL Server keys). Each denied read is logged at VERBOSE into `collect_full_<timestamp>.log`,
-  and each host then emits **one** warning naming what it could not collect:
+  and each host then emits **one** warning listing the keys it could not read:
 
   ```
-  WARNING [cas-db.mayyhem.com][RemoteRegistry] 13 registry read(s) denied on cas-db.mayyhem.com --
-          not collected: SCCM site code, site-system roles and logged-on user; SMB signing requirement;
-          NTLM restrictions and loopback-check setting; SQL Server encryption / Extended Protection
-          settings. The host-hardening and SQL Server keys require local Administrators on the target;
-          re-run with an administrative account to collect them. Per-read detail is in the full log.
+  WARNING [ps1-sms.mayyhem.com][RemoteRegistry] Access denied reading 7 registry key(s):
+          SOFTWARE\Microsoft\SMS\CurrentUser
+          SYSTEM\CurrentControlSet\Services\LanManServer\Parameters
+          SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+          SYSTEM\CurrentControlSet\Control\Lsa
+          SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL
+          SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib
+          SOFTWARE\Microsoft\SMS\Triggers
   ```
 
-  Re-running as a local administrator on those hosts is what fills the gap; nothing else is wrong.
+  The host-hardening and SQL Server keys require local Administrators on the target. Re-running as a
+  local administrator on those hosts is what fills the gap; nothing else is wrong.
+
+- **Skipped preprocess transforms.** Most `node_*` and edge tables are built from AdminService or WMI
+  data. Without privilege neither transport produces anything, so the transforms that read them are
+  skipped — 106 of them in a nine-host lab run. When *no* privileged table exists at all this is an
+  unprivileged run behaving correctly, so each skip is logged at DEBUG. If AdminService *did* run and a
+  single table is still missing, that one stays a WARNING: the transport was up and that query came
+  back empty, which is worth investigating.
+
+- **Probes that come back negative.** Asking a host "are you an SMS Provider?" and being told no is a
+  discovery result, not a failure. A host that does not serve the endpoint is reported at INFO
+  (`Unable to connect to https://… ; skipping remaining HTTP checks`), and an AdminService probe
+  answered with HTTP 404 at VERBOSE — the INFO line right behind it,
+  `… is not a reachable AdminService provider; skipping`, is the conclusion worth reading. A 401, 403
+  or 500 is **not** downgraded: those mean the provider exists and rejected you or broke, which is a
+  finding.
 
 - **impacket's Kerberos-cache notice.** When the WMI phase tries Kerberos without `--ticket`, impacket
   looks for a credential cache in `KRB5CCNAME` (a Unix convention, effectively never set on Windows),
