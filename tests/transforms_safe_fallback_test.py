@@ -8,7 +8,8 @@ used. When only one family is present, referencing the absent sibling would
 otherwise log a WARNING, creating noise in routine operation.
   - Missing wmi_<X> when adminservice_<X> exists  -> DEBUG
   - Missing adminservice_<X> when wmi_<X> exists   -> DEBUG
-  - Missing table with no sibling at all           -> WARNING  (unchanged)
+  - No sibling AND no privileged transport at all  -> DEBUG
+  - No sibling but a privileged transport ran      -> WARNING
 
 Fallback-phase skip (http_ / smb_): HTTP and SMB are fallback phases that
 should_run_phase skips once a privileged transport (AdminService/WMI) has
@@ -81,14 +82,51 @@ def test_safe_adminservice_miss_with_wmi_sibling_logs_debug(caplog):
 
 
 # ---------------------------------------------------------------------------
-# (c) No sibling at all -> WARNING (the old behaviour must be preserved)
+# (c) No sibling AND no privileged transport at all -> DEBUG
+#
+# This test used to assert WARNING here, on the grounds that "no sibling" meant a
+# real miss. That is exactly backwards for the run it fires on: with NEITHER
+# transport table present, the AdminService/WMI phases never produced anything, so
+# every table they would have built is expected to be absent. 106 of the 146
+# WARNINGs in a low-privilege lab run were this one case. Case (c2) below keeps the
+# signal the old test was really protecting.
 # ---------------------------------------------------------------------------
 
-def test_safe_no_sibling_logs_warning(caplog):
-    """Missing table with no wmi_/adminservice_ sibling must still log at WARNING."""
+def test_safe_no_sibling_and_no_privileged_transport_logs_debug(caplog):
+    """Neither transport ran, so an absent transport table is expected, not news."""
     con = duckdb.connect(":memory:")
     con.execute("CREATE SCHEMA sccm")
-    # Neither sccm.adminservice_baz nor sccm.wmi_baz exists.
+    # Deliberately empty: no adminservice_* or wmi_* table exists.
+
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
+        _safe(
+            con,
+            "test<-wmi_baz",
+            "SELECT 1 FROM sccm.wmi_baz",
+        )
+
+    relevant = [r for r in caplog.records if "test<-wmi_baz" in r.message]
+    assert relevant, "Expected at least one log record mentioning test<-wmi_baz"
+    for rec in relevant:
+        assert rec.levelno == logging.DEBUG, (
+            f"Expected DEBUG when no privileged transport ran, got {rec.levelname}: {rec.message}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (c2) No sibling, but a privileged transport DID run -> WARNING
+# ---------------------------------------------------------------------------
+
+def test_safe_no_sibling_but_privileged_transport_ran_logs_warning(caplog):
+    """AdminService worked and produced tables, yet THIS pair is missing -- real news.
+
+    Distinguishes "we never had privilege" (expected) from "the transport was up and
+    this one query came back with nothing" (a gap worth investigating).
+    """
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA sccm")
+    # A privileged transport landed *something*, just not wmi_baz or its sibling.
+    con.execute("CREATE TABLE sccm.adminservice_unrelated (id INTEGER)")
 
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
         _safe(
@@ -101,7 +139,8 @@ def test_safe_no_sibling_logs_warning(caplog):
     assert relevant, "Expected at least one log record mentioning test<-wmi_baz"
     warning_records = [r for r in relevant if r.levelno == logging.WARNING]
     assert warning_records, (
-        f"Expected WARNING when no sibling exists; got levels: {[r.levelname for r in relevant]}"
+        "Expected WARNING when a privileged transport ran but this table is absent; "
+        f"got levels: {[r.levelname for r in relevant]}"
     )
 
 

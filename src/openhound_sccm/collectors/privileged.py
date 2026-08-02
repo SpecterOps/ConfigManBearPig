@@ -261,6 +261,10 @@ def _http_get_value(client, path: str, *, probing: bool = False) -> Optional[lis
     ``Collected 0 <things>``, which is otherwise indistinguishable from an accurate
     empty result. A read timeout silently becoming "no rows" is how an incomplete
     graph looks complete.
+
+    The same distinction applies to a 404: while probing it means "no AdminService
+    here", so it is VERBOSE. Any other status while probing, and any non-200 once the
+    host is known to be a provider, stays a WARNING.
     """
     result = client.get(path)
     if result.error_class is ErrorClass.CONNECT_FAILURE:
@@ -274,7 +278,17 @@ def _http_get_value(client, path: str, *, probing: bool = False) -> Optional[lis
         logger.warning("AdminService GET %s failed: %s", path, result.error_class.value)
         return None
     if result.status_code != 200:
-        logger.warning("AdminService GET %s returned HTTP %s", path, result.status_code)
+        if probing and result.status_code == 404:
+            # No AdminService at this path: the host is not an SMS Provider. The caller
+            # turns this into the INFO "is not a reachable AdminService provider;
+            # skipping" line, so this is only the evidence behind it -- promoting it to
+            # INFO would state the same fact twice per non-provider host.
+            logger.verbose("AdminService GET %s returned HTTP 404; not an SMS Provider", path)
+        else:
+            # Any other status while probing means the provider IS there and rejected us
+            # (401/403) or broke (500) -- a finding, not a negative. And past the probe,
+            # the host is known to be a provider, so any non-200 is a short collection.
+            logger.warning("AdminService GET %s returned HTTP %s", path, result.status_code)
         return None
     try:
         value = json.loads(result.content or b"").get("value")

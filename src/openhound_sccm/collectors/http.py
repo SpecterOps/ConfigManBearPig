@@ -308,8 +308,14 @@ class _HttpProbe:
         ``connection_failed`` so the orchestrator stops probing this target."""
         result = self.client.get(url)
         if _is_connection_failure(result):
-            logger.warning("Unable to connect to %s (%s) - skipping remaining HTTP checks",
-                           url, result.error_class.value)
+            # A host that does not serve this endpoint is a discovery RESULT, not a
+            # fault -- and unlike the AdminService probe, this phase has no separate
+            # "not an MP/DP" conclusion line, logging only positives between
+            # "Attempting HTTP collection on" and "HTTP collection completed". So this
+            # line IS the conclusion and stays on the default console at INFO; drop it
+            # any lower and a host that served nothing reads as a clean collection.
+            logger.info("Unable to connect to %s (%s); skipping remaining HTTP checks",
+                        url, result.error_class.value)
             self.connection_failed = True
             return None
         return result

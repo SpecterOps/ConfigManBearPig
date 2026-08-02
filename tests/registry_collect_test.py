@@ -384,7 +384,7 @@ def test_denied_triggers_key_reports_access_denied_not_a_missing_key(monkeypatch
     text = "\n".join(r.getMessage() for r in caplog.records)
 
     assert "Access denied reading" in text
-    assert "site code is unknown" in text
+    assert "skipping remaining Remote Registry checks" in text
     assert "does not exist or no site code subkey found" not in text
 
 
