@@ -14,7 +14,7 @@
       { "kind": "LocalAdminRequired", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
       { "kind": "CoerceAndRelayToAdminService", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
       { "kind": "CoerceAndRelayToMSSQL", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
-      { "kind": "CoerceAndRelaytoSMB", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
+      { "kind": "CoerceAndRelayToSMB", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
       { "kind": "HasSession", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
       { "kind": "MSSQL_Contains", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
       { "kind": "MSSQL_ControlDB", "start": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" }, "end": { "value": "9c3a1f7a-1d6b-4d87-b61b-1c3b7a9e4f01" } },
