@@ -21,8 +21,8 @@ _TRUTHY_ENV = frozenset({"1", "true", "yes", "on"})
 
 
 def _privileged_transport_ran(con: duckdb.DuckDBPyConnection) -> bool:
-    """True if any AdminService/WMI source table exists — i.e. a privileged
-    transport collected at least one host this run.
+    """True if any AdminService/WMI source table holds ROWS — i.e. a privileged
+    transport actually collected something this run.
 
     HTTP and SMB are *fallback* phases: ``should_run_phase`` skips them for any
     host a privileged transport already collected (per_host_phases.py:116,
@@ -32,17 +32,32 @@ def _privileged_transport_ran(con: duckdb.DuckDBPyConnection) -> bool:
     The clearest example: the SMS Provider *is* the AdminService host, so it is
     privileged-collected and its HTTP probe is skipped, leaving http_smsproviders
     empty in every normal authenticated run.
+
+    Rows, not mere existence. dlt writes a resource's SCHEMA even when it yields
+    zero rows, so "the table is in the catalog" does not mean "data was collected".
+    A real unprivileged run against an unreachable AdminService still materialised
+    adminservice_client_devices and adminservice_site_definitions with 0 rows; an
+    existence check read that as "a privileged transport ran" and kept 98 expected
+    misses at WARNING (con-81c2). Across 18 lab collections the true split is
+    binary — privileged runs have 13 populated tables, unprivileged runs have none
+    populated — so requiring a row is what separates them.
+
+    Short-circuits on the first populated table, so the common privileged case
+    costs one extra query, and the unprivileged case scans a handful of empties.
     """
     try:
-        found = con.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_name LIKE 'adminservice_%' OR table_name LIKE 'wmi_%' "
-            "LIMIT 1"
-        ).fetchone()
+        candidates = con.execute(
+            "SELECT table_schema, table_name FROM information_schema.tables "
+            "WHERE table_name LIKE 'adminservice_%' OR table_name LIKE 'wmi_%'"
+        ).fetchall()
+        for schema, name in candidates:
+            if con.execute(f'SELECT 1 FROM "{schema}"."{name}" LIMIT 1').fetchone() is not None:
+                return True
     except duckdb.Error:
         # Can't query the catalog — stay safe and treat as "not privileged" (WARNING).
         return False
-    return found is not None
+    # Either no privileged table at all, or every one of them is empty.
+    return False
 
 
 def _sccm_expected_miss(con: duckdb.DuckDBPyConnection, missing: str) -> bool:

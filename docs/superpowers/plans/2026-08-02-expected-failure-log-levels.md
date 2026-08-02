@@ -703,6 +703,15 @@ git commit -m "refactor(<TICKET>): RemoteRegistry denials list keys, drop capabi
 - Consumes: `_privileged_transport_ran(con: duckdb.DuckDBPyConnection) -> bool` (already exists, `transforms.py:23`)
 - Produces: `_sccm_expected_miss(con, missing: str) -> bool` — signature unchanged, third case added
 
+> **Correction applied 2026-08-02, after this shipped and failed in the lab.**
+> `_privileged_transport_ran` tested whether a privileged table **existed**. dlt writes a resource's
+> schema even at zero rows, so a lowpriv run into a *reused* output directory carried
+> `adminservice_client_devices` and `adminservice_site_definitions` at 0 rows, the helper answered
+> "a privileged transport ran", and 98 expected misses stayed at WARNING. The helper now requires a
+> **row**, short-circuiting on the first hit. `--clean` runs never reach the broken branch, which is
+> why the Step 4 acceptance run passed. Two pre-existing `http_`/`smb_` tests seeded an empty
+> privileged table to mean "a transport ran" and now insert a row. See spec §6.0.
+
 - [ ] **Step 1: Invert the pinned test and add the new one**
 
 In `tests/transforms_safe_fallback_test.py`, replace `test_safe_no_sibling_logs_warning` (lines 87-105):

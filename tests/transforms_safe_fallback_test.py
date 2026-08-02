@@ -126,7 +126,10 @@ def test_safe_no_sibling_but_privileged_transport_ran_logs_warning(caplog):
     con = duckdb.connect(":memory:")
     con.execute("CREATE SCHEMA sccm")
     # A privileged transport landed *something*, just not wmi_baz or its sibling.
+    # The row matters: an empty table proves nothing was collected (see the
+    # empty-table test below), so this must actually hold data.
     con.execute("CREATE TABLE sccm.adminservice_unrelated (id INTEGER)")
+    con.execute("INSERT INTO sccm.adminservice_unrelated VALUES (1)")
 
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
         _safe(
@@ -145,6 +148,41 @@ def test_safe_no_sibling_but_privileged_transport_ran_logs_warning(caplog):
 
 
 # ---------------------------------------------------------------------------
+# (c3) A privileged table that exists but is EMPTY does not count as "ran"
+#
+# dlt writes a resource's SCHEMA even when it yields zero rows, so "the table
+# exists" and "the transport collected something" are different questions. A real
+# unprivileged lab run against an unreachable AdminService still materialised
+# adminservice_client_devices and adminservice_site_definitions with 0 rows, and
+# an existence check read that as "a privileged transport ran" -- keeping 98
+# expected misses at WARNING (con-81c2).
+# ---------------------------------------------------------------------------
+
+def test_empty_privileged_table_does_not_count_as_a_transport_having_run(caplog):
+    """An adminservice_ table with no rows must not suppress the downgrade."""
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA sccm")
+    # Exactly what the failing lab run had: schema present, not one row.
+    con.execute("CREATE TABLE sccm.adminservice_client_devices (smsid VARCHAR)")
+    con.execute("CREATE TABLE sccm.adminservice_site_definitions (site_code VARCHAR)")
+
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
+        _safe(
+            con,
+            "test<-wmi_baz",
+            "SELECT 1 FROM sccm.wmi_baz",
+        )
+
+    relevant = [r for r in caplog.records if "test<-wmi_baz" in r.message]
+    assert relevant, "Expected at least one log record mentioning test<-wmi_baz"
+    for rec in relevant:
+        assert rec.levelno == logging.DEBUG, (
+            "An empty privileged table means the transport collected nothing; "
+            f"expected DEBUG, got {rec.levelname}: {rec.message}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # (d) http_ fallback table absent but a privileged transport ran -> DEBUG
 # ---------------------------------------------------------------------------
 
@@ -155,7 +193,10 @@ def test_safe_http_fallback_miss_with_privileged_transport_logs_debug(caplog):
     con = duckdb.connect(":memory:")
     con.execute("CREATE SCHEMA sccm")
     # A privileged transport ran this collection (some adminservice_* table exists).
+    # Populated, not just present: dlt materialises a schema for a resource that
+    # yielded nothing, so an empty table does not mean the transport collected.
     con.execute("CREATE TABLE sccm.adminservice_r_system (id INTEGER)")
+    con.execute("INSERT INTO sccm.adminservice_r_system VALUES (1)")
 
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
         _safe(
@@ -209,7 +250,9 @@ def test_safe_smb_fallback_miss_with_privileged_transport_logs_debug(caplog):
     privileged transport ran is an expected miss, so DEBUG."""
     con = duckdb.connect(":memory:")
     con.execute("CREATE SCHEMA sccm")
+    # Populated, not just present -- see the adminservice_r_system note above.
     con.execute("CREATE TABLE sccm.wmi_r_system (id INTEGER)")
+    con.execute("INSERT INTO sccm.wmi_r_system VALUES (1)")
 
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.transforms"):
         _safe(

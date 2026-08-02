@@ -200,6 +200,46 @@ return not _privileged_transport_ran(con)
 `_privileged_transport_ran` already exists for the `http_`/`smb_` fallback case, so case 3 adds a
 reuse, not a new mechanism.
 
+### 6.0 "Ran" means rows, not a table in the catalog
+
+**Corrected 2026-08-02 after the first implementation shipped and failed in the lab.**
+
+`_privileged_transport_ran` originally asked whether any `adminservice_*`/`wmi_*` table **existed**.
+dlt writes a resource's *schema* even when it yields zero rows, so that question is not the one we
+mean. A real `MAYYHEM\lowpriv` collection into a **reused output directory** carried
+`adminservice_client_devices` and `adminservice_site_definitions` at **0 rows**; the existence check
+read that as "a privileged transport ran" and kept **98** expected misses at WARNING — the exact
+symptom this design set out to remove.
+
+The helper now requires at least one privileged table to hold a **row**, short-circuiting on the first
+hit. Measured across all 18 lab collections on disk, the split is perfectly binary and this separates
+them cleanly:
+
+| Runs | Privileged tables | Populated |
+|---|---:|---:|
+| 8 privileged (`ab-priv-*`, `priv3`-`priv9`) | 13 | 13 |
+| 9 unprivileged (`ab-lowpriv-*`, `unpriv3`-`unpriv9`, `verify-lowpriv`) | 0 | 0 |
+| 1 unprivileged into a reused dir | 2 | **0** ← the failure |
+
+Two consequences worth stating:
+
+- **The bug predates this design.** `_privileged_transport_ran` is pre-existing code written for the
+  `http_`/`smb_` fallback case, which had the same blindness: an empty `adminservice_*` table would
+  wrongly downgrade a genuine `http_`/`smb_` miss to DEBUG. Fixing the helper may surface a few **new**
+  `http_`/`smb_` warnings — those are real ones that were being hidden. Two existing tests seeded an
+  *empty* privileged table to mean "a transport ran" and had to insert a row to keep expressing that.
+- **Why the acceptance run missed it.** It used `--clean` into a fresh directory, which produces no
+  privileged tables at all. Only a reused directory reaches the broken branch. Testing one privilege
+  level in one directory state was not enough.
+
+### 6.2 Partial privilege: deliberately still a WARNING
+
+If AdminService returned rows for some classes and was ACL-denied for others, the denied ones stay
+WARNINGs. That is intentional and unchanged. It has **never occurred** in the 18-run corpus — the split
+is binary — so suppressing it would be building for a case that does not exist while discarding a real
+signal. If it ever happens, the output is a handful of warnings naming exactly which classes were
+denied, which is the useful thing to see, and the right moment to revisit with data.
+
 **Level: DEBUG**, matching the existing downgrade. INFO was rejected: it would put one console line per
 skipped transform (106 of them) on every low-privilege run.
 
