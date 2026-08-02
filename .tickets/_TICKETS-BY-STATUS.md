@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**147 tickets** — 6 in progress · 29 open · 112 closed
+**148 tickets** — 6 in progress · 29 open · 113 closed
 
 ## In progress (6)
 
@@ -52,7 +52,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (112)
+## Closed (113)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -95,6 +95,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-6198`](con-6198.md) | 2 | bug | SCCM_CoerceAndRelayToAdminService not produced by low-priv collection | sccm, lowpriv, edges, relay |
 | [`con-6677`](con-6677.md) | 2 | bug | Wire integration harness low-privilege mode to a CLI flag | testing, integration, cli, lowpriv |
 | [`con-7842`](con-7842.md) | 2 | task | Adopt openhound-collector-common v0.1.2: baseline/candidate compare orientation, regression exit codes, three-way privilege flag | testing, integration, cli, compare |
+| [`con-81c2`](con-81c2.md) | 2 | task | Quiet expected-failure logs: RemoteRegistry keys, transform downgrade, probe levels, impacket SyntaxWarning -type task -priority 1 -description 146... | — |
 | [`con-8a28`](con-8a28.md) | 2 | task | Silence expected access-denied noise on non-admin runs; show the zip path in the --run-all summary | sccm, logging, registry, wmi, run-all |
 | [`con-ab59`](con-ab59.md) | 2 | bug | get_mssql_settings cannot see named SQL instances -- every probed registry path is default-instance only | sccm, registry, mssql, epa |
 | [`con-acdd`](con-acdd.md) | 2 | task | Integration runner conflates 'no such edge' with 'edge rejected by property match' | testing, integration, shared-lib, diagnostics |
