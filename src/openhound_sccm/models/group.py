@@ -55,6 +55,9 @@ class GroupNode(BaseAsset):
     # independently LDAP-resolved elsewhere (_derive_ad_props).
     sam_account_name: str | None = None
     distinguished_name: str | None = None
+    # SAMACCOUNTNAME@DOMAIN.FQDN, built by transforms._stamp_sharphound_name. None when the
+    # domain FQDN could not be resolved, in which case the node ships with no name at all.
+    sharphound_name: str | None = None
 
     @property
     def as_node(self) -> SCCMNode | None:
@@ -79,13 +82,17 @@ class GroupNode(BaseAsset):
             )
             return None
 
-        display = self.name or sid
+        # SharpHound's form or nothing. These nodes merge into BloodHound's native AD graph
+        # by SID, so a name we emit overwrites SharpHound's own label -- 'mayyhem\Domain
+        # Admins' or a bare SID would each degrade a merged graph. Null is pruned on emit
+        # and BloodHound falls back to the object id. See transforms._stamp_sharphound_name.
+        display = self.sharphound_name
 
         return SCCMNode(
             id=sid,
             kinds=[nk.GROUP, nk.BASE],
             properties=GroupProperties(
-                name=self.name or display,
+                name=display,
                 displayname=display,
                 environmentid=env,
                 collectionSource=[],

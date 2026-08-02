@@ -12,6 +12,8 @@ roles), and a populated key lists remote SQL database servers.
 Both paths only run once the Triggers key yields a site code, so the fakes seed
 one by default.
 """
+import logging
+
 from openhound_sccm.collectors import registry
 
 TARGET = "ps1-pss.mayyhem.com"
@@ -35,7 +37,12 @@ class FakeProbe:
     """
 
     def __init__(self, enum_results=None, read_values_result=None,
-                 values_by_key=None, dword_results=None, value_results=None):
+                 values_by_key=None, dword_results=None, value_results=None,
+                 denied_keys=None):
+        # Registry paths this fake host refuses. The real probe records these as
+        # its read helpers hit access-denied; here they are seeded up front so a
+        # test can pick "denied" or "absent" for the same None return value.
+        self._denied_keys = set(denied_keys or ())
         self._enum_results = enum_results or {}
         self._read_values_result = read_values_result
         # Per-key overrides for the MSSQL paths, which need more than one key to
@@ -55,6 +62,9 @@ class FakeProbe:
 
     def __exit__(self, *exc):
         return False
+
+    def was_denied(self, key_path):
+        return key_path in self._denied_keys
 
     def enum_keys(self, key_path):
         return self._enum_results.get(key_path)
@@ -339,3 +349,37 @@ def test_mssql_unreadable_service_key_leaves_fields_unset():
     row = _mssql_row(_mssql_probe())
     assert row["service_start_type"] is None
     assert row["service_account_name"] is None
+
+
+# --- denied vs. absent site code ----------------------------------------------
+# Both leave enum_keys(Triggers) returning None, but they mean opposite things:
+# "this host is not a site server" vs. "I could not look". The phase used to
+# report the first for both, which sends the operator away from a host that may
+# well be a site system (con-8a28).
+
+def _run_without_site_code(monkeypatch, *, denied):
+    ctx = FakeCtx()
+    monkeypatch.setattr(
+        registry, "_RegistryProbe",
+        lambda *a, **k: FakeProbe({}, denied_keys=[TRIGGERS] if denied else []),
+    )
+    return list(registry.collect_registry(TARGET, ctx))
+
+
+def test_denied_triggers_key_reports_access_denied_not_a_missing_key(monkeypatch, caplog):
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        _run_without_site_code(monkeypatch, denied=True)
+    text = "\n".join(r.getMessage() for r in caplog.records)
+
+    assert "Access denied reading" in text
+    assert "site code is unknown" in text
+    assert "does not exist or no site code subkey found" not in text
+
+
+def test_absent_triggers_key_still_reports_the_host_as_not_a_site_server(monkeypatch, caplog):
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        _run_without_site_code(monkeypatch, denied=False)
+    text = "\n".join(r.getMessage() for r in caplog.records)
+
+    assert "does not exist or no site code subkey found" in text
+    assert "Access denied reading" not in text

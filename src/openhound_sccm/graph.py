@@ -44,6 +44,17 @@ BACKFILL_END_KIND: dict[str, str] = {
     "SCCM_HasStoredAccount": "Base",
 }
 
+# Edge kind -> the kind to give a synthesised stub when the edge's START id has no node.
+# The end-side map above left starts unhandled, so an edge whose start had no node was
+# dropped whole at ingest rather than merely rendering as a bare id -- silently removing
+# real principals from the graph (Ope-15m7). A MemberOf start may be a user, a group or a
+# computer, so it can only be typed "Base"; BloodHound merges it into the real node if the
+# SID is ever collected. Only edges whose start is a principal id belong here: edges
+# starting at an SCCM/MSSQL node already have one from their own node table.
+BACKFILL_START_KIND: dict[str, str] = {
+    "MemberOf": "Base",
+}
+
 
 @dataclass
 class SCCMEdgeProperties(EdgeProperties):

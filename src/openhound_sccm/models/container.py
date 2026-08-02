@@ -32,6 +32,10 @@ class ContainerNode(BaseAsset):
     id: str | None = None
     distinguished_name: str | None = None
     fallback_domain_sid: str | None = None
+    # NAME@DOMAIN.FQDN, built by transforms._stamp_sharphound_name from the DN's leading CN
+    # and its DC= components. None when the DN is missing, in which case the node ships
+    # with no name at all.
+    sharphound_name: str | None = None
 
     @property
     def as_node(self) -> SCCMNode | None:
@@ -39,12 +43,16 @@ class ContainerNode(BaseAsset):
             # No GUID means no merge key with SharpHound's own node; drop the row.
             logger.warning("ContainerNode: dropping row with no id")
             return None
-        display = self.distinguished_name or self.id
+        # SharpHound labels a container NAME@DOMAIN.FQDN, not by its DN. Since this node
+        # merges with SharpHound's own by objectGUID, emitting the DN here would replace
+        # that label with a DN string on the merged node. Null is pruned on emit.
+        display = self.sharphound_name
         env = domain_environment_id(self.id, self.fallback_domain_sid) or self.fallback_domain_sid or self.id
-        if not self.distinguished_name:
-            # Only the display name degrades to the raw GUID; the DN property stays
-            # null so queries filtering on it don't match a GUID string by accident.
-            logger.debug("ContainerNode %s has no DN; falling back to the id for display", self.id)
+        if not display:
+            logger.debug(
+                "ContainerNode %s has no SharpHound-format name; emitting it unnamed so "
+                "BloodHound displays the object id", self.id,
+            )
         return SCCMNode(
             id=self.id,
             kinds=["Container", "Base"],

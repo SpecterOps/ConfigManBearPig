@@ -44,7 +44,15 @@ class StubNode(BaseAsset):
         return SCCMNode(
             id=self.id,
             kinds=kinds,
-            properties=NodeProperties(name=self.id, displayname=self.id, environmentid=env),
+            # No name/displayname. A stub exists precisely because nothing in this collect
+            # knew what this principal *is*, so it has no name to give -- and these nodes
+            # ship untagged (ARCHITECTURE 11f) to merge into the native AD graph by id, so
+            # naming a stub after its own SID would overwrite a real SharpHound label with
+            # the SID string. Both are null and pruned on emit, leaving BloodHound to
+            # display the object id when it knows nothing better. This is what
+            # ARCHITECTURE 11e has always specified a stub to be: "just id, kinds ... and
+            # environmentid". Ope-15m7.
+            properties=NodeProperties(name=None, displayname=None, environmentid=env),
         )
 
     @property

@@ -70,19 +70,27 @@ def test_container_node_exposes_lowercase_distinguishedname():
         id="AAAA-GUID",
         distinguished_name="CN=System Management,CN=System,DC=x",
         fallback_domain_sid="S-1-5-21-1-2-3",
+        sharphound_name="SYSTEM MANAGEMENT@X",
     ).as_node.properties
     assert props.distinguishedname == "CN=System Management,CN=System,DC=x"
     assert not hasattr(props, "distinguishedName")
-    # Display name still mirrors the DN, as before.
-    assert props.name == "CN=System Management,CN=System,DC=x"
+    # The display name is SharpHound's NAME@DOMAIN form, NOT the DN (Ope-15m7). This node
+    # merges with SharpHound's own Container by objectGUID, so emitting the DN as the name
+    # would replace SharpHound's label with a DN string on the merged node.
+    assert props.name == "SYSTEM MANAGEMENT@X"
+    assert props.displayname == "SYSTEM MANAGEMENT@X"
 
 
-def test_container_node_dn_property_is_null_when_dn_missing():
-    # Display degrades to the raw GUID, but the DN property stays null rather than
-    # repeating the GUID -- otherwise a STARTS WITH filter would see a GUID string.
+def test_container_node_is_unnamed_when_no_sharphound_name_could_be_built():
+    # No DN means _stamp_sharphound_name had no CN and no DC= components to work with, so
+    # it left sharphound_name NULL. The node must then ship with NO name rather than falling
+    # back to its raw GUID: null is pruned on emit and BloodHound displays the object id,
+    # whereas a GUID-as-name would overwrite a real SharpHound label on the merged node.
+    # The DN property stays null too, so a STARTS WITH filter never sees a GUID string.
     props = ContainerNode(id="AAAA-GUID", fallback_domain_sid="S-1-5-21-1-2-3").as_node.properties
     assert props.distinguishedname is None
-    assert props.name == "AAAA-GUID"
+    assert props.name is None
+    assert props.displayname is None
 
 
 def test_generic_all_edge_per_principal():

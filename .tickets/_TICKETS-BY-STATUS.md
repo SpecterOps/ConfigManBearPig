@@ -5,13 +5,12 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**142 tickets** — 7 in progress · 28 open · 107 closed
+**143 tickets** — 6 in progress · 28 open · 109 closed
 
-## In progress (7)
+## In progress (6)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
-| [`Ope-15m7`](Ope-15m7.md) | 1 | task | Seed Nodes / Edges Audit | sccm, graph, audit |
 | [`ope-60fe`](ope-60fe.md) | 1 | task | Publish ConfigManBearPig 2.0 and openhound-collector-common to PyPI | publishing, packaging, sccm |
 | [`Ope-liu7`](Ope-liu7.md) | 1 | feature | System Management Container Abuse | sccm, ldap, acl, takeover |
 | [`Ope-rhzx`](Ope-rhzx.md) | 1 | feature | Individual Permissions (Port from PowerShell) | sccm, adminservice, rbac, permissions |
@@ -52,7 +51,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (107)
+## Closed (109)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -62,6 +61,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-c522`](con-c522.md) | 1 | task | Clear 14 Dependabot alerts via lock-only dependency bump | security, dependencies |
 | [`ope-0495`](ope-0495.md) | 1 | task | SCCM collector vs live CMBP unit-test parity gaps (2026-07-14 comparison) | — |
 | [`ope-1201`](ope-1201.md) | 1 | bug | node_mssql_server drops registry-only SQL servers (coalesce port VARCHAR vs INTEGER_LITERAL) | sccm, preproc, mssql, dlt |
+| [`Ope-15m7`](Ope-15m7.md) | 1 | task | Seed Nodes / Edges Audit | sccm, graph, audit |
 | [`ope-16f5`](ope-16f5.md) | 1 | task | Rename SCCM node/edge properties to ConfigManBearPig.ps1 casing | sccm, graph, property-naming |
 | [`ope-194a`](ope-194a.md) | 1 | bug | Fix SCCM_AdminUser displayName/displayname case-collision (breaks OpenGraph ingestion) | — |
 | [`ope-1950`](ope-1950.md) | 1 | task | Stage 3: Containment + RBAC fan-out + node/edge property parity (preproc/convert port) | sccm, preproc, convert, stage3, edges, properties, parity |
@@ -94,6 +94,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-6198`](con-6198.md) | 2 | bug | SCCM_CoerceAndRelayToAdminService not produced by low-priv collection | sccm, lowpriv, edges, relay |
 | [`con-6677`](con-6677.md) | 2 | bug | Wire integration harness low-privilege mode to a CLI flag | testing, integration, cli, lowpriv |
 | [`con-7842`](con-7842.md) | 2 | task | Adopt openhound-collector-common v0.1.2: baseline/candidate compare orientation, regression exit codes, three-way privilege flag | testing, integration, cli, compare |
+| [`con-8a28`](con-8a28.md) | 2 | task | Silence expected access-denied noise on non-admin runs; show the zip path in the --run-all summary | sccm, logging, registry, wmi, run-all |
 | [`con-acdd`](con-acdd.md) | 2 | task | Integration runner conflates 'no such edge' with 'edge rejected by property match' | testing, integration, shared-lib, diagnostics |
 | [`con-be15`](con-be15.md) | 2 | bug | Review MSSQL_Server inclusion + CM_<site> attribution for the passive site server | sccm, mssql, preproc, inference |
 | [`con-be32`](con-be32.md) | 2 | task | CI red: --help substring tests break under forced colour and narrow terminals -type bug -priority 1 -tags testing,ci,cli,help -assignee cthompson -... | — |

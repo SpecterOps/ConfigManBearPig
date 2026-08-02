@@ -53,6 +53,9 @@ class ComputerNode(BaseAsset):
     service_principal_name: list[str] | None = None
     cn: str | None = None
     domain: str | None = None
+    # HOSTNAME.DOMAIN.FQDN, built by transforms._stamp_sharphound_name. None when the domain
+    # FQDN could not be resolved, in which case the node ships with no name at all.
+    sharphound_name: str | None = None
 
     @property
     def as_node(self) -> SCCMNode | None:
@@ -77,13 +80,15 @@ class ComputerNode(BaseAsset):
             )
             return None
 
-        display = self.name or self.dnshostname or sid
+        # SharpHound's form or nothing -- see GroupNode.as_node for the reasoning. For a
+        # computer that is the uppercase dNSHostName, not the short name.
+        display = self.sharphound_name
 
         return SCCMNode(
             id=sid,
             kinds=[nk.COMPUTER, nk.BASE],
             properties=ComputerProperties(
-                name=self.name or display,
+                name=display,
                 displayname=display,
                 environmentid=env,
                 collectionSource=[],

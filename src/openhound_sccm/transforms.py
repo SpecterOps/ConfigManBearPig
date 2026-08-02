@@ -158,6 +158,25 @@ def _scalar(con: duckdb.DuckDBPyConnection, *execute_args: Any) -> Any:
     return row[0]
 
 
+def _has_column(con: duckdb.DuckDBPyConnection, schema: str, table: str, column: str) -> bool:
+    """True when `table` currently has `column`.
+
+    Needed by builders that assemble SQL differently per table (e.g. _stamp_sharphound_name,
+    which is shared across node tables with different column sets). _ensure_columns is the
+    wrong tool there: it would *add* the column as all-NULL, hiding the difference the caller
+    needs to branch on. Returns False for a missing table rather than raising, so a skipped
+    optional source behaves like an absent column everywhere else in this module.
+    """
+    return bool(
+        _scalar(
+            con,
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_schema = ? AND table_name = ? AND column_name = ?",
+            [schema, table, column],
+        )
+    )
+
+
 def _principal_by_name(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     """Union every collected (name, SID) pair for offline name->SID resolution.
 
@@ -788,7 +807,249 @@ def _derive_ad_props(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f") "
         f"GROUP BY sid",
     )
-    logger.info("ad_props built in schema %r", schema)
+    # ad_props is the ONLY source of AD attributes for every AD node kind (names,
+    # Enabled, Type, objectClass, servicePrincipalName, CN, Domain). _safe() above
+    # logs-and-skips a missing ldap_resolved_principals, which leaves this table
+    # created-but-empty and silently strips those attributes from the whole graph.
+    # _emit_resolved_principals warns at the emission site; without this warning the
+    # consumption site is silent, so an operator sees an attribute-less graph with no
+    # indication why. Ope-15m7.
+    if not _scalar(con, f"SELECT count(*) FROM {schema}.ad_props"):
+        logger.warning(
+            "ad_props is empty: no LDAP-resolved principals were available. Every AD "
+            "node will be emitted without a name or AD attributes. Check for an earlier "
+            "'Failed to persist ldap_resolved_principals' warning, or for a collect that "
+            "reached no domain controller."
+        )
+    else:
+        logger.info("ad_props built in schema %r", schema)
+
+
+# Matches a domain-relative SID and captures its domain portion (S-1-5-21-x-y-z).
+# Builtin/well-known SIDs (S-1-5-32-*, S-1-5-11) do not match -- they have no domain
+# part of their own and are qualified from a co-occurring principal instead.
+_DOMAIN_SID_SQL = "'^(S-1-5-21(?:-\\d+){3})-\\d+$'"
+
+
+def _domain_sid_of(col: str) -> str:
+    """SQL expression extracting the domain SID from a SID column, NULL if not domain-relative."""
+    return f"nullif(regexp_extract(upper({col}), {_DOMAIN_SID_SQL}, 1), '')"
+
+
+def _is_object_class(oc: str, *, unless: tuple[str, ...] = ()) -> str:
+    """SQL predicate: does this ad_props row describe an object of LDAP class `oc`?
+
+    Checks the objectClass list rather than only `type` (which _derive_ad_props derives from
+    the list's last element) so an object whose class chain ends unexpectedly is still
+    classified correctly.
+
+    `unless` names classes that disqualify the row even when `oc` is present, because AD's
+    objectClass chains nest: a computer account's chain is
+    (top, person, organizationalPerson, user, computer), so it satisfies 'user' too. Without
+    the exclusion the user arm below claims every computer in the domain -- the same
+    is-a-computer guard the mssql_server_instances arm already applies for this reason.
+    """
+    def contains(cls: str) -> str:
+        return (
+            f"list_contains(list_transform(coalesce(object_class, CAST([] AS VARCHAR[])), "
+            f"x -> lower(x)), '{cls}')"
+        )
+
+    predicate = f"(lower(coalesce(type, '')) = '{oc}' OR {contains(oc)})"
+    for other in unless:
+        predicate += f" AND NOT (lower(coalesce(type, '')) = '{other}' OR {contains(other)})"
+    return f"({predicate})"
+
+
+def _ensure_domain_fqdn_table(con: duckdb.DuckDBPyConnection, schema: str) -> None:
+    """Create domain_fqdn_by_sid empty-but-schema-complete if it does not exist yet.
+
+    Same contract _derive_ad_props gives ad_props: the LEFT JOIN in _stamp_sharphound_name
+    must always bind. Without this, a caller that runs one node builder without the full
+    transforms() pipeline (every node-builder unit test does exactly that) hits a missing
+    table, _safe skips the stamp, and the node table ends up with no sharphound_name column
+    at all -- so the models read None and emit unnamed nodes, which is the very failure this
+    is meant to remove. An empty map instead yields a NULL FQDN, which the stamp already
+    handles as "unknown domain".
+    """
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+    con.execute(
+        f"CREATE TABLE IF NOT EXISTS {schema}.domain_fqdn_by_sid "
+        "(domain_sid VARCHAR, fqdn VARCHAR)"
+    )
+
+
+def _domain_fqdn_by_sid(con: duckdb.DuckDBPyConnection, schema: str) -> None:
+    """Build sccm.domain_fqdn_by_sid: domain SID -> uppercase domain FQDN.
+
+    Inverts the idiom the node builders already use for environmentid (a co-occurring
+    principal supplies the domain context a SID lacks) to recover the *FQDN*, which is
+    what SharpHound-format names need.
+
+    Why it's needed: a principal can enter the graph from a non-LDAP direction and so
+    carry a domain SID but no domain name. The SCCM site database's SQL service account
+    is the standard case -- it arrives via mssql_server_instances with a bare account
+    name and a SID, and is never passed through resolve_principal, so ad_props has no
+    row for it. Its SID nevertheless shares the domain prefix of every LDAP-resolved
+    principal, so the FQDN is recoverable.
+
+    Only rows whose domain looks like an FQDN (contains a dot) are used, so a NetBIOS
+    name can never be mistaken for one. mode() picks the most common FQDN per domain SID
+    so a single odd row cannot flip the mapping, and the result is deterministic.
+    """
+    con.execute(
+        f"CREATE OR REPLACE TABLE {schema}.domain_fqdn_by_sid AS "
+        f"SELECT {_domain_sid_of('sid')} AS domain_sid, "
+        f"       mode(upper(domain)) AS fqdn "
+        f"FROM {schema}.ad_props "
+        f"WHERE domain IS NOT NULL AND contains(domain, '.') "
+        f"  AND {_domain_sid_of('sid')} IS NOT NULL "
+        f"GROUP BY 1"
+    )
+    cnt = _scalar(con, f"SELECT count(*) FROM {schema}.domain_fqdn_by_sid")
+    if cnt:
+        logger.info("domain_fqdn_by_sid: mapped %d domain SID(s) to an FQDN", cnt)
+    else:
+        logger.warning(
+            "domain_fqdn_by_sid is empty: no LDAP-resolved principal carried a domain "
+            "FQDN, so AD nodes cannot be given SharpHound-format names and will be "
+            "emitted without a name (BloodHound will display their object id)."
+        )
+
+
+# Local part of a principal name: drop any DOMAIN\ prefix, uppercase. SCCM's
+# SecurityGroupName arrives as 'mayyhem\Domain Admins', LDAP's samAccountName as
+# 'Domain Admins'; both must reduce to the same 'DOMAIN ADMINS'.
+def _local_part(col: str) -> str:
+    return f"upper(regexp_replace({col}, '^.*\\\\', ''))"
+
+
+def _fqdn_from_dn(col: str) -> str:
+    """SQL expression rebuilding a domain FQDN from a DN's DC= components.
+
+    'CN=System Management,CN=System,DC=mayyhem,DC=com' -> 'MAYYHEM.COM'. Preferred over
+    the domain_fqdn_by_sid map when a DN is present: it needs no co-occurring principal
+    and stays correct in a multi-domain forest where the map may not cover every domain.
+    """
+    return (
+        f"nullif(upper(array_to_string("
+        f"regexp_extract_all({col}, 'DC=([^,]+)', 1), '.')), '')"
+    )
+
+
+def _stamp_sharphound_name(
+    con: duckdb.DuckDBPyConnection,
+    schema: str,
+    table: str,
+    kind: str,
+    *,
+    sid_col: str = "sid",
+    fallback_domain_sid_col: str | None = None,
+) -> None:
+    """Add a `sharphound_name` column holding this row's name in SharpHound's convention.
+
+    These nodes ship in the untagged AD payload (ARCHITECTURE 11f) so they merge into
+    BloodHound's native AD graph by id -- which means whatever `name` we emit *overwrites*
+    SharpHound's label on the merged node. Matching SharpHound's own format is therefore
+    what keeps a merged graph stable, and it is why the column is NULL rather than a bare
+    or DOMAIN\\-prefixed name when the form can't be built: the models omit a null name,
+    convert prunes it, and BloodHound falls back to the object id, leaving any
+    SharpHound-collected label untouched. Ope-15m7.
+
+    Formats, all uppercase:
+      * user, group -- SAMACCOUNTNAME@DOMAIN.FQDN
+      * computer    -- HOSTNAME.DOMAIN.FQDN (the dNSHostName)
+      * container   -- NAME@DOMAIN.FQDN
+
+    The domain FQDN is resolved in decreasing order of directness: the row's own `domain`
+    column, then its DN's DC= components, then the domain_fqdn_by_sid map keyed on the
+    domain portion of its SID. A name already in SharpHound form is passed through
+    unchanged, so the synthetic Authenticated Users node (which is built in that form
+    directly, and whose well-known SID has no domain part) survives this stamp.
+    """
+    _ensure_domain_fqdn_table(con, schema)
+    has_domain = _has_column(con, schema, table, "domain")
+    has_dn = _has_column(con, schema, table, "distinguished_name")
+    has_sam = _has_column(con, schema, table, "sam_account_name")
+    has_name = _has_column(con, schema, table, "name")
+
+    # Domain SID to key the map join: the principal's own, or a co-occurring one for
+    # rows whose id carries no domain part (builtin SIDs, the GUID-keyed container).
+    domain_sid = _domain_sid_of(f"t.{sid_col}")
+    if fallback_domain_sid_col:
+        domain_sid = f"coalesce({domain_sid}, upper(t.{fallback_domain_sid_col}))"
+
+    fqdn_parts = []
+    if has_domain:
+        # Guard on a dot so a NetBIOS domain can never be emitted as an FQDN.
+        fqdn_parts.append(
+            "CASE WHEN t.domain IS NOT NULL AND contains(t.domain, '.') "
+            "THEN upper(t.domain) END"
+        )
+    if has_dn:
+        fqdn_parts.append(_fqdn_from_dn("t.distinguished_name"))
+    fqdn_parts.append("d.fqdn")
+    fqdn = f"coalesce({', '.join(fqdn_parts)})"
+
+    if kind == "container":
+        # The container has no samAccountName; SharpHound labels it by its CN.
+        local = "upper(nullif(regexp_extract(t.distinguished_name, '^CN=([^,]+)', 1), ''))"
+        expr = f"{local} || '@' || {fqdn}"
+    else:
+        sources = [f"t.{c}" for c, present in (("sam_account_name", has_sam), ("name", has_name)) if present]
+        if not sources:
+            logger.warning(
+                "sharphound_name: %s has neither sam_account_name nor name; leaving it NULL",
+                table,
+            )
+            local = "NULL"
+        else:
+            local = _local_part(f"coalesce({', '.join(sources)})")
+        if kind == "computer":
+            # A machine account's samAccountName carries a trailing '$' that the node name
+            # does not. dNSHostName is already the exact SharpHound form when present.
+            local = f"regexp_replace({local}, '\\$$', '')"
+            built = f"{local} || '.' || {fqdn}"
+            expr = (
+                "CASE WHEN t.dnshostname IS NOT NULL AND contains(t.dnshostname, '.') "
+                f"THEN upper(t.dnshostname) ELSE {built} END"
+                if _has_column(con, schema, table, "dnshostname")
+                else built
+            )
+        else:
+            built = f"{local} || '@' || {fqdn}"
+            # Pass through a name already in SharpHound form (NAME@DOMAIN.TLD).
+            expr = (
+                "CASE WHEN t.name IS NOT NULL "
+                "AND regexp_matches(upper(t.name), '^[^@\\\\]+@[^@]+\\.[^@]+$') "
+                f"THEN upper(t.name) ELSE {built} END"
+                if has_name
+                else built
+            )
+
+    _safe(
+        con,
+        f"{table}<-sharphound_name",
+        f"CREATE OR REPLACE TABLE {schema}.{table} AS "
+        f"SELECT t.*, {expr} AS sharphound_name "
+        f"FROM {schema}.{table} t "
+        f"LEFT JOIN {schema}.domain_fqdn_by_sid d ON d.domain_sid = {domain_sid}",
+    )
+    if not _has_column(con, schema, table, "sharphound_name"):
+        # _safe swallowed the stamp (the node table itself is missing, or an optional source
+        # never created it). Nothing to count, and no column for the model to read.
+        logger.debug("sharphound_name: %s was not stamped; skipping the coverage count", table)
+        return
+    missing = _scalar(
+        con, f"SELECT count(*) FROM {schema}.{table} WHERE sharphound_name IS NULL"
+    )
+    if missing:
+        logger.warning(
+            "sharphound_name: %d %s row(s) could not be given a SharpHound-format name "
+            "and will be emitted without one (BloodHound shows their object id)",
+            missing,
+            table,
+        )
 
 
 def _join_ad_props(con: duckdb.DuckDBPyConnection, schema: str, table: str) -> None:
@@ -1433,6 +1694,7 @@ def _node_computer(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     )
     _backfill_bare_site_roles(con, schema)
     _join_ad_props(con, schema, "node_computer")
+    _stamp_sharphound_name(con, schema, "node_computer", "computer")
     logger.info("node_computer built in schema %r", schema)
 
 
@@ -1700,6 +1962,29 @@ def _node_user(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"  AND NOT coalesce(service_account_is_computer, false)",
     )
 
+    # --- From ad_props: every LDAP-resolved user, whether or not SCCM knows it ---
+    # The mirror of the node_group ad_props arm. Its concrete job is edge endpoints: the
+    # System Management container ACL walk resolves the *members* of every controlling
+    # group, but those members only became MemberOf edge starts, never nodes -- so an
+    # unprivileged collect emitted MemberOf edges from Administrator / domainadmin /
+    # rvazarkar that referenced nothing and were dropped whole at ingest, hiding the real
+    # membership of Domain Admins and Enterprise Admins. Ope-15m7.
+    _safe(
+        con,
+        "node_user<-ad_props",
+        f"INSERT INTO {schema}.node_user BY NAME "
+        f"SELECT upper(sid) AS sid, sam_account_name AS name, "
+        f"NULL AS resource_id_str, "
+        f"false AS sccm_infra, "
+        f"NULL AS stored_in_sccm_site, "
+        f"distinguished_name, "
+        f"NULL AS user_principal_name, "
+        f"sam_account_name "
+        f"FROM {schema}.ad_props "
+        f"WHERE sid IS NOT NULL AND sam_account_name IS NOT NULL "
+        f"  AND {_is_object_class('user', unless=('computer',))}",
+    )
+
     # Collapse all staging rows into one row per SID.
     # resource_ids: array-union the non-null '<rid>@<site>' strings.
     # sccm_infra:   bool_or (true wins if any source set it true).
@@ -1720,6 +2005,7 @@ def _node_user(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"GROUP BY sid"
     )
     _join_ad_props(con, schema, "node_user")
+    _stamp_sharphound_name(con, schema, "node_user", "user")
     logger.info("node_user built in schema %r", schema)
 
 
@@ -1858,10 +2144,36 @@ def _node_group(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"WHERE admin_sid IS NOT NULL AND coalesce(is_group, false)",
     )
 
+    # --- From ad_props: every LDAP-resolved group, whether or not SCCM knows it ---
+    # Without this arm node_group is reachable only through SCCM-privileged sources (the
+    # four SecurityGroupName arms and the two admins arms above), so an unprivileged collect
+    # produced no Group rows at all and every group on an attack path fell through to
+    # _node_backfill as a bare SID-named stub -- even though the System Management container
+    # ACL walk had already LDAP-resolved those exact groups and their names were sitting in
+    # ad_props. This also restores CMBP's behaviour: Upsert-Node was passed the whole
+    # resolved domain object (-PSObject $thisGroupDomainObject), which the port had dropped
+    # for Group alone. sccm_infra is false here -- being in AD says nothing about being SCCM
+    # infrastructure; the admins arms set it True and bool_or below lets that win. Ope-15m7.
+    _safe(
+        con,
+        "node_group<-ad_props",
+        f"INSERT INTO {schema}.node_group BY NAME "
+        f"SELECT upper(sid) AS sid, sam_account_name AS name, "
+        f"false AS sccm_infra, "
+        f"NULL AS resource_id_str, "
+        f"NULL AS fallback_domain_sid "
+        f"FROM {schema}.ad_props "
+        f"WHERE sid IS NOT NULL AND sam_account_name IS NOT NULL "
+        f"  AND {_is_object_class('group')}",
+    )
+
     # Collapse all staging rows into one row per SID (uppercased).
     # sccm_infra: bool_or (True wins if any source set it True).
     # sccm_resource_ids: array-union the non-null '<rid>@<site>' strings.
-    # name / fallback_domain_sid: any_value (first non-null wins).
+    # name / fallback_domain_sid: any_value (first non-null wins). The SCCM arms supply
+    # 'mayyhem\Domain Admins' and the ad_props arm 'Domain Admins' for the same SID, so
+    # any_value is a coin flip -- harmless because _stamp_sharphound_name reduces both to
+    # the same DOMAIN ADMINS@MAYYHEM.COM, and that is what the model emits.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_group AS "
         f"SELECT "
@@ -1893,6 +2205,9 @@ def _node_group(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"SELECT g.*, ap.sam_account_name, ap.distinguished_name "
         f"FROM {schema}.node_group g "
         f"LEFT JOIN {schema}.ad_props ap ON ap.sid = g.sid",
+    )
+    _stamp_sharphound_name(
+        con, schema, "node_group", "group", fallback_domain_sid_col="fallback_domain_sid"
     )
     logger.info("node_group built in schema %r", schema)
 
@@ -2494,6 +2809,13 @@ def _node_smc_container(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           f"FROM {schema}.ldap_system_management_dacl "
           f"WHERE smc_container_guid IS NOT NULL "
           f"GROUP BY upper(smc_container_guid)")
+    # The container is keyed by objectGUID, which carries no domain part, so the map join
+    # uses the co-occurring fallback_domain_sid -- though in practice the DN's own DC=
+    # components resolve the FQDN first.
+    _stamp_sharphound_name(
+        con, schema, "node_container", "container",
+        sid_col="id", fallback_domain_sid_col="fallback_domain_sid",
+    )
     n = _scalar(con, f"SELECT count(*) FROM {schema}.node_container")
     logger.info("node_smc_container built (%d System Management container node(s)) in schema %r", n, schema)
 
@@ -5308,11 +5630,19 @@ def _node_authenticated_users(con: duckdb.DuckDBPyConnection, schema: str) -> No
     # AUTHENTICATED USERS node.
     relay_kinds = (f"('{SCCM_COERCE_AND_RELAY_TO_ADMIN_SERVICE}', "
                    f"'{MSSQL_COERCE_AND_RELAY_TO_MSSQL}', '{SCCM_COERCE_AND_RELAY_TO_SMB}')")
+    # _node_group's stamp normally added this column long before we get here; ensure it so a
+    # caller that built node_group directly (node-builder unit tests) can still insert BY NAME.
+    _ensure_columns(con, schema, "node_group", {"sharphound_name": "VARCHAR"})
     _safe(
         con, "node_group<-authenticated_users",
         f"INSERT INTO {schema}.node_group BY NAME "
         f"SELECT DISTINCT ge.start_id AS sid, "
         f"  'AUTHENTICATED USERS@' || replace(ge.start_id, '-S-1-5-11', '') AS name, "
+        # This builder runs after _node_group, so _stamp_sharphound_name has already been
+        # and gone; set the column here or the node ships unnamed. The name is constructed
+        # in SharpHound's form to begin with (that is the whole point of the well-known-SID
+        # keying), so the two columns are simply the same string.
+        f"  'AUTHENTICATED USERS@' || replace(ge.start_id, '-S-1-5-11', '') AS sharphound_name, "
         f"  false AS sccm_infra, "
         f"  CAST([] AS VARCHAR[]) AS sccm_resource_ids, "
         f"  d.domain_sid AS fallback_domain_sid "
@@ -5389,10 +5719,18 @@ def _edge_has_client(con: duckdb.DuckDBPyConnection, schema: str) -> None:
 
 
 def _node_backfill(con: duckdb.DuckDBPyConnection, schema: str) -> None:
-    """Synthesise bare nodes for edge END endpoints that resolved to a SID/smsid with no
-    node (graph-integrity decision 2026-06-23). Kind is inferred from the edge position
-    (BACKFILL_END_KIND); ambiguous ends get 'Base'. Logs a warning count. Runs LAST."""
-    from .graph import BACKFILL_END_KIND
+    """Synthesise bare nodes for edge endpoints that resolved to a SID/smsid with no node
+    (graph-integrity decision 2026-06-23). Kind is inferred from the edge position
+    (BACKFILL_END_KIND / BACKFILL_START_KIND); ambiguous endpoints get 'Base'. Logs a
+    warning count. Runs LAST.
+
+    Both endpoints are covered. Ends alone left an edge whose *start* had no node to be
+    dropped whole at ingest instead of merely rendering as an id, so real principals
+    vanished from the graph rather than appearing unnamed (Ope-15m7). Most starts should
+    now be resolved upstream by the ad_props arms on node_user / node_group; this remains
+    as the residual net for a principal LDAP never resolved.
+    """
+    from .graph import BACKFILL_END_KIND, BACKFILL_START_KIND
 
     con.execute(
         f"CREATE OR REPLACE TEMP TABLE _existing_ids AS "
@@ -5401,14 +5739,27 @@ def _node_backfill(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"UNION SELECT sid FROM {schema}.node_group WHERE sid IS NOT NULL "
         f"UNION SELECT smsid FROM {schema}.node_client_device WHERE smsid IS NOT NULL"
     )
-    map_values = ", ".join(f"('{k}', '{v}')" for k, v in BACKFILL_END_KIND.items())
+    end_values = ", ".join(f"('{k}', '{v}')" for k, v in BACKFILL_END_KIND.items())
+    start_values = ", ".join(f"('{k}', '{v}')" for k, v in BACKFILL_START_KIND.items())
+    # DISTINCT ON id after the UNION: an id can dangle as both a start and an end (a nested
+    # group is the end of one MemberOf and the start of the next), and two rows for one id
+    # would emit the node twice. min(kind) makes the winner deterministic rather than
+    # whichever arm the planner happens to emit first.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_backfill AS "
-        f"SELECT DISTINCT ge.end_id AS id, m.kind AS kind "
-        f"FROM {schema}.graph_edges ge "
-        f"JOIN (VALUES {map_values}) AS m(edge_kind, kind) ON ge.kind = m.edge_kind "
-        f"WHERE ge.end_id IS NOT NULL "
-        f"  AND ge.end_id NOT IN (SELECT id FROM _existing_ids)"
+        f"SELECT id, min(kind) AS kind FROM ("
+        f"  SELECT ge.end_id AS id, m.kind AS kind "
+        f"  FROM {schema}.graph_edges ge "
+        f"  JOIN (VALUES {end_values}) AS m(edge_kind, kind) ON ge.kind = m.edge_kind "
+        f"  WHERE ge.end_id IS NOT NULL "
+        f"    AND ge.end_id NOT IN (SELECT id FROM _existing_ids) "
+        f"  UNION ALL "
+        f"  SELECT ge.start_id AS id, m.kind AS kind "
+        f"  FROM {schema}.graph_edges ge "
+        f"  JOIN (VALUES {start_values}) AS m(edge_kind, kind) ON ge.kind = m.edge_kind "
+        f"  WHERE ge.start_id IS NOT NULL "
+        f"    AND ge.start_id NOT IN (SELECT id FROM _existing_ids)"
+        f") GROUP BY id"
     )
     cnt = _scalar(con, f"SELECT count(*) FROM {schema}.node_backfill")
     if cnt:
@@ -5509,6 +5860,9 @@ def transforms(con: duckdb.DuckDBPyConnection, schema: str = "sccm") -> None:
     _principal_by_name(con, schema)
     _site_hierarchy(con, schema, disable_possible)
     _derive_ad_props(con, schema)  # must precede the AD node builders below (_join_ad_props)
+    # Reads ad_props, and every AD node builder below reads it back through
+    # _stamp_sharphound_name -- so it sits between the two.
+    _domain_fqdn_by_sid(con, schema)
     _node_computer(con, schema)
     _node_user(con, schema)
     _node_group(con, schema)

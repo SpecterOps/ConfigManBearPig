@@ -751,6 +751,42 @@ def _require_dc_or_dns_for_proxy(flag_kwargs: dict, proxy: Optional["ProxyConfig
     raise typer.Exit(2)
 
 
+class _ImpacketNoiseFilter(logging.Filter):
+    """Demote impacket's benign "no Kerberos credential cache" CRITICAL to DEBUG.
+
+    impacket's ``CCache.parseFile`` reads the ``KRB5CCNAME`` environment variable
+    to find a Kerberos credential cache. That variable is a Unix convention and is
+    essentially never set on Windows, so on every Windows run the WMI Kerberos rung
+    takes without ``--ticket``, impacket finds no cache, logs
+    ``CRITICAL: CCache file is not found. Skipping...`` -- and then goes on to
+    request a fresh TGT with the supplied password or hash and succeed. Nothing is
+    skipped that we wanted; the word "Skipping" refers only to the cache lookup.
+
+    It fires once per host (nine CRITICALs in a nine-host lab run), it is the only
+    CRITICAL the collector ever shows, and an operator reasonably reads a red
+    CRITICAL as "collection is broken". So the record's level is rewritten in
+    place: handlers compare ``record.levelno`` when deciding what to emit, and the
+    ``impacket`` logger has no handlers of its own (it propagates to root), so
+    lowering the level here is enough to keep it off the console and out of
+    ``collect_issues_<ts>.log`` while ``--debug`` still shows it.
+
+    Deliberately matched on the one message rather than by capping the whole
+    ``impacket`` logger: any *other* impacket CRITICAL still reaches the operator
+    at full volume. ``wmi.py``'s Kerberos rung logs its own verbose line saying
+    what actually happened, so the log explains itself rather than going silent.
+    """
+
+    # Substring, not the whole line: impacket's wording around it has changed
+    # across releases, and this much has been stable.
+    BENIGN_MESSAGE = "CCache file is not found"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno > logging.DEBUG and self.BENIGN_MESSAGE in record.getMessage():
+            record.levelno = logging.DEBUG
+            record.levelname = "DEBUG"
+        return True  # always keep the record; only its level changes
+
+
 class _DiagnosticFileHandler(logging.FileHandler):
     """Writes WARNING+ records with full traceback to a per-run diagnostics file.
 
@@ -1257,6 +1293,13 @@ def collect_sccm(
     for lg in _debug_loggers:
         lg.setLevel(logging.DEBUG)
 
+    # Quiet impacket's one benign CRITICAL (see _ImpacketNoiseFilter). Installed
+    # here, with the other per-run logging setup, and removed in the finally below
+    # so a long-lived process that calls collect_sccm twice does not stack filters.
+    _impacket_logger = logging.getLogger("impacket")
+    _impacket_noise_filter = _ImpacketNoiseFilter()
+    _impacket_logger.addFilter(_impacket_noise_filter)
+
     # Deliberately OUTSIDE the try below: if --clean cannot remove a locked artifact we
     # must abort, not fall through into the collection error handling and quietly collect
     # onto stale data.
@@ -1370,6 +1413,7 @@ def collect_sccm(
     finally:
         for lg, lvl in _debug_logger_levels:
             lg.setLevel(lvl)
+        _impacket_logger.removeFilter(_impacket_noise_filter)
         unregister_resource_complete_callback(_ordered.flush_resource)
         unregister_host_complete_callback(_ordered.flush_host)
         _ordered.close()  # flushes any in-flight buffers before removal
@@ -1413,9 +1457,12 @@ def collect_sccm(
     # suite below exits via `typer.Exit`.
     try:
         if run_all:
+            # Named once and shared: the chain writes the archive under this name and
+            # the summary below reports it, so the two cannot drift apart. _ts is the
+            # same run timestamp the collect logs carry.
+            _graph_zip_name = f"configmanbearpig_collection_{_ts}.zip"
             _paths = _run_e2e_after_collect(
-                output_path, progress,
-                graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
+                output_path, progress, graph_zip_name=_graph_zip_name,
             )
             # Re-surface every artifact's location in one block at the very end, so the
             # operator doesn't have to scroll back through the collect/preproc/convert
@@ -1423,6 +1470,7 @@ def collect_sccm(
             _log_all_output_locations(
                 output_path, _paths, _ordered_log_path, log_path,
                 _diag.warning_count + _diag.error_count,
+                _graph_zip_name,
             )
             # --compare-to-zip and --run-integration-tests both need the graph convert
             # just produced. _ts is the same run timestamp used for the collect logs
@@ -1815,6 +1863,7 @@ def _log_all_output_locations(
     collect_log_path: pathlib.Path,
     collect_diag_path: pathlib.Path,
     diag_issue_count: int,
+    graph_zip_name: str,
 ) -> None:
     """Log a consolidated list of every artifact a ``--run-all`` run produced.
 
@@ -1822,6 +1871,12 @@ def _log_all_output_locations(
     block, where the raw data, collect logs, lookup DB, and OpenGraph files all
     landed — the collect-phase paths plus the preprocess/convert outputs, gathered
     back together rather than scattered across three phases of log output.
+
+    The bundled zip closes the block deliberately: of everything listed here it is
+    the only artifact the operator does something *with* (upload to BloodHound File
+    Ingest), so it is the line their eye lands on last. Its name is passed in rather
+    than rediscovered, because the caller is what named it — the same run timestamp
+    the collect logs use.
     """
     # output_path, the raw dataset dir, and the lookup DB always exist on the
     # success path (a completed run_end_to_end guarantees them), so they are listed
@@ -1862,6 +1917,15 @@ def _log_all_output_locations(
             logger.warning("    OpenGraph output has no .json files: %s", paths.graph_out)
     else:
         logger.warning("    OpenGraph output directory is missing: %s", paths.graph_out)
+
+    # Last line, and the only one that is an instruction rather than a location.
+    # zip_graph_output skips the archive when convert wrote no .json (it logs why),
+    # so guard on existence rather than assuming the run produced one.
+    graph_zip = paths.graph_out / graph_zip_name
+    if graph_zip.exists():
+        logger.info("    Upload to BloodHound: %s", graph_zip)
+    else:
+        logger.warning("    No graph archive was written (expected %s).", graph_zip)
 
 
 # Set at module scope so `CollectorManager.validate_extension` (which runs at

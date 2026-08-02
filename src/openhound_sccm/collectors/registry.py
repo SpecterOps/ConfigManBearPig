@@ -53,6 +53,52 @@ WINREG_BIND_RETRIES = 3
 WINREG_BIND_RETRY_DELAY = 1.5
 
 
+# Every spelling of "you are not allowed to read that" this phase can see. The
+# winreg RPC layer answers a denied open with the DCE/RPC fault
+# `0x5 - rpc_s_access_denied`, while a denied *value* read under an open key can
+# come back as the Win32/NT flavour instead, depending on which impacket layer
+# raises. Matching on the text mirrors how the read helpers already recognise
+# ERROR_FILE_NOT_FOUND, and keeps this working across impacket's several
+# exception classes for the same condition.
+_ACCESS_DENIED_MARKERS = (
+    "rpc_s_access_denied",
+    "ERROR_ACCESS_DENIED",
+    "STATUS_ACCESS_DENIED",
+)
+
+
+def _is_access_denied(error_text: str) -> bool:
+    """True when a failed registry read was refused rather than broken."""
+    return any(marker in error_text for marker in _ACCESS_DENIED_MARKERS)
+
+
+# What the operator actually loses when a read is denied, keyed by the registry
+# path we tried. The per-host summary reports *capabilities*, not key paths: one
+# non-admin host denies eight SuperSocketNetLib paths that all mean the same
+# thing, and a list of raw paths buries that under repetition. Longest-prefix
+# order is not needed -- the paths below do not nest -- but the SQL Server entries
+# are listed before the generic SMS one for readability.
+_DENIED_CAPABILITIES: tuple[tuple[str, str], ...] = (
+    (r"SYSTEM\CurrentControlSet\Services\LanManServer\Parameters", "SMB signing requirement"),
+    (r"SYSTEM\CurrentControlSet\Control\Lsa", "NTLM restrictions and loopback-check setting"),
+    (r"SOFTWARE\Microsoft\Microsoft SQL Server", "SQL Server encryption / Extended Protection settings"),
+    (r"SOFTWARE\Microsoft\MSSQLServer", "SQL Server encryption / Extended Protection settings"),
+    (r"SYSTEM\CurrentControlSet\Services\MSSQL", "SQL Server service startup type and service account"),
+    (r"SOFTWARE\Microsoft\SMS", "SCCM site code, site-system roles and logged-on user"),
+)
+
+
+def _capability_for(key_path: str) -> str:
+    """Human name for what *key_path* would have told us, for the denial summary."""
+    for prefix, capability in _DENIED_CAPABILITIES:
+        if key_path.startswith(prefix):
+            return capability
+    # An unmapped path is still worth naming -- better a raw key than silence, and
+    # it flags that a newly added SCCM_REG_KEYS entry needs a capability label.
+    logger.debug("No capability label for denied registry path %s; reporting the raw path.", key_path)
+    return key_path
+
+
 class _RegistryProbe:
     """Lightweight remote-registry helper used by the registry resources.
 
@@ -72,6 +118,10 @@ class _RegistryProbe:
         self.smb = None
         self.dce = None
         self.root_key = None
+        # Registry paths this host refused, one entry per denied read (duplicates
+        # kept so the summary can report how many reads were lost, not just how
+        # many distinct keys). Drained by log_denied_summary() in __exit__.
+        self._denied: list[str] = []
 
     def __enter__(self) -> Optional["_RegistryProbe"]:
         # Fast TCP probe to avoid 30-second SMB timeouts on dead hosts.
@@ -141,6 +191,11 @@ class _RegistryProbe:
         return None
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Summarise denials here rather than at the end of collect_registry: that
+        # function returns early when the site code can't be read, which is exactly
+        # the case a denied host hits, so a summary written at the bottom would
+        # never fire for the hosts that most need it.
+        self.log_denied_summary()
         try:
             if self.dce is not None:
                 logger.verbose("Disconnecting Remote Registry on %s", self.hostname)
@@ -156,7 +211,65 @@ class _RegistryProbe:
             logger.error("Failed to log off SMB on %s: %s", self.hostname, ex)
             pass
 
+    # ----- access-denied accounting ------------------------------------------
+
+    def was_denied(self, key_path: str) -> bool:
+        """True if any read under *key_path* was refused on this host.
+
+        Lets a caller tell "the key isn't there" from "I'm not allowed to look",
+        which the raw ``None`` a read helper returns cannot express.
+        """
+        return key_path in self._denied
+
+    def log_denied_summary(self) -> None:
+        """Report this host's refused reads as one actionable line, or nothing.
+
+        A non-admin run against a site system is refused on the order of a dozen
+        reads -- the host-hardening values, all eight SQL Server SuperSocketNetLib
+        paths, and on tightly-ACL'd hosts the SMS keys too. Logged individually
+        those were ~120 of the 125 ERRORs in a low-privilege lab run, none of them
+        a fault: the same run as a local admin produced zero. So each read logs at
+        verbose (still in collect_full_<ts>.log for anyone diagnosing a specific
+        key) and the host emits this single WARNING naming what was lost and how
+        to get it.
+        """
+        if not self._denied:
+            # Either everything was readable or nothing was tried; no news is fine.
+            logger.debug("No registry reads were denied on %s.", self.hostname)
+            return
+        # dict.fromkeys keeps first-seen order, so capabilities read in the order
+        # the phase actually attempted them rather than an arbitrary set order.
+        capabilities = list(dict.fromkeys(_capability_for(path) for path in self._denied))
+        logger.warning(
+            "%d registry read(s) denied on %s -- not collected: %s. The host-hardening and "
+            "SQL Server keys require local Administrators on the target; re-run with an "
+            "administrative account to collect them. Per-read detail is in the full log.",
+            len(self._denied), self.hostname, "; ".join(capabilities),
+        )
+
     # ----- read helpers ------------------------------------------------------
+
+    def _log_read_failure(self, description: str, key_path: str, ex: Exception) -> None:
+        """Log one failed registry read at the level its cause deserves.
+
+        Three outcomes, and only the last is a genuine fault:
+
+        * **absent** -- verbose. Normal on any host without SCCM or SQL installed.
+        * **denied** -- verbose, and tallied for ``log_denied_summary``. Expected
+          on every host where the collecting account is not a local administrator.
+        * **anything else** -- error. Something actually went wrong.
+
+        Shared by all four read helpers so the three-way decision lives in one
+        place instead of being repeated (and drifting) per helper.
+        """
+        error_text = str(ex)
+        if "ERROR_FILE_NOT_FOUND" in error_text:
+            logger.verbose("%s not found on %s", description, self.hostname)
+        elif _is_access_denied(error_text):
+            self._denied.append(key_path)
+            logger.verbose("Access denied reading %s on %s", description, self.hostname)
+        else:
+            logger.error("Failed to read %s on %s: %s", description, self.hostname, ex)
 
     def read_value(self, key_path: str, value_name: str) -> Optional[str]:
         from impacket.dcerpc.v5 import rrp
@@ -170,14 +283,8 @@ class _RegistryProbe:
                 return str(value).rstrip("\x00").strip()
             finally:
                 rrp.hBaseRegCloseKey(self.dce, sub)
-        except rrp.DCERPCException as ex:
-            if "ERROR_FILE_NOT_FOUND" in str(ex):
-                logger.verbose("DWORD value %s not found under %s on %s", value_name, key_path, self.hostname)
-            else:
-                logger.error("Failed to read DWORD value %s under %s on %s: %s", value_name, key_path, self.hostname, ex)
-            return None
         except Exception as ex:
-            logger.error("Failed to read registry value %s under %s on %s: %s", value_name, key_path, self.hostname, ex)
+            self._log_read_failure(f"value {value_name} under {key_path}", key_path, ex)
             return None
 
     def read_dword(self, key_path: str, value_name: str) -> Optional[int]:
@@ -195,14 +302,8 @@ class _RegistryProbe:
                 return int(value) if value else None
             finally:
                 rrp.hBaseRegCloseKey(self.dce, sub)
-        except rrp.DCERPCException as ex:
-            if "ERROR_FILE_NOT_FOUND" in str(ex):
-                logger.verbose("DWORD value %s not found under %s on %s", value_name, key_path, self.hostname)
-            else:
-                logger.error("Failed to read DWORD value %s under %s on %s: %s", value_name, key_path, self.hostname, ex)
-            return None
         except Exception as ex:
-            logger.error("Failed to read DWORD value %s under %s on %s: %s", value_name, key_path, self.hostname, ex)
+            self._log_read_failure(f"DWORD value {value_name} under {key_path}", key_path, ex)
             return None
 
     def enum_keys(self, key_path: str) -> Optional[list[str]]:
@@ -233,14 +334,8 @@ class _RegistryProbe:
                 return names
             finally:
                 rrp.hBaseRegCloseKey(self.dce, sub)
-        except rrp.DCERPCException as ex:
-            if "ERROR_FILE_NOT_FOUND" in str(ex):
-                logger.verbose("Registry key %s not found on %s", key_path, self.hostname)
-            else:
-                logger.error("Failed to open registry key %s on %s: %s", key_path, self.hostname, ex)
-            return None
         except Exception as ex:
-            logger.verbose("Failed to enumerate subkeys under %s: %s", key_path, ex)
+            self._log_read_failure(f"subkeys of registry key {key_path}", key_path, ex)
             return None
 
     def read_values(self, key_path: str) -> Optional[list[tuple[str, str]]]:
@@ -298,14 +393,8 @@ class _RegistryProbe:
                 return out
             finally:
                 rrp.hBaseRegCloseKey(self.dce, sub)
-        except rrp.DCERPCException as ex:
-            if "ERROR_FILE_NOT_FOUND" in str(ex):
-                logger.verbose("Registry key %s not found on %s", key_path, self.hostname)
-            else:
-                logger.error("Failed to open registry key %s on %s: %s", key_path, self.hostname, ex)
-            return None
         except Exception as ex:
-            logger.error("Failed to open registry key %s: %s", key_path, ex)
+            self._log_read_failure(f"values under registry key {key_path}", key_path, ex)
             return None
 
 
@@ -357,6 +446,22 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                     "source": "RemoteRegistry-Triggers",
                     "site_code": site_code,
                 }
+            elif probe.was_denied(SCCM_REG_KEYS["triggers"]):
+                # A refused read is not an absent key. Reporting it as "does not
+                # exist" told the operator this host is not a site server when the
+                # truth was a permissions gap -- the opposite conclusion, and one
+                # they cannot correct because nothing in the message mentions
+                # privilege. The remaining checks are still skipped (without a site
+                # code the component-server roles cannot be interpreted), but now
+                # the reason is honest.
+                logger.warning(
+                    "Access denied reading %s on %s, so the site code is unknown and the "
+                    "remaining Remote Registry checks are skipped. This host may still be a "
+                    "site system -- re-run with an account that can read the key to find out.",
+                    SCCM_REG_KEYS["triggers"], target,
+                )
+                logger.info("Remote Registry collection completed for %s", target)
+                return
             else:
                 logger.info("%s does not exist or no site code subkey found, skipping remaining Remote Registry checks", SCCM_REG_KEYS["triggers"])
                 logger.info("Remote Registry collection completed for %s", target)
@@ -491,8 +596,12 @@ def get_current_user(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tupl
 
     current_user_sid = None
     if values is None:
-        # read_values returns None only when the key can't be opened.
-        logger.error("Error querying %s", SCCM_REG_KEYS["current_user"])
+        # read_values returns None only when the key can't be opened, and it has
+        # already logged why at the right level (absent/denied -> verbose, denied
+        # also counted for the per-host summary; anything else -> error). Repeating
+        # it as an error here logged the same failure twice and, on a non-admin run,
+        # put five duplicate ERRORs into collect_issues_<ts>.log for nothing.
+        logger.verbose("No values readable under %s on %s", SCCM_REG_KEYS["current_user"], probe.hostname)
     else:
         current_user_sid = next(
             (data for name, data in values if name.lower() == "usersid" and data),
@@ -686,7 +795,14 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
                     extended_protection = "Off"
 
     if not reg_path_found:
-        logger.warning("Could not access any MSSQL registry paths on %s, tried:\n%s", probe.hostname, "\n".join(reg_paths))
+        if any(probe.was_denied(path) for path in reg_paths):
+            # Refused, not missing. The probe's per-host denial summary already
+            # names "SQL Server encryption / Extended Protection settings" as lost,
+            # so warning again here -- with an eight-line dump of paths the operator
+            # can do nothing about without local admin -- only restates it.
+            logger.verbose("All MSSQL registry paths denied on %s; reported in the denial summary.", probe.hostname)
+        else:
+            logger.warning("Could not access any MSSQL registry paths on %s, tried:\n%s", probe.hostname, "\n".join(reg_paths))
         return
 
     logger.info("Collected EPA settings from %s: ForceEncryption=%s, ExtendedProtection=%s", probe.hostname, force_encryption, extended_protection)

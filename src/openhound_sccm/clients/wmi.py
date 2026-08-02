@@ -109,6 +109,19 @@ class WmiClient:
                 # principal for the AP-REQ, so derive it from the ticket's cname.
                 if not sam:
                     sam = ticket_user
+            else:
+                # Handing impacket no ticket makes it look for a credential cache
+                # in KRB5CCNAME first, which is unset on Windows -- so it logs a
+                # CRITICAL about the missing cache and then succeeds anyway with
+                # the password/hash below. main.py's _ImpacketNoiseFilter demotes
+                # that misleading CRITICAL; this line is what replaces it, so the
+                # log still says what happened instead of just going quiet.
+                logger.verbose(
+                    "WMI Kerberos rung on %s: no --ticket supplied and no Kerberos credential "
+                    "cache (KRB5CCNAME is unset), so a fresh TGT is requested with the supplied "
+                    "credentials. impacket's 'CCache file is not found' notice is expected here.",
+                    self._target,
+                )
             return _ImpacketBackend(
                 # doKerberos treats `domain` as the realm, so pass the full DNS domain.
                 self._target, domain=self._domain, username=sam, password=self._password or "",

@@ -26,6 +26,8 @@ Questions? Reach out on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem
   - [Graph payloads](#graph-payloads)
 - [Graph Model](#graph-model)
 - [Node Reference](#node-reference)
+  - [AD node naming](#ad-node-naming)
+  - [Seed principals: what this collector creates vs. what it expects from AD collection](#seed-principals-what-this-collector-creates-vs-what-it-expects-from-ad-collection)
   - [Computer](#computer)
   - [Container](#container)
   - [Group](#group)
@@ -152,7 +154,21 @@ That writes everything into `.\out`:
 
 Upload **all three** payloads together; they are three parts of one graph — or upload the single
 `configmanbearpig_collection_<timestamp>.zip` bundle in their place, which contains the same files
-flat-zipped for one-shot upload. Re-running into a directory that already holds a collection **merges**
+flat-zipped for one-shot upload. `--run-all` prints that bundle's full path as the **last line** of
+the run, so you can copy it straight out of the terminal:
+
+```
+--run-all complete. Output files:
+    Output directory:    C:\...\out
+    Raw data (JSONL):    C:\...\out\sccm
+    Full log:            C:\...\out\collect_full_20260801_193720.log
+    Issues log:          C:\...\out\collect_issues_20260801_193720.log  (9 warning(s)/error(s), with tracebacks)
+    Lookup DB:           C:\...\out\lookup.duckdb
+    OpenGraph files (6):
+        C:\...\out\graph\ad_edges-1.json
+        ...
+    Upload to BloodHound: C:\...\out\graph\configmanbearpig_collection_20260801_193720.zip
+``` Re-running into a directory that already holds a collection **merges**
 the two collections — pass `--clean` to start fresh, and see [Limitations](#limitations) for why that matters.
 
 If preprocess or convert fails, the raw data in `.\out` is left intact and the exact resume commands are
@@ -308,7 +324,7 @@ into a graph (sites, management points, discovered computers, and LDAP-sourced e
 | LDAP discovery | Any authenticated domain user |
 | DNS discovery | **None** — a plain SRV query, no AD authentication at all |
 | HTTP | **None** — every SCCM web-endpoint probe (including the site-signing-certificate probe) runs anonymous; no domain credentials are ever presented |
-| RemoteRegistry | **Depends on the key — most of the SCCM data needs only a domain user.** The `HKLM\SOFTWARE\Microsoft\SMS` keys the phase relies on for discovery — the site code (`Triggers`), the site-system roles (`COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Component Servers` and `Multisite Component Servers`), and the logged-on user (`CurrentUser`) — are readable by **any authenticated domain user** with SMB access to the host. **Local administrator** is required only for the host-hardening values: SMB signing (`SYSTEM\CurrentControlSet\Services\LanManServer\Parameters`), the NTLM restrictions (`SYSTEM\CurrentControlSet\Control\Lsa` and `Lsa\MSV1_0`), and SQL Server's `SuperSocketNetLib` encryption settings. A non-admin run collects the former and logs an error for the latter, rather than failing the phase. See [collectors/registry.py](src/openhound_sccm/collectors/registry.py). |
+| RemoteRegistry | **Depends on the key — most of the SCCM data needs only a domain user.** The `HKLM\SOFTWARE\Microsoft\SMS` keys the phase relies on for discovery — the site code (`Triggers`), the site-system roles (`COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Component Servers` and `Multisite Component Servers`), and the logged-on user (`CurrentUser`) — are readable by **any authenticated domain user** with SMB access to the host. **Local administrator** is required only for the host-hardening values: SMB signing (`SYSTEM\CurrentControlSet\Services\LanManServer\Parameters`), the NTLM restrictions (`SYSTEM\CurrentControlSet\Control\Lsa` and `Lsa\MSV1_0`), and SQL Server's `SuperSocketNetLib` encryption settings. A non-admin run collects the former and skips the latter rather than failing the phase, reporting each host's refused reads as a single warning — see [What a low-privilege run looks like](#what-a-low-privilege-run-looks-like). Note that the SMS keys are readable by a plain domain user *by default*; a host with tightened ACLs can refuse those too, in which case the site code is unknown and the rest of the phase is skipped for that host. See [collectors/registry.py](src/openhound_sccm/collectors/registry.py). |
 | MSSQL (EPA detection) | Any domain user can probe a reachable SQL Server; reading the setting via RemoteRegistry instead needs local admin on the DB host |
 | SMB | The signing-required check is **unauthenticated** (anyone with TCP/445 line of sight); share enumeration needs an **authenticated** SMB session (any domain user — current Windows user via SSPI, or `-u`/`-p`, `--nt-hash`, `--ticket`) |
 
@@ -429,6 +445,8 @@ zero domain credentials presented anywhere in the run.
 - **Installing with `uv` needs `--prerelease=allow`.** The collector requires `ldap3>=2.10.2rc4`. That release candidate is the first to export `ENCRYPT` and `TLS_CHANNEL_BINDING` and to accept `session_security` on a `Connection` — the three things LDAP sign-and-seal and channel binding are built on, and therefore what it takes to bind to a domain controller that enforces signing or channel binding (increasingly the default). ldap3 has never shipped them in a final release: its latest stable is 2.9.1, and 2.10.2 exists only as release candidates. `pip` allows a pre-release automatically when the requirement itself names one; `uv` asks you to opt in. Without the flag, `uv tool install` reports *"only ldap3<2.10.2rc4 is available"*, which looks like a broken package and is not. (Inside this project — `uv sync`, `uv run` — no flag is needed: a project is allowed its own declared pre-release. See [Testing Changes](#testing-changes).)
 - **Re-running into the same output directory silently merges two collections.** `collect` (via the underlying `dlt` framework) **appends** a new load package beside any already in the output directory rather than overwriting it, and `preprocess` then reads every package and **UNIONs** their rows into one graph. Nothing looks wrong when this happens — the command exits 0 and `graph\` gets fresh timestamps — but a table this run finds empty silently **keeps the previous run's rows**, so a decommissioned site system, a stale role, or a removed client can linger in the graph indefinitely. Pass `--clean` to remove `out\sccm`, `out\graph`, and `out\lookup.duckdb` before collecting (timestamped logs and integration/compare reports are always kept). Without the flag, a used directory still produces a loud console and `collect_issues_*.log` warning — naming how many prior load packages are present and when the oldest was written — but the collection proceeds and nothing is cleaned up for you. See [`--clean`](#--clean-and-re-running-into-a-used-output-directory).
 - **Graph output covers graph-pipeline Stages 1–6 plus the low-privilege additions.** (Those are the increments of the preprocess/convert port — plans [`2026-06-16-sccm-preproc-convert-stage0.md`](docs/superpowers/plans/2026-06-16-sccm-preproc-convert-stage0.md) … [`2026-07-01-sccm-preproc-convert-stage7.md`](docs/superpowers/plans/2026-07-01-sccm-preproc-convert-stage7.md); see the [Reference key](#reference-key).) `convert` now emits fifteen node kinds and thirty-eight edge kinds (see the [Node Reference](#node-reference) and [Edge Reference](#edge-reference)). Richer edges from NAA secrets await the NAA-secret collector.
+- **An AD node with no resolvable domain FQDN ships without a name.** `Computer` / `User` / `Group` / `Container` nodes merge into BloodHound's native AD graph by id, so any `name` this collector emits overwrites SharpHound's. Rather than risk replacing a correct label with a partial one, a node whose SharpHound-format name cannot be built is emitted with **no** `name` or `displayname`, and BloodHound displays its object id instead. In a standalone graph (no SharpHound data ingested) those nodes read as raw SIDs or GUIDs. Backfilled endpoint stubs are always in this state by design. Both are visible in the preprocess log as `sharphound_name: N <table> row(s) could not be given a SharpHound-format name`. See [AD node naming](#ad-node-naming).
+- **The synthetic Authenticated Users node carries no membership.** It is seeded so the coerce-and-relay edges have a traversable start, but no `MemberOf` edges point into it — enumerating a domain's principals is an AD collection's job. Paths *from* Authenticated Users onward work standalone; paths *into* it from an arbitrary user require a SharpHound collection ingested alongside. `Everyone` and `Domain Computers` are deliberately not seeded at all. See [Seed principals](#seed-principals-what-this-collector-creates-vs-what-it-expects-from-ad-collection).
 - **MSSQL logins, database users, and roles are inferred from SCCM topology, not enumerated from SQL.** The `MSSQL_Login` and `MSSQL_DatabaseUser` nodes (and the `sysadmin` / `db_owner` role nodes) are built from SCCM's knowledge of which computers are Primary Site Servers or SMS Providers for a given site — the same inference CMBP makes. No live SQL connection is opened during `preprocess` or `convert`; the collector's MSSQL phase only probes EPA. This means logins/users/roles are only created for SCCM-linked SQL servers, and only for the machine accounts SCCM architecturally grants `sysadmin` access.
 - **Non-SCCM SQL servers appear as bare `MSSQL_Server` nodes.** SQL servers discovered by the EPA scan or RemoteRegistry that are not referenced by any SCCM site produce an `MSSQL_Server` node (with `MSSQL_HostFor` / `MSSQL_ExecuteOnHost` edges) but no `MSSQL_Database`, `MSSQL_Login`, or role nodes — CMBP likewise skips these and the collector follows suit.
 - **MSSQL nodes and MSSQL-only edges get their own `source_kind`.** The six MSSQL node kinds are written to `mssql_nodes-*.json` / `mssql_edges-*.json` (tagged `source_kind = "MSSQL"`, matching `schema_MSSQL.json`), together with every edge whose endpoints are **both** MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). Edges that touch an AD node — `MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, `MSSQL_GetAdminTGS`, and `MSSQL_CoerceAndRelayToMSSQL` — stay in `ad_edges-*.json`; the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) stays in `sccm_edges-*.json`. Upload all three file sets together.
@@ -549,7 +567,7 @@ Use `-c`/`--computers <host>` to scope a run to specific hosts (e.g. an SMS Prov
 | Option | Description |
 |---|---|
 | `--clean` | Discard a previous collection in `OUTPUT_PATH` before collecting: removes the `sccm/` dataset dir, `graph/`, and `lookup.duckdb`. Timestamped per-run logs and integration/compare reports are always kept. See [below](#--clean-and-re-running-into-a-used-output-directory). |
-| `--run-all` | After collecting, automatically run **preprocess** and **convert** in-process, producing the OpenGraph files in a single command. All paths are derived from `OUTPUT_PATH`: `lookup.duckdb`, the `sccm/` dataset dir, and `graph/`. The run also writes `graph\configmanbearpig_collection_<timestamp>.zip` — a single upload-ready archive of the graph `.json` files for BloodHound File Ingest (the loose files are kept too; `<timestamp>` matches the run's `collect_full_<ts>.log`). On completion it logs a consolidated list of the run's output files — raw JSONL, the lookup DB, each OpenGraph JSON, and the collect logs (`collect_full_*`, and `collect_issues_*` when a warning/error occurred) — so you don't have to scroll back through the run. Omit it to run the three stages manually (the default; a "next steps" hint is printed). |
+| `--run-all` | After collecting, automatically run **preprocess** and **convert** in-process, producing the OpenGraph files in a single command. All paths are derived from `OUTPUT_PATH`: `lookup.duckdb`, the `sccm/` dataset dir, and `graph/`. The run also writes `graph\configmanbearpig_collection_<timestamp>.zip` — a single upload-ready archive of the graph `.json` files for BloodHound File Ingest (the loose files are kept too; `<timestamp>` matches the run's `collect_full_<ts>.log`). On completion it logs a consolidated list of the run's output files — raw JSONL, the lookup DB, each OpenGraph JSON, and the collect logs (`collect_full_*`, and `collect_issues_*` when a warning/error occurred) — so you don't have to scroll back through the run. The **last line of that block is the `.zip`**, the one artifact you upload. Omit the flag to run the three stages manually (the default; a "next steps" hint is printed). |
 | `--progress` | Progress backend. `off` (default) silences dlt's per-resource progress counters so only the collector's own `[target][phase]` logs print; pass `tqdm`, `log`, or `alive_progress` to re-enable a live tracker. |
 | `--disable-possible-edges` | Remove or tighten the *assumed* node/edge families (see [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content) and [below](#--disable-possible-edges-and-the-coerce-and-relay-edges)); never removes confirmed data. The flag is persisted at collect time in the `collection_settings` table and read by preprocess — it has no effect if set after collection. |
 | `--show-cleartext-passwords` | Display cleartext passwords when discovered *(consumed by not-yet-ported phases)*. |
@@ -676,6 +694,38 @@ host-by-host for the per-host phases and resource-by-resource for discovery — 
 readable after the fact without re-running. `collect_issues_<timestamp>.log` holds only warnings and
 errors, each with a traceback, and is not created at all by a clean run. `--debug` additionally folds
 the `dlt`/`ldap3` internals into the full log.
+
+#### What a low-privilege run looks like
+
+Collecting as a plain domain user is a supported, first-class mode — see
+[Collection privilege tiers](#collection-privilege-tiers) for what it builds. It is **not** meant to
+look like a failing run, so two things that are expected at low privilege are deliberately kept off
+the console:
+
+- **Refused registry reads.** Roughly a dozen reads per site system are admin-gated (the SMB-signing,
+  NTLM and SQL Server keys). Each denied read is logged at VERBOSE into `collect_full_<timestamp>.log`,
+  and each host then emits **one** warning naming what it could not collect:
+
+  ```
+  WARNING [cas-db.mayyhem.com][RemoteRegistry] 13 registry read(s) denied on cas-db.mayyhem.com --
+          not collected: SCCM site code, site-system roles and logged-on user; SMB signing requirement;
+          NTLM restrictions and loopback-check setting; SQL Server encryption / Extended Protection
+          settings. The host-hardening and SQL Server keys require local Administrators on the target;
+          re-run with an administrative account to collect them. Per-read detail is in the full log.
+  ```
+
+  Re-running as a local administrator on those hosts is what fills the gap; nothing else is wrong.
+
+- **impacket's Kerberos-cache notice.** When the WMI phase tries Kerberos without `--ticket`, impacket
+  looks for a credential cache in `KRB5CCNAME` (a Unix convention, effectively never set on Windows),
+  logs `CRITICAL: CCache file is not found. Skipping...`, and then requests a fresh ticket with your
+  password and carries on. Only the *cache lookup* is skipped, never collection, so the collector
+  demotes that record to DEBUG and logs its own VERBOSE line explaining what happened. Any **other**
+  impacket CRITICAL still reaches you unchanged.
+
+The practical consequence: on a healthy low-privilege run, `collect_issues_<timestamp>.log` holds the
+handful of things you can actually act on, instead of a hundred access-denied lines. An `ERROR` in that
+file means something genuinely went wrong.
 
 #### Capturing console output (CI, `> log.txt`, piping)
 
@@ -992,6 +1042,59 @@ All AD-native nodes (`Computer`, `User`, `Group`) use the **AD SID** as the node
 
 The icon under each heading is the glyph BloodHound renders that kind with. For the `SCCM_*` and `MSSQL_*` kinds it comes from this collector's hand-maintained [schema_SCCM.json](src/openhound_sccm/schema_SCCM.json) / [schema_MSSQL.json](src/openhound_sccm/schema_MSSQL.json) — change an `icon` or `color` there and update the image here in the same commit. The four AD-native kinds use BloodHound's own built-in base-kind icons, which this collector does not define.
 
+## AD node naming
+
+The four AD-native kinds are named in **SharpHound's own format**, uppercase:
+
+| Kind | Format | Example |
+|---|---|---|
+| `User` | `SAMACCOUNTNAME@DOMAIN.FQDN` | `DOMAINUSER@MAYYHEM.COM` |
+| `Group` | `SAMACCOUNTNAME@DOMAIN.FQDN` | `DOMAIN ADMINS@MAYYHEM.COM` |
+| `Computer` | `HOSTNAME.DOMAIN.FQDN` | `PS1-MP.MAYYHEM.COM` |
+| `Container` | `NAME@DOMAIN.FQDN` | `SYSTEM MANAGEMENT@MAYYHEM.COM` |
+
+**Why this matters, and why a name is sometimes absent.** These nodes are emitted *untagged* (no
+`source_kind`) so BloodHound merges them into its native AD graph by id — SIDs for principals,
+`objectGUID` for the container — rather than shadowing a SharpHound collection with a competing copy.
+Merging by id means this collector writes into a node that may already exist and already be correct, so
+**every property it emits overwrites SharpHound's**. A name in any other format (a bare `PS1-MP`, an SCCM
+`mayyhem\Domain Admins`, a full DN, or the object's own SID) would therefore *replace* a correct
+SharpHound label with a worse one, and the operator's graph would get worse after ingesting SCCM data.
+
+So the rule is: emit the SharpHound form, or emit nothing. When the domain FQDN cannot be resolved, the
+`name` and `displayname` properties are **omitted entirely** rather than falling back to a partial name.
+BloodHound then displays the object id, and any SharpHound-collected label survives untouched. The same
+applies to backfilled stub nodes, which have no name at all by design.
+
+The domain FQDN is resolved from the object's own `domain` attribute, else from its DN's `DC=`
+components, else from a domain-SID → FQDN map built from every LDAP-resolved principal in the run. That
+last fallback is what lets principals discovered from a non-LDAP direction still be named — the SCCM site
+database's SQL service account, for instance, arrives from SQL Server as a bare account name plus a SID
+and is never looked up in AD, but its SID shares a domain prefix with principals that were.
+
+If a run emits unnamed AD nodes, check the preprocess log for an `ad_props is empty` or
+`domain_fqdn_by_sid is empty` warning — both mean no LDAP-resolved principal was available to supply
+domain context.
+
+## Seed principals: what this collector creates vs. what it expects from AD collection
+
+SCCM attack paths commonly originate from a well-known group (`Authenticated Users` → coerce a site
+server → relay to a management point). For those paths to be traversable, the group node must exist. The
+decision per principal:
+
+| Principal | Seeded by this collector? | Rationale |
+|---|---|---|
+| **Authenticated Users** | **Yes**, synthetically | It is the `start` of all three coerce-and-relay edge kinds, which this collector is the only source of. Without it those edges dangle and BloodHound drops them, so the collector's headline attack paths would be invisible standalone. One node per domain that actually produces a relay edge, keyed `UPPER(FQDN)-S-1-5-11` to merge with SharpHound's. |
+| **Everyone** | **No** | This collector emits no edge that starts at `Everyone`. A node with no traversable edge is graph noise: true, but useless for pathfinding, and it would still overwrite SharpHound's label on merge. If a future edge kind starts at `Everyone`, seed it then, on the same lazy per-domain basis as Authenticated Users. |
+| **Domain Computers** | **No** | Same reasoning. `Domain Computers` appears in this graph only as the *end* of `MemberOf` edges whose start this collector discovered, and those ends are already covered — either by a real node built from `ad_props`, or by an endpoint stub. Seeding it eagerly would add a node the collector cannot say anything useful about. |
+
+**What a standalone graph therefore does *not* have:** real membership for the seeded Authenticated Users
+node. It is emitted with the relay edges that need it, but no `MemberOf` edges point into it, because
+enumerating "every principal in the domain" is an AD collection's job, not an SCCM collector's. Paths
+*through* Authenticated Users from an arbitrary user therefore require a SharpHound collection ingested
+alongside this one. Paths *from* Authenticated Users onward — the coerce-and-relay chain this tool
+exists to surface — are fully traversable standalone.
+
 ## Computer
 
 ![Computer node icon — Font Awesome desktop, #E67873](https://api.iconify.design/fa6-solid:desktop.svg?color=%23E67873&height=24)
@@ -1001,7 +1104,7 @@ An AD computer account observed in SCCM — collected from AdminService/WMI reso
 - **Node id:** the AD SID (uppercased, e.g. `S-1-5-21-11-22-33-1104`).
 - **`environmentid`:** the AD domain SID (`S-1-5-21-11-22-33`).
 - **Kinds:** `["Computer", "Base"]`.
-- **`name` / `displayname`:** the SAM account name, DNS hostname, or SID (whichever is available first).
+- **`name` / `displayname`:** SharpHound's form — the uppercase DNS host name, e.g. `PS1-MP.MAYYHEM.COM`. Omitted entirely if that form cannot be built; see [AD node naming](#ad-node-naming).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1050,7 +1153,7 @@ same AD object rather than registering a competing SCCM-owned copy.
 - **Node id:** the container's own `objectGUID`, uppercased to match SharpHound's own id form for the same object (so the two merge).
 - **`environmentid`:** the AD domain SID, derived from any co-occurring `GenericAll` principal's domain-relative SID (the container itself has no SID of its own to derive a domain from) — the same "co-occurring domain SID" fallback `Group` uses for well-known SIDs above.
 - **Kinds:** `["Container", "Base"]`.
-- **`name` / `displayname`:** the container's AD distinguished name, or its id if the DN wasn't captured.
+- **`name` / `displayname`:** SharpHound's form — uppercase `NAME@DOMAIN.FQDN`, e.g. `SYSTEM MANAGEMENT@MAYYHEM.COM`, built from the DN's leading `CN=` and its `DC=` components. Omitted entirely if the DN wasn't captured; see [AD node naming](#ad-node-naming). (The DN itself remains available as the `distinguishedname` property below.)
 
 | Property | Type | Description |
 |---|---|---|
@@ -1077,7 +1180,7 @@ An AD group observed in SCCM — either named in a device's or user's `security_
 - **Node id:** the AD SID (uppercased).
 - **`environmentid`:** the AD domain SID; builtin SIDs use a co-occurring domain SID as a fallback.
 - **Kinds:** `["Group", "Base"]`.
-- **`name` / `displayname`:** the group name or SID.
+- **`name` / `displayname`:** SharpHound's form — uppercase `SAMACCOUNTNAME@DOMAIN.FQDN`, e.g. `DOMAIN ADMINS@MAYYHEM.COM`. Omitted entirely if that form cannot be built; see [AD node naming](#ad-node-naming).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1107,7 +1210,7 @@ An AD user account observed in SCCM — collected from AdminService/WMI user res
 - **Node id:** the AD SID (uppercased).
 - **`environmentid`:** the AD domain SID.
 - **Kinds:** `["User", "Base"]`.
-- **`name` / `displayname`:** the account name or SID.
+- **`name` / `displayname`:** SharpHound's form — uppercase `SAMACCOUNTNAME@DOMAIN.FQDN`, e.g. `DOMAINUSER@MAYYHEM.COM`. Omitted entirely if that form cannot be built; see [AD node naming](#ad-node-naming).
 
 | Property | Type | Description |
 |---|---|---|

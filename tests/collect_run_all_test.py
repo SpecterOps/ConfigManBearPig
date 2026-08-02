@@ -94,11 +94,14 @@ def test_output_locations_summary_lists_every_artifact(tmp_path, caplog):
     graph.mkdir()
     (graph / "sccm_nodes-1.json").write_text("{}")
     (graph / "ad_edges-1.json").write_text("{}")
+    zip_name = "configmanbearpig_collection_20260801_193720.zip"
+    (graph / zip_name).write_text("zip")
     paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 2)
-    text = "\n".join(r.getMessage() for r in caplog.records)
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 2, zip_name)
+    messages = [r.getMessage() for r in caplog.records]
+    text = "\n".join(messages)
 
     assert "Output files:" in text
     assert str(tmp_path / "sccm") in text        # raw JSONL dataset dir
@@ -109,6 +112,10 @@ def test_output_locations_summary_lists_every_artifact(tmp_path, caplog):
     assert "OpenGraph files (2)" in text
     assert str(graph / "sccm_nodes-1.json") in text
     assert str(graph / "ad_edges-1.json") in text
+    # The upload-ready archive closes the block: it is the one artifact the operator
+    # acts on, so it must be the last line and not buried among the loose .json files.
+    assert str(graph / zip_name) in messages[-1]
+    assert "Upload to BloodHound" in messages[-1]
 
 
 def test_output_locations_summary_handles_no_warnings_and_empty_graph(tmp_path, caplog):
@@ -128,11 +135,14 @@ def test_output_locations_summary_handles_no_warnings_and_empty_graph(tmp_path, 
     paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0)
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0, "cmbp.zip")
     text = "\n".join(r.getMessage() for r in caplog.records)
 
     assert "no warnings/errors" in text
     assert "has no .json files" in text
+    # No .json means zip_graph_output wrote no archive; say so rather than printing
+    # a path to a file that isn't there.
+    assert "No graph archive was written" in text
 
 
 def test_output_locations_summary_omits_absent_logs_and_flags_missing_graph(tmp_path, caplog):
@@ -152,7 +162,7 @@ def test_output_locations_summary_omits_absent_logs_and_flags_missing_graph(tmp_
     paths = StagePaths(dataset_dir=tmp_path / "sccm", lookup_db=lookup, graph_out=graph)
 
     with caplog.at_level(logging.INFO, logger="openhound_sccm.main"):
-        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0)
+        m._log_all_output_locations(tmp_path, paths, collect_log, diag_log, 0, "cmbp.zip")
 
     # Absent logs are dropped to DEBUG (filtered at INFO), so they never appear in
     # the operator-facing summary; the lookup DB still does.
