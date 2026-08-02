@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**143 tickets** — 6 in progress · 28 open · 109 closed
+**145 tickets** — 6 in progress · 29 open · 110 closed
 
 ## In progress (6)
 
@@ -18,7 +18,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-907c`](con-907c.md) | 2 | task | Rebaseline fixture expected values on the full lab + add host-level SEC assertions | testing, integration, fixtures, lab |
 | [`ope-1f0f`](ope-1f0f.md) | 2 | task | Code-Quality Pass: Conditional Logging, Exception Handling, Variable Scope, Linting & Cleanup -type chore -priority 2 -assignee Mayyhem -tags sccm,... | — |
 
-## Open (28)
+## Open (29)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -42,6 +42,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-padv`](Ope-padv.md) | 2 | feature | CRED-4: Local CIM Repository Scraping (Bad Opsec) | sccm, cred-4, local, credentials, bad-opsec |
 | [`Ope-pofz`](Ope-pofz.md) | 2 | feature | Add --skip-ad-enum option to suppress AD-derived object creation | — |
 | [`con-53eb`](con-53eb.md) | 3 | task | Emit BUILTIN\Administrators as sysadmin on an SCCM-installed Express secondary site database | sccm, mssql, secondary, bloodhound |
+| [`con-a4ec`](con-a4ec.md) | 3 | task | Adopt StagePaths.graph_zip once openhound-collector-common is released | sccm, run-all, shared-lib |
 | [`con-d061`](con-d061.md) | 3 | task | Investigate emitting SCCM default collections as soon as a site is known | sccm, graph, collections, design |
 | [`ope-00df`](ope-00df.md) | 3 | task | Add --no-diagnostics-log / --no-collect-log to suppress on-disk logs individually | — |
 | [`ope-6b93`](ope-6b93.md) | 3 | task | Local-only/low-priv collector host gets no SCCM_ClientDevice node (CMBP builds it via Local Upsert-Node) | sccm, clientdevice, lowpriv, collection |
@@ -51,7 +52,7 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (109)
+## Closed (110)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -95,6 +96,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-6677`](con-6677.md) | 2 | bug | Wire integration harness low-privilege mode to a CLI flag | testing, integration, cli, lowpriv |
 | [`con-7842`](con-7842.md) | 2 | task | Adopt openhound-collector-common v0.1.2: baseline/candidate compare orientation, regression exit codes, three-way privilege flag | testing, integration, cli, compare |
 | [`con-8a28`](con-8a28.md) | 2 | task | Silence expected access-denied noise on non-admin runs; show the zip path in the --run-all summary | sccm, logging, registry, wmi, run-all |
+| [`con-ab59`](con-ab59.md) | 2 | bug | get_mssql_settings cannot see named SQL instances -- every probed registry path is default-instance only | sccm, registry, mssql, epa |
 | [`con-acdd`](con-acdd.md) | 2 | task | Integration runner conflates 'no such edge' with 'edge rejected by property match' | testing, integration, shared-lib, diagnostics |
 | [`con-be15`](con-be15.md) | 2 | bug | Review MSSQL_Server inclusion + CM_<site> attribution for the passive site server | sccm, mssql, preproc, inference |
 | [`con-be32`](con-be32.md) | 2 | task | CI red: --help substring tests break under forced colour and narrow terminals -type bug -priority 1 -tags testing,ci,cli,help -assignee cthompson -... | — |

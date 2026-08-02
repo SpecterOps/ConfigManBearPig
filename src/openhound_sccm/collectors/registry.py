@@ -748,61 +748,122 @@ def _read_mssql_service_state(
     return None, None
 
 
-def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
-    """Yield one row per SQL instance discovered via remote registry.
+# SQL Server's own inventory of installed instances: one value per instance, whose
+# NAME is the instance name ("MSSQLSERVER" for the default instance, "CONFIGMGRSEC"
+# for a named one) and whose DATA is that instance's subkey under "Microsoft SQL
+# Server" ("MSSQL16.CONFIGMGRSEC"). Reading it is what makes a named instance
+# reachable at all: its settings live under that subkey, and the version prefix in
+# front of the instance name is not guessable.
+MSSQL_INSTANCE_NAMES_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
+
+# Per-instance network settings (ForceEncryption, ExtendedProtection, TcpPort),
+# addressed by the instance subkey the inventory above hands back.
+MSSQL_NETWORK_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\{instance_key}\MSSQLServer\SuperSocketNetLib"
+
+# SQL Server 7.0/2000 predate the inventory key and supported only a default
+# instance, so they have one fixed location with no version and no instance in the
+# path. Tried only when the inventory yields nothing.
+MSSQL_LEGACY_NETWORK_KEY = r"SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib"
+
+
+def _mssql_instances(probe: _RegistryProbe) -> tuple[list[str], list[str]]:
+    """Return ``(instance_names, network_key_paths)`` for the SQL instances on a host.
+
+    Reads SQL Server's instance inventory and derives each settings path from it,
+    rather than guessing. The inventory's value data *is* the instance subkey, so the
+    resulting path is exact -- no version to guess, and no assumption that the
+    instance is the default one.
+
+    That assumption is what this replaces. The previous implementation probed eight
+    hard-coded paths that all ended ``.MSSQLSERVER``, so a NAMED instance could never
+    match one of them: the lab's ps1-sec runs the SEC site database as
+    ``CONFIGMGRSEC`` and every probe missed it even with full local administrator
+    rights, leaving its encryption, Extended Protection, port and service state
+    unread while looking indistinguishable from a host with no SQL at all (con-ab59).
+
+    Falls back to the single pre-2000 location when the inventory is empty, absent or
+    refused -- which is also the "no SQL Server here" case, so the caller decides what
+    an empty result means rather than this function warning about it.
     """
-    # Try multiple default registry paths for MSSQL instances
-    # These correspond to SQL Server versions: 2012+ (v11+) use MSSQL versions
-    reg_paths = [
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2022
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2019
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2017
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2016
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2014
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQLServer\SuperSocketNetLib",  # SQL 2012
-        r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL.1\MSSQLServer\SuperSocketNetLib",              # Older versions / default fallback
-        r"SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib"                                # Legacy path
-    ]
+    inventory = probe.read_values(MSSQL_INSTANCE_NAMES_KEY)
+    if not inventory:
+        # Absent means no SQL Server on this host (the normal case for most site
+        # systems); denied is already counted for the per-host denial summary. Either
+        # way the only thing left worth trying is the legacy default-instance path.
+        logger.verbose(
+            "No SQL Server instance inventory at %s on %s; trying the legacy path only",
+            MSSQL_INSTANCE_NAMES_KEY, probe.hostname,
+        )
+        return [], [MSSQL_LEGACY_NETWORK_KEY]
+
+    # A value with no data cannot name a subkey; skip it rather than build
+    # "...\Microsoft SQL Server\\MSSQLServer\SuperSocketNetLib".
+    usable = [(name, key) for name, key in inventory if key]
+    for name, _ in inventory:
+        if not any(name == used for used, _ in usable):
+            logger.warning("SQL instance %r on %s has no subkey recorded in %s; skipping it",
+                           name, probe.hostname, MSSQL_INSTANCE_NAMES_KEY)
+
+    names = [name for name, _ in usable]
+    logger.info("Found MSSQL instance names: %s", ", ".join(names) if names else "(none usable)")
+    return names, [MSSQL_NETWORK_KEY.format(instance_key=key) for _, key in usable]
+
+
+def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
+    """Yield one row of SQL Server settings for this host, or nothing if it runs none.
+
+    One row per host, not per instance: the first instance whose settings answer wins
+    (mirroring ``_read_mssql_service_state``), and its instance list carries the rest.
+    """
+    instance_names, reg_paths = _mssql_instances(probe)
 
     force_encryption = None
     extended_protection = None
     reg_path_found = None
 
-    # Try each registry path until one succeeds
+    # First instance whose settings key answers wins; the row is one per host.
     for reg_path in reg_paths:
-        if not reg_path_found:
+        if probe.read_values(reg_path) is None:
+            continue
+        reg_path_found = reg_path
+        logger.info("Found MSSQL registry key at %s", reg_path)
 
-            reg_key = probe.read_values(reg_path)
-            if reg_key is not None:
-                reg_path_found = reg_path
-                logger.info("Found MSSQL registry key at %s", reg_path)
+        force_encryption_value = probe.read_dword(reg_path, "ForceEncryption")
+        force_encryption = "Yes" if force_encryption_value == 1 else "No"
 
-                # If we found a valid registry path, read the relevant values
-                force_encryption_value = probe.read_dword(reg_path, "ForceEncryption")
-                if force_encryption_value == 1:
-                    force_encryption = "Yes"
-                else:
-                    force_encryption = "No"
-            
-                # Separate name for the raw DWORD, matching force_encryption above:
-                # reusing one variable for the int and its label makes it int-or-str.
-                extended_protection_value = probe.read_dword(reg_path, "ExtendedProtection")
-                if extended_protection_value == 1:
-                    extended_protection = "Allowed"
-                elif extended_protection_value == 2:
-                    extended_protection = "Required"
-                else:
-                    extended_protection = "Off"
+        # Separate name for the raw DWORD, matching force_encryption above:
+        # reusing one variable for the int and its label makes it int-or-str.
+        extended_protection_value = probe.read_dword(reg_path, "ExtendedProtection")
+        if extended_protection_value == 1:
+            extended_protection = "Allowed"
+        elif extended_protection_value == 2:
+            extended_protection = "Required"
+        else:
+            extended_protection = "Off"
+        break
 
     if not reg_path_found:
         if any(probe.was_denied(path) for path in reg_paths):
-            # Refused, not missing. The probe's per-host denial summary already
-            # names "SQL Server encryption / Extended Protection settings" as lost,
-            # so warning again here -- with an eight-line dump of paths the operator
-            # can do nothing about without local admin -- only restates it.
-            logger.verbose("All MSSQL registry paths denied on %s; reported in the denial summary.", probe.hostname)
+            # Refused, not missing. The probe's per-host denial summary already names
+            # "SQL Server encryption / Extended Protection settings" as lost, so
+            # warning again here -- with a dump of paths the operator can do nothing
+            # about without local admin -- only restates it.
+            logger.verbose("SQL Server network settings denied on %s; reported in the denial summary.", probe.hostname)
+        elif instance_names:
+            # The host told us it runs SQL Server and then its settings key was not
+            # where the inventory said it would be. That contradiction is a real gap
+            # worth surfacing -- unlike the case below it, which is just a host
+            # without SQL.
+            logger.warning(
+                "%s runs SQL Server instance(s) %s but none of their network-settings keys could be read (%s); "
+                "encryption and Extended Protection are unknown for this host.",
+                probe.hostname, ", ".join(instance_names), "; ".join(reg_paths),
+            )
         else:
-            logger.warning("Could not access any MSSQL registry paths on %s, tried:\n%s", probe.hostname, "\n".join(reg_paths))
+            # No inventory and no legacy key: this host does not run SQL Server. That
+            # is the normal case -- seven of nine lab hosts on a FULLY PRIVILEGED run
+            # -- so it is not something to warn about (con-ab59).
+            logger.verbose("No SQL Server registry keys on %s; the host does not appear to run SQL Server.", probe.hostname)
         return
 
     logger.info("Collected EPA settings from %s: ForceEncryption=%s, ExtendedProtection=%s", probe.hostname, force_encryption, extended_protection)
@@ -812,14 +873,8 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
     if port:
         logger.info("Found MSSQL TCP port: %s", port)
 
-    instance_name_reg = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
-    # read_values yields (name, data) pairs; only the names are wanted. A separate
-    # variable keeps each one a single type instead of pairs-then-strings.
-    instance_name_values = probe.read_values(instance_name_reg)
-    instance_names: Optional[list[str]] = None
-    if instance_name_values is not None:
-        instance_names = [name for name, _ in instance_name_values]
-        logger.info("Found MSSQL instance names: %s", ", ".join(instance_names))
+    # instance_names came from _mssql_instances above -- the same read that located
+    # reg_path_found, rather than a second query for the same key.
 
     # Whether the engine is actually meant to run here, and as whom. A SQL Server
     # can be installed -- leaving every key above readable -- on a host that never

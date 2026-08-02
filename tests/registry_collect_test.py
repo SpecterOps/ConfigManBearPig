@@ -286,13 +286,25 @@ def test_multisite_remote_server_sql_role_is_not_assumed(monkeypatch):
 # that): 2=Automatic, 3=Manual, 4=Disabled. Disabled is conclusive proof the
 # engine is not running; Automatic only says it should be.
 
-SUPERSOCKET = (r"SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.MSSQLSERVER"
-               r"\MSSQLServer\SuperSocketNetLib")
 INSTANCE_NAMES = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
 
 
+def _supersocket(instance_key):
+    """Network-settings path for the instance subkey *instance_key*."""
+    return (rf"SOFTWARE\Microsoft\Microsoft SQL Server\{instance_key}"
+            r"\MSSQLServer\SuperSocketNetLib")
+
+
 def _mssql_probe(instance="MSSQLSERVER", start=None, object_name=None):
-    """A probe that finds SQL Server and answers for one instance's service key."""
+    """A probe that finds SQL Server and answers for one instance's service key.
+
+    The inventory value's DATA is the instance's own subkey (``MSSQL16.<INSTANCE>``),
+    which is what the real registry holds and what the settings path is derived from.
+    The fixture used to put the bare instance name there, which made a named instance
+    look like it lived at the default instance's path — hiding the very gap con-ab59
+    was about.
+    """
+    instance_key = f"MSSQL16.{instance}"
     service = "MSSQLSERVER" if instance.upper() == "MSSQLSERVER" else f"MSSQL${instance}"
     svc_key = rf"SYSTEM\CurrentControlSet\Services\{service}"
     dwords, values = {}, {}
@@ -301,7 +313,7 @@ def _mssql_probe(instance="MSSQLSERVER", start=None, object_name=None):
     if object_name is not None:
         values[(svc_key, "ObjectName")] = object_name
     return FakeProbe(
-        values_by_key={SUPERSOCKET: [], INSTANCE_NAMES: [(instance, instance)]},
+        values_by_key={_supersocket(instance_key): [], INSTANCE_NAMES: [(instance, instance_key)]},
         dword_results=dwords, value_results=values,
     )
 
@@ -316,9 +328,9 @@ def _mssql_row(probe):
 
 def test_mssql_default_instance_reports_startup_type_and_account():
     """Default instance -> service MSSQLSERVER; Start and ObjectName are surfaced."""
-    row = _mssql_row(_mssql_probe(start=2, object_name="MAYYHEM\sqlsccmsvc"))
+    row = _mssql_row(_mssql_probe(start=2, object_name=r"MAYYHEM\sqlsccmsvc"))
     assert row["service_start_type"] == "Automatic"
-    assert row["service_account_name"] == "MAYYHEM\sqlsccmsvc"
+    assert row["service_account_name"] == r"MAYYHEM\sqlsccmsvc"
 
 
 def test_mssql_named_instance_uses_the_dollar_service_name():
@@ -383,3 +395,118 @@ def test_absent_triggers_key_still_reports_the_host_as_not_a_site_server(monkeyp
 
     assert "does not exist or no site code subkey found" in text
     assert "Access denied reading" not in text
+
+
+# --- named SQL instances (con-ab59) -------------------------------------------
+# The settings paths used to be eight hard-coded strings all ending .MSSQLSERVER,
+# so a named instance could never match one. ps1-sec runs the SEC site database as
+# CONFIGMGRSEC and was missed even with full local administrator rights, looking
+# exactly like a host with no SQL at all. Paths are now derived from SQL Server's
+# own instance inventory, whose value data IS the instance subkey.
+
+def _named_instance_probe(instance, instance_key, *, force_encryption=1, extended_protection=2):
+    """A host running one instance whose subkey is *instance_key*, and nothing else."""
+    return FakeProbe(
+        values_by_key={
+            INSTANCE_NAMES: [(instance, instance_key)],
+            _supersocket(instance_key): [],
+        },
+        dword_results={
+            (_supersocket(instance_key), "ForceEncryption"): force_encryption,
+            (_supersocket(instance_key), "ExtendedProtection"): extended_protection,
+        },
+        value_results={(_supersocket(instance_key) + r"\Tcp\IPAll", "TcpPort"): "1433"},
+    )
+
+
+def test_named_instance_settings_are_read():
+    """The ps1-sec case: a named instance's EPA/port must be collected, not missed."""
+    row = _mssql_row(_named_instance_probe("CONFIGMGRSEC", "MSSQL16.CONFIGMGRSEC"))
+    assert row["instance_names"] == ["CONFIGMGRSEC"]
+    assert row["force_encryption"] == "Yes"
+    assert row["extended_protection"] == "Required"
+    assert row["port"] == "1433"
+
+
+def test_default_instance_still_works():
+    """Deriving paths from the inventory must not regress the default instance,
+    which is the only shape the old hard-coded list could ever match."""
+    row = _mssql_row(_named_instance_probe("MSSQLSERVER", "MSSQL16.MSSQLSERVER",
+                                           force_encryption=0, extended_protection=0))
+    assert row["instance_names"] == ["MSSQLSERVER"]
+    assert row["force_encryption"] == "No"
+    assert row["extended_protection"] == "Off"
+
+
+def test_instance_subkey_is_used_verbatim_whatever_the_version():
+    """The version prefix is not guessable, so it is never constructed -- an old
+    SQL 2014 named instance is addressed exactly as the inventory reports it."""
+    row = _mssql_row(_named_instance_probe("LEGACYINST", "MSSQL12.LEGACYINST"))
+    assert row["instance_names"] == ["LEGACYINST"]
+    assert row["force_encryption"] == "Yes"
+
+
+def test_host_without_sql_is_silent(caplog):
+    """Seven of nine lab hosts on a FULLY PRIVILEGED run have no SQL at all. That is
+    the normal case and must not produce a warning."""
+    ctx = FakeCtx()
+    probe = FakeProbe()  # no inventory, no legacy key
+    probe.hostname = TARGET
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        rows = list(registry.get_mssql_settings(probe, ctx))
+
+    assert rows == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("does not appear to run SQL Server" in r.getMessage() for r in caplog.records)
+
+
+def test_instances_listed_but_settings_unreadable_still_warns(caplog):
+    """The one case that IS a real gap: the host says it runs SQL and then its
+    settings key is not where the inventory said. That contradiction stays loud."""
+    ctx = FakeCtx()
+    probe = FakeProbe(values_by_key={INSTANCE_NAMES: [("CONFIGMGRSEC", "MSSQL16.CONFIGMGRSEC")]})
+    probe.hostname = TARGET
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        rows = list(registry.get_mssql_settings(probe, ctx))
+
+    assert rows == []
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "CONFIGMGRSEC" in warnings[0]
+
+
+def test_denied_settings_do_not_warn_twice(caplog):
+    """At low privilege the per-host denial summary already reports the loss."""
+    ctx = FakeCtx()
+    key = _supersocket("MSSQL16.MSSQLSERVER")
+    probe = FakeProbe(
+        values_by_key={INSTANCE_NAMES: [("MSSQLSERVER", "MSSQL16.MSSQLSERVER")]},
+        denied_keys=[key],
+    )
+    probe.hostname = TARGET
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        list(registry.get_mssql_settings(probe, ctx))
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("reported in the denial summary" in r.getMessage() for r in caplog.records)
+
+
+def test_legacy_default_instance_path_is_the_fallback():
+    """SQL 7.0/2000 predate the inventory key and had one fixed location."""
+    ctx = FakeCtx()
+    legacy = registry.MSSQL_LEGACY_NETWORK_KEY
+    probe = FakeProbe(values_by_key={legacy: []})
+    probe.hostname = TARGET
+    rows = list(registry.get_mssql_settings(probe, ctx))
+    assert [t for t, _ in rows] == ["remoteregistry_mssql_servers"]
+
+
+def test_inventory_value_with_no_subkey_is_skipped(caplog):
+    r"""A value naming no subkey cannot be turned into a path; skip it and say so
+    rather than building 'Microsoft SQL Server\\MSSQLServer\SuperSocketNetLib'."""
+    ctx = FakeCtx()
+    probe = FakeProbe(values_by_key={INSTANCE_NAMES: [("BROKEN", "")]})
+    probe.hostname = TARGET
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
+        list(registry.get_mssql_settings(probe, ctx))
+    assert any("has no subkey recorded" in r.getMessage() for r in caplog.records)
