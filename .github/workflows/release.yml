@@ -82,7 +82,17 @@ jobs:
           # The bracket class stops this matching openhound-collector-common.
           grep -qE '^Requires-Dist: openhound[><=]' <<<"$meta" \
             || { echo "framework not declared"; exit 1; }
-          ! grep -q 'file://' <<<"$meta" || { echo "a local path leaked into METADATA"; exit 1; }
+          # Scoped to the dependency lines, deliberately. What this guards against is a
+          # [tool.uv.sources] path reaching a Requires-Dist, which would make the release
+          # uninstallable for everyone. It cannot be a blanket grep over METADATA:
+          # `readme = "README.md"` embeds the whole README as the long description, and the
+          # README's troubleshooting section quotes uv's own "Distribution not found at
+          # file:///.../openhound-collector-common" error. A blanket grep therefore fails on
+          # the documentation of the bug instead of on the bug — which is exactly what it did
+          # on the first tag push, aborting a release whose wheel was entirely correct.
+          deps="$(grep '^Requires-Dist:' <<<"$meta" || true)"
+          ! grep -q 'file://' <<<"$deps" \
+            || { echo "a local path leaked into a dependency"; exit 1; }
           echo "entry point + metadata OK"
 
       - name: Publish package
