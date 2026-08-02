@@ -173,8 +173,10 @@ the run, so you can copy it straight out of the terminal:
         C:\...\out\graph\ad_edges-1.json
         ...
     Upload to BloodHound: C:\...\out\graph\configmanbearpig_collection_20260801_193720.zip
-``` Re-running into a directory that already holds a collection **merges**
-the two collections — pass `--clean` to start fresh, and see [Limitations](#limitations) for why that matters.
+```
+
+Re-running into a directory that already holds a collection **merges** the two collections — pass
+`--clean` to start fresh, and see [Limitations](#limitations) for why that matters.
 
 If preprocess or convert fails, the raw data in `.\out` is left intact and the exact resume commands are
 logged, so you never have to recollect. To run the three stages yourself, see
