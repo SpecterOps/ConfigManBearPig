@@ -188,6 +188,41 @@ def test_none_result_does_not_crash(monkeypatch):
     assert [row for table, row in rows if table == "remoteregistry_users"] == []
 
 
+# --- target_hosts_by_hostname case sensitivity ---------------------------------
+
+def test_mixed_case_target_does_not_kill_the_registry_phase(monkeypatch):
+    """Regression: target_hosts_by_hostname is keyed by lowercased hostname
+    (context.py), but collect_registry is called with whatever case the target
+    was actually discovered in -- e.g. LDAP name-pattern matches return the AD
+    computer's own casing ('MECM.sccm.lab'), not lowercase. Every lookup against
+    that dict must lower() its key first, or get_ntlm_settings raises KeyError
+    before ever reaching the low-privilege-readable site-code / component-server
+    keys later in the same generator -- silently losing the whole RemoteRegistry
+    phase for that host, not just the NTLM-settings row."""
+    mixed_case_target = "PS1-PSS.MAYYHEM.COM"
+    ctx = FakeCtx()
+    ctx.target_hosts_by_hostname = {TARGET: _Entry(ad_object={"name": "PS1-PSS"})}
+
+    def _fake_probe(*a, **k):
+        probe = FakeProbe(_site_server(**{COMPONENTS: ["PS1-CCM.MAYYHEM.COM"]}), [])
+        probe.hostname = mixed_case_target
+        return probe
+
+    monkeypatch.setattr(registry, "_RegistryProbe", _fake_probe)
+
+    rows = list(registry.collect_registry(mixed_case_target, ctx))
+
+    # Reached past get_ntlm_settings (no KeyError) and all the way to the
+    # component-server site-server row -- the exact data this bug was blocking.
+    site_server_rows = [
+        row for table, row in rows
+        if table == "remoteregistry_computers"
+        and row["source"] == "RemoteRegistry-ComponentServers"
+        and row["sccm_site_system_roles"] == ["SMS Site Server@PS1"]
+    ]
+    assert len(site_server_rows) == 1
+
+
 # --- Multisite Component Servers ----------------------------------------------
 
 def test_multisite_empty_key_marks_local_site_database(monkeypatch):

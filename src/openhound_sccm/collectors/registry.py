@@ -465,7 +465,7 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                 # server name only when AD resolution failed (ad_object
                 # is None or lacks a name).
                 logger.info("Found %s, this target is a site server", SCCM_REG_KEYS["component_servers"])
-                target_entry = ctx.target_hosts_by_hostname[target]
+                target_entry = ctx.target_hosts_by_hostname[target.lower()]
                 row = {
                     **(target_entry.ad_object or {}),
                     "source": "RemoteRegistry-ComponentServers",
@@ -529,7 +529,7 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                     "database lives elsewhere. Emitting the SQL Server role as assumed "
                     "pending corroboration in preprocess.", target,
                 )
-                target_entry = ctx.target_hosts_by_hostname[target]
+                target_entry = ctx.target_hosts_by_hostname[target.lower()]
                 row = {
                     **(target_entry.ad_object or {}),
                     "source": "RemoteRegistry-MultisiteComponentServers",
@@ -600,7 +600,7 @@ def get_current_user(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tupl
         current_user_ad_object = ctx.resolve_principal(current_user_sid)
         if current_user_ad_object:
             logger.info("Found current user: %s (%s)", current_user_ad_object.get("sam_account_name"), current_user_sid)
-            target_entry = ctx.target_hosts_by_hostname.get(probe.hostname)
+            target_entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
             host_sid = target_entry.ad_object.get("object_sid") if (target_entry and target_entry.ad_object) else None
             if host_sid is None:
                 # No resolved host AD object — HasSession can't be built for this row downstream; keep the row but log.
@@ -663,7 +663,7 @@ def get_ntlm_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tup
         disable_loopback_check = disable_loopback_reg == 1
         logger.verbose(f"DisableLoopbackCheck is {'enabled' if disable_loopback_check else 'disabled'}")
 
-    target_entry = ctx.target_hosts_by_hostname[probe.hostname]
+    target_entry = ctx.target_hosts_by_hostname[probe.hostname.lower()]
     row = {
         **(target_entry.ad_object or {}),
         "source": "RemoteRegistry-NTLMSettings",
@@ -869,7 +869,7 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
         probe, instance_names
     )
 
-    target_entry = ctx.target_hosts_by_hostname[probe.hostname]
+    target_entry = ctx.target_hosts_by_hostname[probe.hostname.lower()]
 
     yield "remoteregistry_mssql_servers", {
         "source": "RemoteRegistry-MSSQL",
