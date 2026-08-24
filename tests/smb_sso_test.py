@@ -32,22 +32,6 @@ def test_cifs_spn():
     assert smb_sso._cifs_spn("ps1-pss.mayyhem.com") == "cifs/ps1-pss.mayyhem.com"
 
 
-def test_split_user_domain_backslash():
-    assert smb_sso._split_user_domain("MAYYHEM\\admin", "mayyhem.com") == ("MAYYHEM", "admin")
-
-
-def test_split_user_domain_upn():
-    assert smb_sso._split_user_domain("admin@mayyhem.com", "fallback.com") == ("mayyhem.com", "admin")
-
-
-def test_split_user_domain_bare_user_uses_default():
-    assert smb_sso._split_user_domain("admin", "mayyhem.com") == ("mayyhem", "admin")
-
-
-def test_split_user_domain_empty_uses_default():
-    assert smb_sso._split_user_domain(None, "mayyhem.com") == ("mayyhem", "")
-
-
 class _FakeSecBuffer:
     def __init__(self, data):
         self.Buffer = data
@@ -213,7 +197,10 @@ def test_connect_smb_no_sspi_falls_back_to_null_session(monkeypatch):
 
     smb = smb_sso.connect_smb("host", "mayyhem.com", None, None)
 
-    assert smb.login_calls == [("", "", "mayyhem")]
+    # The full DNS domain, not a truncated first label -- a member server's
+    # Netlogon pass-through can reject a truncated domain even when the
+    # identical login succeeds directly against the DC.
+    assert smb.login_calls == [("", "", "mayyhem.com")]
 
 
 def test_connect_smb_returns_none_and_closes_on_auth_failure(monkeypatch):
