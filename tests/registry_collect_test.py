@@ -16,7 +16,7 @@ import logging
 
 from openhound_sccm.collectors import registry
 
-TARGET = "ps1-pss.mayyhem.com"
+TARGET = "PS1-PSS.mayyhem.com"
 TRIGGERS = registry.SCCM_REG_KEYS["triggers"]
 COMPONENTS = registry.SCCM_REG_KEYS["component_servers"]
 MULTISITE = registry.SCCM_REG_KEYS["multisite_component_servers"]
@@ -95,7 +95,7 @@ class FakeCtx:
         self._register_result = register_result
         self.resolved = []
         self.registered = []
-        self.target_hosts_by_hostname = {TARGET: _Entry(ad_object=None)}
+        self.target_hosts_by_hostname = {TARGET.lower(): _Entry(ad_object=None)}
 
     def method_enabled(self, name):
         return True
@@ -193,7 +193,7 @@ def test_none_result_does_not_crash(monkeypatch):
 def test_multisite_empty_key_marks_local_site_database(monkeypatch):
     """Empty key -> the site database is local; this host gets both roles."""
     ctx = FakeCtx()
-    ctx.target_hosts_by_hostname[TARGET] = _Entry(ad_object={"name": "PS1-PSS"})
+    ctx.target_hosts_by_hostname[TARGET.lower()] = _Entry(ad_object={"name": "PS1-PSS"})
     _, rows = _run(
         monkeypatch, enum_results=_site_server(**{MULTISITE: []}),
         read_values_result=[], ctx=ctx,
@@ -251,7 +251,7 @@ def test_multisite_absent_key_emits_no_database_row(monkeypatch):
 def test_multisite_empty_key_marks_the_sql_role_as_assumed(monkeypatch):
     """The local-site-database inference flags itself as unverified."""
     ctx = FakeCtx()
-    ctx.target_hosts_by_hostname[TARGET] = _Entry(ad_object={"name": "PS1-PSS"})
+    ctx.target_hosts_by_hostname[TARGET.lower()] = _Entry(ad_object={"name": "PS1-PSS"})
     _, rows = _run(
         monkeypatch, enum_results=_site_server(**{MULTISITE: []}),
         read_values_result=[], ctx=ctx,
@@ -320,7 +320,7 @@ def _mssql_probe(instance="MSSQLSERVER", start=None, object_name=None):
 
 def _mssql_row(probe):
     ctx = FakeCtx()
-    ctx.target_hosts_by_hostname[TARGET] = _Entry(ad_object={"name": "PS1-PSV"})
+    ctx.target_hosts_by_hostname[TARGET.lower()] = _Entry(ad_object={"name": "PS1-PSV"})
     probe.hostname = TARGET
     rows = list(registry.get_mssql_settings(probe, ctx))
     return next(r for t, r in rows if t == "remoteregistry_mssql_servers")

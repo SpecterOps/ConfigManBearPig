@@ -4,13 +4,13 @@ from openhound_sccm.collectors import registry
 
 
 class _FakeProbe:
-    hostname = "host1.lab"
+    hostname = "HOST1.lab"
     def read_values(self, _key):
         return [("UserSID", "S-1-5-21-1-2-3-1106"), ("Session", 1)]
 
 
 def _fake_ctx():
-    host_obj = {"name": "HOST1", "object_sid": "S-1-5-21-1-2-3-1104"}
+    host_obj = {"name": "host1", "object_sid": "S-1-5-21-1-2-3-1104"}
     user_obj = {"sam_account_name": "alice", "object_sid": "S-1-5-21-1-2-3-1106"}
     ctx = types.SimpleNamespace()
     ctx.resolve_principal = lambda sid: dict(user_obj)
