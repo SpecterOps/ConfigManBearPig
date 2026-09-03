@@ -135,6 +135,105 @@ def test_resolve_principal_records_none_safely(monkeypatch):
     assert ctx.resolved_principals == {}
 
 
+def test_service_principal_name_scalar_is_normalized_to_list(monkeypatch):
+    """``ADClient._entry_to_dict`` collapses a single-valued LDAP attribute to a
+    bare scalar (``values[0] if len(values) == 1 else values``), so a
+    principal with exactly one SPN arrives here as a plain string, not a list.
+    Recording it as-is would make ``service_principal_name`` take different
+    Python types across different principals in the same run (None / str /
+    list) -- exactly what triggered dlt's variant-column schema-freeze crash
+    against a real environment (ldap_resolved_principals' contract is frozen,
+    so a later row needing a different inferred type fails the whole load,
+    not just that row). Must always be recorded as a list."""
+    ctx = SourceContext.__new__(SourceContext)
+    ctx.ad_resolution_cache = {}
+    ctx.discovered_domains = set()
+    ctx.resolved_principals = {}
+    obj = {"object_sid": "S-1-5-21-1-2-3-4001", "object_class": ["top", "computer"],
+           "user_account_control": 4096, "service_principal_name": "HOST/onespn.corp.local",
+           "cn": "ONESPN", "dns_host_name": "onespn.corp.local", "sam_account_name": "ONESPN$",
+           "user_principal_name": None, "distinguished_name": "CN=ONESPN,DC=corp,DC=local"}
+    monkeypatch.setattr(ctx, "_build_domains_to_try", lambda hint: ["corp.local"])
+    monkeypatch.setattr(ctx, "_ldap_resolve", lambda name, domain: obj)
+    ctx.resolve_principal("corp.local\\ONESPN$")
+    row = ctx.resolved_principals["S-1-5-21-1-2-3-4001"]
+    assert row["service_principal_name"] == ["HOST/onespn.corp.local"]
+
+
+def test_service_principal_name_none_is_normalized_to_empty_list(monkeypatch):
+    """An absent attribute arrives as ``None`` from ``_entry_to_dict``; must
+    still be recorded as a list (empty), not None, for the same type-
+    consistency reason as the scalar case above."""
+    ctx = SourceContext.__new__(SourceContext)
+    ctx.ad_resolution_cache = {}
+    ctx.discovered_domains = set()
+    ctx.resolved_principals = {}
+    obj = {"object_sid": "S-1-5-21-1-2-3-4002", "object_class": ["top", "person", "user"],
+           "user_account_control": 512, "service_principal_name": None,
+           "cn": "NoSpn", "dns_host_name": None, "sam_account_name": "nospn",
+           "user_principal_name": "nospn@corp.local", "distinguished_name": "CN=NoSpn,DC=corp,DC=local"}
+    monkeypatch.setattr(ctx, "_build_domains_to_try", lambda hint: ["corp.local"])
+    monkeypatch.setattr(ctx, "_ldap_resolve", lambda name, domain: obj)
+    ctx.resolve_principal("corp.local\\nospn")
+    row = ctx.resolved_principals["S-1-5-21-1-2-3-4002"]
+    assert row["service_principal_name"] == []
+
+
+def test_object_class_scalar_is_normalized_to_list(monkeypatch):
+    """Same collapsing behavior applies to ``object_class`` -- rare in
+    practice (objectClass is almost always multi-valued) but the same bug
+    class, and transforms.py's ad_props builder already expects an array
+    for this column too (``_ensure_columns``/``_arr()``), so guard it the
+    same way for consistency."""
+    ctx = SourceContext.__new__(SourceContext)
+    ctx.ad_resolution_cache = {}
+    ctx.discovered_domains = set()
+    ctx.resolved_principals = {}
+    obj = {"object_sid": "S-1-5-21-1-2-3-4003", "object_class": "top",
+           "user_account_control": 512, "service_principal_name": [],
+           "cn": "Solo", "dns_host_name": None, "sam_account_name": "solo",
+           "user_principal_name": "solo@corp.local", "distinguished_name": "CN=Solo,DC=corp,DC=local"}
+    monkeypatch.setattr(ctx, "_build_domains_to_try", lambda hint: ["corp.local"])
+    monkeypatch.setattr(ctx, "_ldap_resolve", lambda name, domain: obj)
+    ctx.resolve_principal("corp.local\\solo")
+    row = ctx.resolved_principals["S-1-5-21-1-2-3-4003"]
+    assert row["object_class"] == ["top"]
+
+
+def test_resolved_principals_have_consistent_spn_type_across_mixed_cardinality(monkeypatch):
+    """Direct regression test for the real-environment crash: record three
+    principals whose SPN attribute has different cardinality (none / one /
+    many -- the normal spread across a real domain's users, service accounts,
+    and site servers) and assert every recorded row's service_principal_name
+    is a Python list, so a real collect would never hand dlt mixed types for
+    this column and trip the variant-column schema-freeze error."""
+    ctx = SourceContext.__new__(SourceContext)
+    ctx.ad_resolution_cache = {}
+    ctx.discovered_domains = set()
+    ctx.resolved_principals = {}
+    objs = {
+        "none": {"object_sid": "S-1-5-21-1-2-3-5001", "object_class": ["top", "user"],
+                 "user_account_control": 512, "service_principal_name": None,
+                 "cn": "None", "dns_host_name": None, "sam_account_name": "none_",
+                 "user_principal_name": None, "distinguished_name": "CN=None,DC=corp,DC=local"},
+        "one": {"object_sid": "S-1-5-21-1-2-3-5002", "object_class": ["top", "computer"],
+                "user_account_control": 4096, "service_principal_name": "HOST/one.corp.local",
+                "cn": "One", "dns_host_name": "one.corp.local", "sam_account_name": "ONE$",
+                "user_principal_name": None, "distinguished_name": "CN=One,DC=corp,DC=local"},
+        "many": {"object_sid": "S-1-5-21-1-2-3-5003", "object_class": ["top", "computer"],
+                 "user_account_control": 4096,
+                 "service_principal_name": ["HOST/many.corp.local", "MSSQLSvc/many.corp.local:1433"],
+                 "cn": "Many", "dns_host_name": "many.corp.local", "sam_account_name": "MANY$",
+                 "user_principal_name": None, "distinguished_name": "CN=Many,DC=corp,DC=local"},
+    }
+    monkeypatch.setattr(ctx, "_build_domains_to_try", lambda hint: ["corp.local"])
+    for key, obj in objs.items():
+        monkeypatch.setattr(ctx, "_ldap_resolve", lambda name, domain, obj=obj: obj)
+        ctx.resolve_principal(f"corp.local\\{key}")
+    for row in ctx.resolved_principals.values():
+        assert isinstance(row["service_principal_name"], list)
+
+
 def test_ldap_resolved_principals_in_preproc_table_map():
     from openhound_sccm.main import _preproc_table_map
     tables = _preproc_table_map()
