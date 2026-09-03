@@ -247,15 +247,22 @@ def collection_settings(ctx: "SourceContext") -> Iterable[dict[str, Any]]:
 @app.resource(name="local_client_logs_targets", parallelized=False, columns=raw_table_asset("local_client_logs_targets"))
 @with_log_context(phase="Local", target_from_ctx_domain=True)
 def local_client_logs_targets(ctx: "SourceContext") -> Iterable[dict[str, Any]]:
-    """Yield rows for management points and distribution points discovered via 
+    """Yield rows for management points and distribution points discovered via
     local SCCM client log scrape.
 
     SCCM client logs (``CCM\\Logs\\*.log``, ``CCMSetup\\Logs\\*.log``) frequently
     reference MP and DP UNC and HTTP endpoints.
+
+    Gated on the same root\\CCM namespace check as the WMI resources above
+    (``_wmi_ccm()``), not just "is this Windows" -- CMBP's original
+    Invoke-LocalCollection returned at its very top when that namespace was
+    absent, before ever reaching its log-scrape code, so a box that merely
+    has leftover CCM/ccmsetup log folders (client since uninstalled) but no
+    live CCM namespace was never scraped there either.
     """
     if not ctx.method_enabled("Local"):
         return
-    if platform.system() != "Windows":
+    if _wmi_ccm() is None:
         return
 
     system_root = os.environ.get("SystemRoot", "C:\\Windows")

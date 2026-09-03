@@ -58,12 +58,13 @@ class _Ctx:
 
 def _point_at_log(tmp_path, monkeypatch, *lines):
     """Write ``<SystemRoot>/CCM/Logs/test.log`` with ``lines`` and aim the
-    resource at it via the ``SystemRoot`` env var. Force the Windows-only guard
-    on so the test is portable to non-Windows CI."""
+    resource at it via the ``SystemRoot`` env var. Force the SCCM-client guard
+    (``_wmi_ccm()``) on so the test is portable to non-Windows CI and doesn't
+    need a real WMI connection."""
     log_dir = tmp_path / "CCM" / "Logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "test.log").write_text("\n".join(lines), encoding="utf-8")
-    monkeypatch.setattr(local.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(local, "_wmi_ccm", lambda: object())
     monkeypatch.setenv("SystemRoot", str(tmp_path))
 
 
@@ -111,3 +112,19 @@ def test_found_unc_logs_the_full_path(tmp_path, monkeypatch, caplog):
         list(_raw(local.local_client_logs_targets)(ctx))
 
     assert f"Found UNC path in test.log: {unc}" in _messages(caplog)
+
+
+def test_log_scrape_skipped_when_not_an_sccm_client(tmp_path, monkeypatch, caplog):
+    # CMBP's original Invoke-LocalCollection returned before ever reaching its
+    # log-scrape code when the root\CCM namespace was absent (PS1 line 3894-3901).
+    # A box with leftover CCM/ccmsetup log folders but no live namespace (client
+    # since uninstalled) must be skipped the same way, not just "is this Windows".
+    _point_at_log(tmp_path, monkeypatch, "GET https://mp.mayyhem.com/ccm_system 200 OK")
+    monkeypatch.setattr(local, "_wmi_ccm", lambda: None)
+    ctx = _Ctx(resolve_ip={"mp.mayyhem.com": "10.1.2.3"})
+
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.local"):
+        list(_raw(local.local_client_logs_targets)(ctx))
+
+    assert ctx.register_calls == []
+    assert _messages(caplog) == []
