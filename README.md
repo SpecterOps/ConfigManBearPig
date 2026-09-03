@@ -817,6 +817,13 @@ the KDC, and that traffic never touches our sockets. To use a logged-in identity
 through the pivot, export its Kerberos ticket and pass `--ticket`, or set up
 OS-level transparent proxying (tun2socks / Proxifier) on the outside box.
 
+**Ambient system/environment proxies are never used automatically.** `--proxy`
+above is the only way to route this collector's traffic through a proxy. The
+HTTP client explicitly disables `requests`' default trust of `HTTP_PROXY`/
+`HTTPS_PROXY` env vars and (on Windows) the registry-configured system proxy —
+a box configured with a corporate web proxy for general internet access will
+still reach internal AdminService/HTTP targets directly, not through that proxy.
+
 ---
 
 # Automating the Upload

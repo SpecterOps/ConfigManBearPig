@@ -124,6 +124,15 @@ class HttpClient:
         self._kerberos_negotiator: Any = None
 
         self._session = requests.Session()
+        # Never trust ambient proxy config (env vars, or on Windows the
+        # registry-configured system proxy) -- this collector's own pivoting
+        # mechanism is the explicit --proxy SOCKS5 flag, which tunnels at the
+        # socket layer (openhound_collector_common.proxy.patch) and is
+        # unaffected by this setting. Left at the default, a corporate web
+        # proxy configured for general internet access silently swallowed
+        # every AdminService/HTTP request -- including same-LAN, same-domain
+        # targets -- with a ProxyError timeout, on a real engagement.
+        self._session.trust_env = False
         self._session.verify = verify_ssl
         self._session.headers.update({"Accept": "application/json"})
 
