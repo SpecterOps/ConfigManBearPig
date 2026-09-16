@@ -785,6 +785,15 @@ def _expand_group_targets(ctx: SourceContext, group_obj: dict[str, Any],
     return rows
 
 
+# Built-in principals that hold Full Control on essentially every object and say
+# nothing about whether a host runs SCCM.
+IGNORED_ACE_SIDS = frozenset({
+    "S-1-5-18",      # LOCAL SYSTEM
+    "S-1-5-32-544",  # BUILTIN\\Administrators
+    "S-1-3-0",       # CREATOR OWNER
+})
+
+
 def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
     """
     Parse a Windows SECURITY_DESCRIPTOR binary blob and return SIDs with GenericAll.
@@ -793,6 +802,22 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
     the raw Windows GENERIC_ALL bit (0x10000000). The .NET ActiveDirectoryRights
     enum GenericAll = 0x000F01FF. We check for both, plus any mask that includes
     all the AD-specific rights.
+
+    The access mask on its own is not enough to call an ACE Full Control, so two
+    further checks are applied:
+
+    - An ACE whose AceFlags carry INHERIT_ONLY (0x08) grants nothing on this
+      container. It sits here only so Active Directory can copy it down to child
+      objects.
+    - An object ACE (type 0x05) carrying an ObjectType GUID grants its mask over
+      that one property set or extended right, not over the whole object. One
+      carrying an InheritedObjectType GUID only ever applies to child objects of
+      that class.
+
+    Exchange's `setup /PrepareAD` writes both kinds at the domain root with a
+    0x000F01FF mask for Exchange Trusted Subsystem and Organization Management,
+    and they inherit down onto System Management. Counting them as Full Control
+    made every Exchange server look like an SCCM site server.
 
     Structure reference:
     - SECURITY_DESCRIPTOR header (20 bytes for self-relative)
@@ -827,6 +852,9 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
     GENERIC_ALL = 0x10000000
     ACCESS_ALLOWED_ACE_TYPE = 0x00
     ACCESS_ALLOWED_OBJECT_ACE_TYPE = 0x05
+    INHERIT_ONLY_ACE = 0x08
+    ACE_OBJECT_TYPE_PRESENT = 0x01
+    ACE_INHERITED_OBJECT_TYPE_PRESENT = 0x02
 
     for _ in range(ace_count):
         if pos + 4 > len(sd_bytes):
@@ -834,6 +862,7 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
             break
 
         ace_type = sd_bytes[pos]
+        ace_flags = sd_bytes[pos + 1]
         ace_size = struct.unpack_from("<H", sd_bytes, pos + 2)[0]
 
         if ace_size < 4 or pos + ace_size > len(sd_bytes):
@@ -850,7 +879,11 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
         access_mask = struct.unpack_from("<I", sd_bytes, pos + 4)[0]
         is_generic_all = (access_mask & GENERIC_ALL) or (access_mask & AD_GENERIC_ALL) == AD_GENERIC_ALL
 
-        if is_generic_all:
+        if is_generic_all and (ace_flags & INHERIT_ONLY_ACE):
+            logger.debug(
+                "System Management container ACL: skipping INHERIT_ONLY ACE at offset %d; "
+                "it grants nothing on the container itself", pos)
+        elif is_generic_all:
             sid_data = None
 
             if ace_type == ACCESS_ALLOWED_ACE_TYPE:
@@ -862,16 +895,25 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
                 #   [ObjectType(16)] + [InheritedObjectType(16)] + SID
                 if pos + 12 <= len(sd_bytes):
                     obj_flags = struct.unpack_from("<I", sd_bytes, pos + 8)[0]
-                    sid_start = pos + 12
-                    if obj_flags & 0x01:  # ACE_OBJECT_TYPE_PRESENT
-                        sid_start += 16
-                    if obj_flags & 0x02:  # ACE_INHERITED_OBJECT_TYPE_PRESENT
-                        sid_start += 16
-                    sid_data = sd_bytes[sid_start:pos + ace_size]
+                    if obj_flags & (ACE_OBJECT_TYPE_PRESENT | ACE_INHERITED_OBJECT_TYPE_PRESENT):
+                        # Scoped to a single property set / extended right, or to one
+                        # child object class. Either way it is not Full Control here.
+                        logger.debug(
+                            "System Management container ACL: skipping scoped object ACE at "
+                            "offset %d (object flags 0x%02x)", pos, obj_flags)
+                    else:
+                        sid_data = sd_bytes[pos + 12:pos + ace_size]
+                else:
+                    logger.debug(
+                        "System Management container ACL: object ACE at offset %d too short "
+                        "for its flags field; skipping", pos)
 
             if sid_data:
                 sid_str = bytes_to_sid(sid_data)
-                if sid_str:
+                if sid_str and sid_str in IGNORED_ACE_SIDS:
+                    logger.debug(
+                        "System Management container ACL: skipping built-in principal %s", sid_str)
+                elif sid_str:
                     results.append(sid_str)
 
         pos += ace_size
