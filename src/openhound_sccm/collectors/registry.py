@@ -465,9 +465,10 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                 # server name only when AD resolution failed (ad_object
                 # is None or lacks a name).
                 logger.info("Found %s, this target is a site server", SCCM_REG_KEYS["component_servers"])
-                target_entry = ctx.target_hosts_by_hostname[target]
+                target_entry = ctx.target_hosts_by_hostname.get(target.lower())
+                ad_object = target_entry.ad_object if target_entry else None
                 row = {
-                    **(target_entry.ad_object or {}),
+                    **(ad_object or {}),
                     "source": "RemoteRegistry-ComponentServers",
                     "sccm_infra": True,
                     "sccm_site_system_roles": _roles(["SMS Site Server"], site_code),
@@ -529,9 +530,10 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                     "database lives elsewhere. Emitting the SQL Server role as assumed "
                     "pending corroboration in preprocess.", target,
                 )
-                target_entry = ctx.target_hosts_by_hostname[target]
+                target_entry = ctx.target_hosts_by_hostname.get(target.lower())
+                ad_object = target_entry.ad_object if target_entry else None
                 row = {
-                    **(target_entry.ad_object or {}),
+                    **(ad_object or {}),
                     "source": "RemoteRegistry-MultisiteComponentServers",
                     "sccm_infra": True,
                     "sccm_site_system_roles": _roles(["SMS SQL Server", "SMS Site Server"], site_code),
@@ -600,7 +602,7 @@ def get_current_user(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tupl
         current_user_ad_object = ctx.resolve_principal(current_user_sid)
         if current_user_ad_object:
             logger.info("Found current user: %s (%s)", current_user_ad_object.get("sam_account_name"), current_user_sid)
-            target_entry = ctx.target_hosts_by_hostname.get(probe.hostname)
+            target_entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
             host_sid = target_entry.ad_object.get("object_sid") if (target_entry and target_entry.ad_object) else None
             if host_sid is None:
                 # No resolved host AD object — HasSession can't be built for this row downstream; keep the row but log.
@@ -663,16 +665,19 @@ def get_ntlm_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tup
         disable_loopback_check = disable_loopback_reg == 1
         logger.verbose(f"DisableLoopbackCheck is {'enabled' if disable_loopback_check else 'disabled'}")
 
-    target_entry = ctx.target_hosts_by_hostname[probe.hostname]
+    target_entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
+    if target_entry is None:
+        logger.warning("No registered target for %s; RemoteRegistry rows will lack host AD identity", probe.hostname)
+    ad_object = target_entry.ad_object if target_entry else None
     row = {
-        **(target_entry.ad_object or {}),
+        **(ad_object or {}),
         "source": "RemoteRegistry-NTLMSettings",
         "smb_signing_required": signing_required,
         "smb_signing_source": signing_source,
         "restrict_receiving_ntlm_traffic": restrict_receiving_ntlm_traffic,
         "disable_loopback_check": disable_loopback_check,
     }
-    row.setdefault("name", target_entry.ad_object.get("name") if target_entry.ad_object else probe.hostname)
+    row.setdefault("name", ad_object.get("name") if ad_object else probe.hostname)
     yield "remoteregistry_computers", row
 
 
@@ -869,14 +874,15 @@ def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tu
         probe, instance_names
     )
 
-    target_entry = ctx.target_hosts_by_hostname[probe.hostname]
+    target_entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
+    ad_object = target_entry.ad_object if target_entry else None
 
     yield "remoteregistry_mssql_servers", {
         "source": "RemoteRegistry-MSSQL",
         "force_encryption": force_encryption if force_encryption is not None else None,
         "extended_protection": extended_protection if extended_protection is not None else None,
-        "name": target_entry.ad_object.get("name") if target_entry.ad_object else probe.hostname,
-        "domain_computer_sid": target_entry.ad_object.get("object_sid") if target_entry.ad_object else None,
+        "name": ad_object.get("name") if ad_object else probe.hostname,
+        "domain_computer_sid": ad_object.get("object_sid") if ad_object else None,
         "port": port if port else None,
         "instance_names": instance_names if instance_names else None,
         "service_start_type": service_start_type,
