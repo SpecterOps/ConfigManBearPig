@@ -14,7 +14,7 @@ import sys
 from typing import Optional
 
 from ..log_context import get_logger
-from .http_auth import format_hashes  # canonical NT-hash -> "LM:NT" normalizer
+from .http_auth import format_hashes, split_user_domain  # canonical helpers, shared with wmi.py
 from impacket import crypto
 from impacket.nt_errors import STATUS_MORE_PROCESSING_REQUIRED, STATUS_SUCCESS
 from impacket.smbconnection import SMBConnection
@@ -49,23 +49,6 @@ _SSPI_NEGOTIATE_AVAILABLE = _sspi_negotiate_available()
 def _cifs_spn(hostname: str) -> str:
     """The SMB service principal name SSPI uses to request a Kerberos ticket."""
     return f"cifs/{hostname}"
-
-
-def _split_user_domain(username: Optional[str], default_domain: str) -> tuple[str, str]:
-    """Split ``DOMAIN\\user`` or ``user@domain`` into ``(domain, user)``.
-
-    Falls back to the first label of ``default_domain`` when no explicit prefix
-    is present. (Moved verbatim from collectors/registry.py.)
-    """
-    if not username:
-        return default_domain.split(".")[0], ""
-    if "\\" in username:
-        d, u = username.split("\\", 1)
-        return d, u
-    if "@" in username:
-        u, d = username.split("@", 1)
-        return d, u
-    return default_domain.split(".")[0], username
 
 
 def _make_negotiate_auth(spn: str):
@@ -259,26 +242,30 @@ def connect_smb(
             ticket_user, tgt, tgs = _load_ticket(kerberos_ticket)
             # Pass-the-ticket may carry no -u; impacket still needs a client
             # principal for the AP-REQ, so fall back to the ticket's own cname.
-            _, u = _split_user_domain(username or ticket_user, domain)
+            _, u = split_user_domain(username or ticket_user, domain)
             lmhash, nthash = (format_hashes(nt_hash) or ":").split(":")
             logger.verbose("SMB auth: pass-the-ticket as %s on %s", u, hostname)
             # doKerberos treats `domain` as the realm -> pass the full DNS domain.
             smb.kerberosLogin(u, password or "", domain, lmhash, nthash, "", kdc_host, TGT=tgt, TGS=tgs)
         elif nt_hash:
-            d, u = _split_user_domain(username, domain)
+            d, u = split_user_domain(username or "", domain)
             lmhash, nthash = (format_hashes(nt_hash) or ":").split(":")
             logger.verbose("SMB auth: pass-the-hash as %s\\%s on %s", d, u, hostname)
             smb.login(u, "", d, lmhash, nthash)
         elif username and password:
-            d, u = _split_user_domain(username, domain)
+            d, u = split_user_domain(username, domain)
             logger.verbose("SMB auth: explicit NTLM as %s\\%s on %s", d, u, hostname)
             smb.login(u, password, d)
         elif _SSPI_NEGOTIATE_AVAILABLE:
             logger.verbose("SMB auth: current Windows user via SSPI Negotiate on %s", hostname)
             smb_login_sspi(smb, _cifs_spn(hostname))
         else:
+            # Full DNS domain, not a truncated first label -- a member server's
+            # Netlogon pass-through can fail to route a truncated domain even
+            # when the identical bare login succeeds directly against the DC
+            # (which is self-authoritative and does not need to route it).
             logger.verbose("SMB auth: null session on %s (no creds; SSPI unavailable)", hostname)
-            smb.login("", "", domain.split(".")[0])
+            smb.login("", "", domain)
         return smb
     except Exception as exc:  # noqa: BLE001 - auth failure -> host not collectable
         logger.verbose("SMB auth to %s failed: %s", hostname, exc)
