@@ -49,6 +49,20 @@ def _client(session, auth=AuthMode.NONE, **kw):
     return c
 
 
+def test_session_does_not_trust_ambient_proxy_env(monkeypatch):
+    # A real engagement had every AdminService/HTTP request -- including
+    # same-LAN, same-domain targets -- silently routed through a corporate
+    # web proxy and timing out, because requests.Session() trusts ambient
+    # proxy config (env vars, or on Windows the registry system proxy) by
+    # default. This collector's own pivoting mechanism is the explicit
+    # --proxy SOCKS5 flag (socket-layer, see openhound_collector_common.proxy),
+    # so ambient proxy trust must stay off regardless of what's set here.
+    monkeypatch.setenv("HTTPS_PROXY", "http://corporate-proxy.example.com:8080")
+    monkeypatch.setenv("HTTP_PROXY", "http://corporate-proxy.example.com:8080")
+    c = HttpClient(base_url="https://mp.mayyhem.com", auth=AuthMode.NONE, domain="mayyhem.com")
+    assert c._session.trust_env is False
+
+
 def test_none_mode_never_sends_authorization():
     sess = mock.Mock()
     sess.get.return_value = _FakeResp(401, b"deny")

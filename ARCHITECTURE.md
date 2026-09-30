@@ -256,16 +256,17 @@ glue that `StreamBridge` can't provide, in [`source.py`](src/openhound_sccm/sour
   worker bump and the bridge were **generalized from this exact SCCM code**; see
   [Where this code lives](#where-this-code-lives-the-shared-collector-common-library).)
 
-A second framework-shaped problem: DLT builds the source via **config injection** (every `source()`
-parameter is a `dlt.config.value` / `dlt.secrets.value`, see [source.py:198-231](src/openhound_sccm/source.py#L198-L231)),
-so there is **no constructor** through which to hand the source live Python objects (the shared work
+A second framework-shaped problem: DLT builds most scalar `source()` settings via **config injection**
+(`dlt.config.value` / `dlt.secrets.value`; see [source.py:237-261](src/openhound_sccm/source.py#L237-L261)).
+The HTTP proxy is passed explicitly so ambient `HTTP_PROXY` cannot bind it by accident.
+There is **no constructor** through which to hand the source live Python objects (the shared work
 queue, the AD-resolution cache, the stream registry). The extension threads them through **module-level
 globals** planted just before each `pipeline.run` and cleared after —
 [`set_shared_queue` / `set_bridge` / `get_last_ctx`](src/openhound_sccm/source.py) (`set_bridge` plants the
 run-scoped `StreamBridge` the emit resources drain). It's a handshake, not elegance, but it's the only
 channel the injection model leaves open.
 
-Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py#L842-L1009).
+Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py#L1153-L1532).
 These are the two **collection** stages of the per-host collection framework plan,
 `docs/superpowers/plans/2026-06-03-per-host-collection-framework.md` — a different numbering from the
 graph-pipeline stages used in §9 and §11 (see the
@@ -280,7 +281,7 @@ Stage 2 — Per-host (engine thread pool + emit-resource drain)
 ```
 
 Stage 1 is selected with `src.with_resources(*DISCOVERY_RESOURCE_NAMES)`
-([main.py:957-959](src/openhound_sccm/main.py#L957-L959)); Stage 2 is the engine + emit pass.
+([main.py:1397-1399](src/openhound_sccm/main.py#L1397-L1399)); Stage 2 is the engine + emit pass.
 
 ### Trade-offs
 
@@ -383,15 +384,15 @@ so it can't stop early.
 
 Two more pieces wire discovery into this loop:
 
-- [`SourceContext.register_target`](src/openhound_sccm/context.py#L356-L455) is the single funnel every
+- [`SourceContext.register_target`](src/openhound_sccm/context.py#L357-L457) is the single funnel every
   discovery path calls. It resolves the identifier against AD (best-effort), applies the allow-list (see
   [§4](#4-targeted-collection-an-include-only-allow-list)), dedups by SID then hostname (with an FQDN
   upgrade path), merges sources/site-codes onto an existing `TargetEntry`, and — for a genuinely new host —
-  calls `work_queue.submit(...)` ([context.py:453-454](src/openhound_sccm/context.py#L453-L454)). Both
+  calls `work_queue.submit(...)` ([context.py:455](src/openhound_sccm/context.py#L455)). Both
   Stage-1 discovery resources (which call it from inside `collectors/*`) and the CLI's `--computers`
-  seeds ([main.py:963-965](src/openhound_sccm/main.py#L963-L965)) go through this *same* funnel, so dedup
+  seeds ([main.py:1404-1408](src/openhound_sccm/main.py#L1404-L1408)) go through this *same* funnel, so dedup
   and filtering are identical.
-- [`target_hosts_snapshot`](src/openhound_sccm/context.py#L459-L471) lets phases read the *current* target
+- [`target_hosts_snapshot`](src/openhound_sccm/context.py#L460-L472) lets phases read the *current* target
   set at iteration time, so a host discovered after a phase started is still picked up — the OpenHound
   equivalent of CMBP's "iterate the updated list."
   When a short hostname is upgraded to an FQDN, the old name remains an index alias for a queued worker,
@@ -438,15 +439,15 @@ be decoupled.
 
 ### The add-on: an allow-list applied at the registration funnel
 
-- `--computers` and `--computer-file` feed [`_expand_allowed_targets`](src/openhound_sccm/source.py#L41-L58),
+- `--computers` and `--computer-file` feed [`_expand_allowed_targets`](src/openhound_sccm/source.py#L42-L59),
   which lowercases each name **and** adds its short-name form so a host matches whether it's later seen as
   an FQDN or a NetBIOS name. The lowercased, short-name-expanded set is assembled at
-  [source.py:244-248](src/openhound_sccm/source.py#L244-L248) and handed to `SourceContext.allowed_targets`
-  ([source.py:267](src/openhound_sccm/source.py#L267)).
-- [`_is_allowed_target`](src/openhound_sccm/context.py#L239-L258) (CMBP's `Test-AllowedTarget`) is checked
+  [source.py:278-285](src/openhound_sccm/source.py#L278-L285) and handed to `SourceContext.allowed_targets`
+  ([source.py:303](src/openhound_sccm/source.py#L303)).
+- [`_is_allowed_target`](src/openhound_sccm/context.py#L336-L355) (CMBP's `Test-AllowedTarget`) is checked
   inside `register_target`: an **empty** allow-list means *allow all* (pure discovery mode), and a
   non-empty one rejects any host whose candidate name forms don't intersect it — logging the skip rather
-  than silently dropping it ([context.py:296-297](src/openhound_sccm/context.py#L296-L297)).
+  than silently dropping it ([context.py:392-394](src/openhound_sccm/context.py#L392-L394)).
 
 Because the gate sits at the single registration funnel, the same filter governs LDAP-discovered hosts,
 DNS-discovered hosts, mid-run HTTP-discovered siblings, and CLI seeds alike. `--computers` therefore does
@@ -492,20 +493,20 @@ PowerShell tool does — rather than demanding flags. None of that fits a one-to
 ### The add-on: a hand-registered Typer command + a flag→env bridge + context discovery
 
 Rather than use `@app.collect()`, [`main.py`](src/openhound_sccm/main.py) registers
-[`collect_sccm`](src/openhound_sccm/main.py#L842-L1009) **directly on the framework's public Typer group**
+[`collect_sccm`](src/openhound_sccm/main.py#L1153-L1532) **directly on the framework's public Typer group**
 (`from openhound.cli.collect import collect as _collect_typer`) so it can expose the full CMBP flag surface
-([main.py:842-885](src/openhound_sccm/main.py#L842-L885)). It then assigns `app.collector = collect_sccm`
-([main.py:1057](src/openhound_sccm/main.py#L1057)) so the framework's import-time
+([main.py:1153-1263](src/openhound_sccm/main.py#L1153-L1263)). It then assigns `app.collector = collect_sccm`
+([main.py:1964](src/openhound_sccm/main.py#L1964)) so the framework's import-time
 `validate_extension` still sees a registered hook.
 
-Because the DLT `source()` factory only reads configuration through injection, the command **translates
-every flag into the env var the source expects** before the source is built:
+The command **maps CLI flags to scoped env vars** before the DLT source is built. Most source
+settings use config injection; `http_proxy` is passed explicitly after validation:
 
-- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py#L59-L90) maps each flag to its `SOURCES__SCCM__*` name;
-  [`_apply_env_overrides`](src/openhound_sccm/main.py#L227-L248) sets them last (so an explicit flag wins
-  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py#L103-L111)
+- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py#L161-L193) maps each flag to its `SOURCES__SCCM__*` name;
+  [`_apply_env_overrides`](src/openhound_sccm/main.py#L320-L342) sets them last (so an explicit flag wins
+  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py#L196-L204)
   removes empties so an unset flag can't clobber a higher-priority source.
-- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py#L168-L218) catches a real foot-gun:
+- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py#L261-L311) catches a real foot-gun:
   Click parses `-dc 10.0.0.1` as `-d c` (because `-d` takes a value), silently turning the intended DC
   into a stray positional. The collector warns on these, masking sensitive values.
 - **Context auto-detection** mirrors CMBP's order: [`_detect_windows_domain`](src/openhound_sccm/main.py)
@@ -576,7 +577,7 @@ A few specifics worth calling out, because they show how much harder this is tha
 
 - **HTTP is a multi-leg challenge/response, not a header.** `http.py` runs the SPNEGO `401 →
   WWW-Authenticate: Negotiate <token> →` re-request loop itself, minting tokens with impacket/SSPI and
-  carrying them in `Authorization: Negotiate <b64>` ([http.py:215-227](src/openhound_sccm/clients/http.py#L215-L227)).
+  carrying them in `Authorization: Negotiate <b64>` ([http.py:316-342](src/openhound_sccm/clients/http.py#L316-L342)).
   Kerberos needs a **Service Principal Name** (`HTTP/<fqdn>`); a bare-IP target can't form one, so the
   ladder skips Kerberos and uses NTLM directly. The GSS checksum deliberately omits the DCE-style flag
   because IIS/http.sys rejects it.
@@ -757,7 +758,7 @@ filters/handlers and mutating live handler instances at runtime:
     logger so other impacket CRITICALs survive. `clients/wmi.py` logs its own verbose line in its place
     so the log still explains itself. Installed and removed per run, alongside the file handlers.
 - **Runtime tidy-ups of the framework's Rich handler** ([`install_filter`](src/openhound_sccm/log_context.py#L253-L292)
-  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py#L317-L335)): turn off Rich markup
+  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py#L484-L504)): turn off Rich markup
   parsing (so `[mayyhem.com]` isn't eaten as a malformed tag), drop the `file.py:line` column, and swap
   out the formatter that appends `(openhound_version=…)` — all by writing attributes on the *existing*
   handler instances, never by editing core.
@@ -780,9 +781,9 @@ A stock REST collector on Linux CI never meets any of these.
   **both** the root and `dlt` loggers, pointed at the *same* file. The first record after midnight (or past
   the size cap) triggers a rollover that `os.rename`s the open log — which **fails on Windows** because the
   sibling handler still holds the file open. The extension can't edit core, so
-  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py#L382-L409) (run once at import) mutates
+  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py#L575-L608) (run once at import) mutates
   the live handler instances: it repoints each to a **per-run timestamped file** and replaces `doRollover`
-  with [`_copytruncate_rollover`](src/openhound_sccm/main.py#L356-L379) — *copy the file to a dated sibling,
+  with [`_copytruncate_rollover`](src/openhound_sccm/main.py#L549-L572) — *copy the file to a dated sibling,
   then truncate in place* — so rotation never needs exclusive access to the open handle. It's a no-op off
   Windows, where rename-based rotation works.
 - **dlt's pipeline storage gets locked under the user profile (WinError 32, again).** A *second* WinError 32,
@@ -806,7 +807,7 @@ A stock REST collector on Linux CI never meets any of these.
   `libcrypto` without the `OPENSSL_Applink` cross-CRT shim — which aborts the process mid-handshake on
   Windows. Harmless on Linux, but on Windows the collector deliberately prefers an official/system Python.
 - **Single-label (NetBIOS) domains have no valid LDAP naming context.** `DC=MAYYHEM` doesn't exist, so AD
-  answers with a referral that ldap3 chases into "invalid server address." [`_ldap_resolve`](src/openhound_sccm/context.py#L210-L237)
+  answers with a referral that ldap3 chases into "invalid server address." [`_ldap_resolve`](src/openhound_sccm/context.py#L265-L299)
   detects the dot-less domain and skips it, deferring to an FQDN domain in the try-list — which is why only
   NetBIOS-prefixed principals (NAA, `sccm_push`) ever hit that path.
 - **Dependency pins that exist only for Windows auth:** `ldap3>=2.10.2rc4` is the first release exporting
@@ -1411,13 +1412,13 @@ alongside the SCCM-specific properties already emitted. No new AD collector was 
 extension reuses AD-resolution work the collector was already doing for other reasons.
 
 Every phase that needs to turn a name/SID/DN into an AD object calls
-`SourceContext.resolve_principal` ([context.py:187](src/openhound_sccm/context.py#L187)) — LDAP
+`SourceContext.resolve_principal` ([context.py:188](src/openhound_sccm/context.py#L188)) — LDAP
 discovery resolving admins, RemoteRegistry resolving current users, AdminService/WMI resolving
 device-referenced principals, and so on. `resolve_principal` already caches every lookup in
 `ad_resolution_cache` (hits *and* misses, keyed by lookup string — see
 [Where this code lives](#where-this-code-lives-the-shared-collector-common-library) for the
 "AD-resolution cache" reference in §1) to avoid repeat LDAP round-trips. It now *also* calls
-`_record_resolved_principal` ([context.py:300](src/openhound_sccm/context.py#L300)) on every fresh
+`_record_resolved_principal` ([context.py:301](src/openhound_sccm/context.py#L301)) on every fresh
 (non-cache-hit) success, deduping by SID into a second, purely-successful accumulator,
 `SourceContext.resolved_principals`.
 
@@ -1943,6 +1944,25 @@ would leave four other protocols leaking traffic straight from the outside box.
   [Where this code lives](#where-this-code-lives-the-shared-collector-common-library))
   so the MSSQL collector can adopt it without re-deriving it.
 
+### HTTP-only proxy for site-system web endpoints
+
+`--http-proxy` applies to the `requests.Session` owned by
+`clients/http.py::HttpClient`, which both AdminService and the anonymous HTTP
+role probes use. Direct access remains the default: the session keeps
+`trust_env=False`. An explicit `host[:port]` or `user:pass@host[:port]`
+becomes an HTTP proxy URL for HTTP and HTTPS requests (port 80 when omitted).
+`auto` resolves per-request proxy and bypass settings with
+`urllib.request.getproxies()` / `proxy_bypass()`, covering environment
+variables and the current Windows user's static registry proxy without
+enabling Requests' unrelated ambient `.netrc` authentication. The option is
+mutually exclusive with the process-wide SOCKS5 `--proxy`; it does not route
+LDAP, DNS, WMI, SMB, RemoteRegistry, or MSSQL. An HTTP 407 response or
+HTTPS CONNECT rejection with 407 produces one proxy-authentication warning per
+HTTP client, including during AdminService identification. A failed direct HTTP
+connection checks those same proxy and bypass settings and suggests `auto` only
+when a proxy applies to the failed URL; TLS failures and bypassed targets do
+not produce that suggestion.
+
 ### Trade-offs
 
 - **Native OS authentication cannot be tunneled — a hard, documented limit, not
@@ -2092,8 +2112,10 @@ took a separate, manual step outside `openhound collect sccm`.
 
 | Date | Change |
 |---|---|
+| 2026-09-30 | **Added opt-in `--http-proxy` on the PR #11 branch.** Direct HTTP remains the default. An explicit HTTP proxy or `auto` routes AdminService and HTTP role probes only; `auto` reads environment and static Windows registry proxy settings and honors bypasses while the Requests session keeps `trust_env=False` to avoid ambient `.netrc` credentials. The option cannot be combined with the process-wide SOCKS5 `--proxy`. Proxy 407 responses produce a visible warning, and a failed direct HTTP connection suggests `auto` when environment or static Windows proxy settings apply to that target. |
 | 2026-09-30 | **Bounded verbose output from local client logs without losing host discovery** (§7). The scraper keeps reading CCM/ccmsetup logs on Windows even when `root\CCM` is absent. It logs one full URL and UNC sample per host, counts suppressed matches in one summary, and leaves the target set unchanged. A test covers repeated references across both log directories and discovery from logs left by a former client. |
 | 2026-09-30 | **Preserved target identity across hostname upgrades and incomplete RemoteRegistry discovery** (§3). A queued short hostname remains an alias when its target is upgraded to an FQDN; snapshots deduplicate the aliases. Registry lookups use normalized hostnames and emit partial rows with a warning if a target is genuinely absent, instead of failing the phase. Regression tests cover mixed-case names, the queued-name upgrade, and missing targets. |
+| 2026-09-03 | **The HTTP client trusted the ambient system/environment proxy, silently swallowing every AdminService/HTTP request on a box with a corporate proxy configured** (con-ba1f). Reported symptom: a real (non-lab) engagement got a `ProxyError` connect-timeout on every single AdminService/HTTP target, including same-LAN, same-domain hosts — the requests all tried to route through the operator's corporate web proxy (configured for general internet access), which has no route to internal hosts. Root cause: `HttpClient.__init__` (`clients/http.py`) created `requests.Session()` with no override, and `requests` trusts ambient proxy config by default — env vars, or on Windows the registry-configured system proxy via `urllib.request.getproxies_registry()`. This collector already has its own explicit, intentional pivoting mechanism, `-x`/`--proxy` (a SOCKS5 tunnel installed at the socket layer by `openhound_collector_common.proxy.patch`, per `main.py`) — silently trusting a random ambient corporate proxy was never intended and broke a real engagement until worked around with a manually-set `NO_PROXY` env var. Fix: `self._session.trust_env = False` right after session construction. Confirmed safe against `--proxy`: the SOCKS5 mechanism patches `socket.socket`/`socket.create_connection`/`socket.getaddrinfo` process-wide and never touches `requests`' own proxy resolution, so the two don't interact. New test `test_session_does_not_trust_ambient_proxy_env` in `tests/http_client_test.py`; README's "Proxying / pivoting" section updated to state ambient proxies are never used automatically. |
 | 2026-08-02 | **A healthy low-privilege run stopped emitting 146 WARNINGs** (§7; con-81c2). Every one of them was the collector working as designed — the same failure mode the 2026-08-01 entry fixed one severity level up, because an operator who learns to ignore the file cannot find the 23 real entries in it. Measured against `out/ab-lowpriv-pe-off/collect_issues_20260801_230714.log` (nine-host mayyhem.com lab, plain domain user, `--run-all`). **(1) Transport tables that were never collected.** `_sccm_expected_miss` gained a third case: a missing `wmi_`/`adminservice_` table whose sibling is *also* absent is DEBUG when no privileged table holds any **rows**, because then the AdminService/WMI phases collected nothing. That was **106 of the 146**. Rows and not mere existence, which the first cut of this got wrong and the lab caught: dlt writes a resource's schema even when it yields zero rows, so a lowpriv run into a *reused* output directory carried `adminservice_client_devices` and `adminservice_site_definitions` at 0 rows, an existence check read that as "a privileged transport ran", and 98 expected misses stayed at WARNING. `--clean` runs hid the bug because a fresh catalog has no privileged tables at all. `_privileged_transport_ran` is pre-existing code shared with the `http_`/`smb_` fallback branch, which had the same blindness, so the fix can legitimately surface `http_`/`smb_` warnings that were previously swallowed — two tests that seeded an *empty* privileged table to mean "a transport ran" now insert a row. Across all 18 lab collections the split is binary (privileged: 13 tables, 13 populated; unprivileged: none populated), so partial privilege — where some classes return rows and others are ACL-denied — has never occurred and is deliberately still a WARNING. It stays a WARNING when some privileged tables did land — the case the old `test_safe_no_sibling_logs_warning` was really protecting. That test asserted the opposite for the no-transport case and was inverted deliberately, and a new test pins the privileged-transport-ran half. **(2) Probe negatives.** A host answering the AdminService probe with 404 is not an SMS Provider, and a host refusing the HTTP probe does not serve that endpoint; both are discovery results, not faults. The 404 drops to VERBOSE because `privileged.py` already logs an INFO conclusion (`is not a reachable AdminService provider; skipping`) immediately after it, so INFO would state the same fact twice per host. The HTTP connect failure drops to INFO rather than VERBOSE because `http.py` has **no** conclusion line — below INFO a host that served nothing would read as a clean collection. 401/403/500 are untouched: a provider that exists and refuses you is a finding. **(3) The RemoteRegistry roll-up lists keys, superseding the capability names introduced 2026-08-01.** `_DENIED_CAPABILITIES` and `_capability_for` are deleted; the message is the distinct denied key paths one per line, counted by distinct key so the number always matches the list (several values can be refused under one key — `_read_mssql_service_state` reads `Start` and `ObjectName` under one service key). The "requires local Administrators, re-run as admin" prose moved to README's low-privilege section, which said it already. Both RemoteRegistry warnings and the three per-read lines also dropped the trailing `on <host>`: `LogContextFilter` prefixes `[target][phase]` on every record a per-host phase emits, so it was always duplication. **(4) impacket's Python 3.14 SyntaxWarning**, from a `return` inside a `finally` at `mssql/version.py:182`, is silenced in `openhound-collector-common` 0.1.4 by a scoped `catch_warnings()` around the `from impacket import ntlm, tds` that triggers the compile — scoped, so a return-in-finally in our own code still reports. `module=` filters do **not** work on compile-time warnings: CPython calls `warn_explicit()` with `module=None` and `warnings.py` derives the module from the file path, not the dotted name. The same release shortened the skipped-transform log from a five-line DuckDB exception dump (spell-check guess + SQL echo + caret) to one line, with the full text kept on a companion DEBUG only when the miss is unexpected. Floor raised to `>=0.1.4`. |
 | 2026-08-01 | **The `--run-all` summary now names the archive that was written, not one rebuilt from the name we asked for** (§12; con-a4ec, closing the shared-library gap con-8a28 opened). Adopts `openhound-collector-common` **0.1.3** (floor raised `>=0.1.2` → `>=0.1.3`, cap unchanged), whose `run_end_to_end` returns the archive `zip_graph_output` produced on the new `StagePaths.graph_zip` instead of discarding it — `None` when convert emitted no `*.json`. `_log_all_output_locations` loses its `graph_zip_name` parameter and reads the field; the name now travels one way only, from `collect_sccm` into the chain. The reconstruction it replaces (`graph_out / <requested name>` plus an existence test) could disagree with reality — a stale archive from an earlier run into the same output directory is the obvious case, and it is exactly the shape `--clean` exists to manage — and only the returned path is evidence. Two tests pin the distinction by putting a *differently named* archive in the graph dir alongside the reported one. Stale floor references in ARCHITECTURE (`>=0.1.0`, and a §12 note saying the 0.1.1 bump was still deferred), README and PUBLISHING corrected to `>=0.1.3` at the same time. |
 | 2026-08-01 | **The registry arm could not see a named SQL Server instance, and the warning that said so was camouflaged by six false ones** (con-ab59). `get_mssql_settings` probed eight hard-coded `SuperSocketNetLib` paths, every one ending `.MSSQLSERVER` — so a *named* instance could never match. The lab's `ps1-sec` runs the SEC site database as `CONFIGMGRSEC` (SCCM's own site definition: `SQLDatabaseName 'CONFIGMGRSEC\CM_SEC'`, port 1433) and was missed **on a fully privileged run**: eight `not found`s, then "Could not access any MSSQL registry paths". That line was a true positive sitting among six identical ones from hosts with genuinely no SQL, which is why it read as noise — and is why the fix was not to quieten it. Paths are now **derived from SQL Server's own inventory** (`Instance Names\SQL`), whose value *data* is the instance's subkey (`MSSQL16.CONFIGMGRSEC`); the settings path is therefore exact, with no version prefix to guess and no default-instance assumption. Eight hard-coded strings collapse to one derivation plus a single pre-2000 fallback (`SOFTWARE\Microsoft\MSSQLServer\...`, which predates the inventory key and had only a default instance), and the duplicate second read of `Instance Names\SQL` further down the function goes with them — one read now serves both the candidate paths and the reported `instance_names`. Severity was moderate rather than urgent because the separate MSSQL phase covers a *reachable* instance (the same run logs `port 1433 is open` / `EPA testing … via SSPI`); the gap bit a firewalled instance, and `service_start_type` / `service_account_name`, which the live probe does not supply — note `_mssql_service_name` already handled `MSSQL$<name>` correctly and was simply unreachable behind the early return. The warning now fires only on the contradiction worth hearing: the inventory lists instances *and* none of their settings keys can be read. No inventory at all means no SQL Server, the normal case (seven of nine lab hosts, privileged), and logs at verbose. **A test fixture was complicit:** `_mssql_probe` seeded the inventory as `[(instance, instance)]`, putting the instance *name* where the registry stores the *subkey*, so `test_mssql_named_instance_uses_the_dollar_service_name` passed against code that could not reach a named instance — a fake mirroring the code's belief rather than the system's behaviour. Fixture corrected, 8 tests added. Suite 1025 passed / 5 skipped. |

@@ -179,6 +179,7 @@ _FLAG_TO_ENV: dict[str, str] = {
     "show_cleartext_passwords": "SOURCES__SCCM__SHOW_CLEARTEXT_PASSWORDS",
     # Network
     "socks_proxy": "SOURCES__SCCM__SOCKS_PROXY",
+    "http_proxy": "SOURCES__SCCM__HTTP_PROXY_CONFIG",
     # DNS
     "dns_resolver": "SOURCES__SCCM__DNS_RESOLVER",
 }
@@ -233,6 +234,7 @@ _LONG_OPTIONS_WITH_VALUES: set[str] = {
     "--site-codes",
     "--threads",
     "--proxy",
+    "--http-proxy",
     "--dns",
     "--dns-resolver",
 }
@@ -246,6 +248,7 @@ _SENSITIVE_OPTIONS: set[str] = {
     # so mask it in the split-value warnings just like a password.
     "-x",
     "--proxy",
+    "--http-proxy",
 }
 
 
@@ -737,6 +740,22 @@ def _parse_proxy_or_exit(socks_proxy: Optional[str]) -> Optional["ProxyConfig"]:
         raise typer.Exit(2)
 
 
+def _parse_http_proxy_or_exit(value: Optional[str]) -> Optional[str]:
+    """Validate the HTTP-only proxy option before making any network calls."""
+    from .clients.http import parse_http_proxy
+
+    try:
+        proxy = parse_http_proxy(value)
+    except ValueError as ex:
+        logger.error("Invalid --http-proxy: %s", ex)
+        raise typer.Exit(2) from ex
+    if proxy == "auto":
+        logger.info("HTTP proxy: auto (environment or Windows user settings)")
+    elif proxy:
+        logger.info("HTTP proxy configured: %s", proxy.rsplit("@", 1)[-1].removeprefix("http://"))
+    return proxy
+
+
 def _require_dc_or_dns_for_proxy(flag_kwargs: dict, proxy: Optional["ProxyConfig"]) -> None:
     """Under a proxy, we can't resolve internal names locally, so demand a pin."""
     if proxy is None:
@@ -1176,6 +1195,11 @@ def collect_sccm(
         help="SOCKS5 proxy address (host:port or "
              "socks5://[user:pass@]host:port). Requires --dc or --dns.",
     ),
+    http_proxy: Optional[str] = typer.Option(
+        None, "--http-proxy", rich_help_panel="Collection",
+        help="HTTP-only proxy: auto, host[:port], or user:pass@host[:port]. "
+             "A bare host uses port 80; other protocols stay direct.",
+    ),
     dns_resolver: Optional[str] = typer.Option(None, "--dns", "--dns-resolver", rich_help_panel="Collection", help="DNS nameserver IP for all lookups (DC discovery, SRV probes). Omit to use system default."),
     enable_bad_opsec: bool = typer.Option(False, "--enable-bad-opsec", rich_help_panel="Collection", help="Enable bad-opsec operations (NAA decryption, etc.)."),
     # ---- Performance ----
@@ -1318,6 +1342,11 @@ def collect_sccm(
         proxy_cfg = _parse_proxy_or_exit(
             flag_kwargs.get("socks_proxy") or os.environ.get("SOURCES__SCCM__SOCKS_PROXY")
         )
+        http_proxy_raw = flag_kwargs.get("http_proxy") or os.environ.get("SOURCES__SCCM__HTTP_PROXY_CONFIG")
+        http_proxy_cfg = _parse_http_proxy_or_exit(http_proxy_raw)
+        if http_proxy_cfg and proxy_cfg:
+            logger.error("--http-proxy and --proxy cannot be used together")
+            raise typer.Exit(2)
         _require_dc_or_dns_for_proxy(flag_kwargs, proxy_cfg)
 
         # Route ALL collection traffic through the SOCKS5 proxy for the whole
@@ -1348,7 +1377,7 @@ def collect_sccm(
             collector = Collector(name=app.name, output_path=output_path, resources=resources, progress=_resolve_progress(ProgressOption.off if silent else progress))
             ctx = CollectContext(pipeline=collector)
 
-            src = sccm_source()
+            src = sccm_source(http_proxy=http_proxy_raw)
             if not src:
                 set_shared_queue(None)
                 set_shared_ad_cache(None)

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import base64
 import enum
+import re
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -78,6 +80,43 @@ def _parse_negotiate_token(www_authenticate: str) -> Optional[bytes]:
         return None
 
 
+def parse_http_proxy(value: Optional[str]) -> Optional[str]:
+    """Normalize an HTTP proxy setting without exposing embedded credentials."""
+    if value is None:
+        return None
+    if value == "auto":
+        return value
+    if not value or "://" in value or any(ch.isspace() for ch in value):
+        raise ValueError("expected auto, host[:port], or user:pass@host[:port]")
+    parsed = urlparse(f"http://{value}")
+    try:
+        port = parsed.port if parsed.port is not None else 80
+    except ValueError as ex:
+        raise ValueError("HTTP proxy port must be between 1 and 65535") from ex
+    if (not parsed.hostname or "." not in parsed.hostname or not 1 <= port <= 65535
+            or parsed.netloc.endswith(":")
+            or parsed.path or parsed.params or parsed.query or parsed.fragment
+            or (parsed.username is None) != (parsed.password is None)
+            or (parsed.username is not None and not parsed.username)
+            or (parsed.password is not None and not parsed.password)):
+        raise ValueError("expected auto, host[:port], or user:pass@host[:port]")
+    return f"http://{value}" if parsed.port is not None else f"http://{value}:80"
+
+
+def _safe_error(exc: BaseException) -> str:
+    """Avoid printing credentials if a proxy error includes its URL."""
+    return re.sub(r"(https?://)[^/@\s]+@", r"\1<redacted>@", str(exc))
+
+
+def _system_proxies(url: str) -> dict[str, str]:
+    """Resolve environment or static Windows proxy settings for one target."""
+    host = urlparse(url).hostname or ""
+    if urllib.request.proxy_bypass(host):
+        logger.debug("System HTTP proxy bypass applies to %s", host)
+        return {}
+    return {key: proxy for key, proxy in urllib.request.getproxies().items()
+            if key in ("http", "https", "all")}
+
 class HttpClient:
     """Per-target HTTP client wrapping one keep-alive ``requests.Session``."""
 
@@ -93,6 +132,7 @@ class HttpClient:
         kerberos_ticket: Optional[str] = None,
         kdc_host: Optional[str] = None,
         verify_ssl: bool = False,
+        http_proxy: Optional[str] = None,
         # Applies to both connect and read. 10s rather than 5s because the SCCM
         # AdminService answers some WMI-backed classes slowly when the SMS Provider
         # is warming up or under load -- SMS_SCI_Reserved was observed exceeding 5s
@@ -124,6 +164,18 @@ class HttpClient:
         self._kerberos_negotiator: Any = None
 
         self._session = requests.Session()
+        # Never trust ambient proxy config (env vars, or on Windows the
+        # registry-configured system proxy) -- this collector's own pivoting
+        # mechanism is the explicit --proxy SOCKS5 flag, which tunnels at the
+        # socket layer (openhound_collector_common.proxy.patch) and is
+        # unaffected by this setting. Left at the default, a corporate web
+        # proxy configured for general internet access silently swallowed
+        # every AdminService/HTTP request -- including same-LAN, same-domain
+        # targets -- with a ProxyError timeout, on a real engagement.
+        self._session.trust_env = False
+        self._http_proxy = http_proxy
+        self._proxy_auth_warned = False
+        self._direct_proxy_warned = False
         self._session.verify = verify_ssl
         self._session.headers.update({"Accept": "application/json"})
 
@@ -148,9 +200,55 @@ class HttpClient:
             nt_hash=getattr(ctx, "nt_hash", None),
             kerberos_ticket=getattr(ctx, "kerberos_ticket", None),
             kdc_host=kdc,
+            http_proxy=getattr(ctx, "http_proxy", None),
             timeout=timeout,
         )
 
+    def _request(self, url: str, **kwargs: Any) -> requests.Response:
+        if self._http_proxy == "auto":
+            proxies = _system_proxies(url)
+        elif self._http_proxy:
+            proxies = {"http": self._http_proxy, "https": self._http_proxy}
+        else:
+            proxies = {}  # Direct mode is intentional, even with an ambient proxy.
+        try:
+            response = self._session.get(url, proxies=proxies, **kwargs)
+        except requests.exceptions.RequestException as exc:
+            # requests raises for a rejected HTTPS CONNECT instead of returning 407.
+            if proxies and isinstance(exc, requests.exceptions.ProxyError) and \
+                    "407 proxy authentication required" in str(exc).lower():
+                self._warn_proxy_auth(url)
+            elif self._http_proxy is None and isinstance(
+                    exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+            ) and not isinstance(exc, requests.exceptions.SSLError):
+                self._warn_direct_proxy(url)
+            raise
+        if proxies and response.status_code == 407:
+            self._warn_proxy_auth(url)
+        return response
+
+    def _warn_proxy_auth(self, url: str) -> None:
+        if self._proxy_auth_warned:
+            return  # One warning per client is enough even when several probes fail.
+        self._proxy_auth_warned = True
+        logger.warning("HTTP proxy requires authentication for %s (407); "
+                       "use --http-proxy user:pass@host[:port] or check proxy credentials", url)
+
+    def _warn_direct_proxy(self, url: str) -> None:
+        if self._direct_proxy_warned:
+            return  # Repeated role probes do not need repeated suggestions.
+        try:
+            proxies = _system_proxies(url)
+        except Exception:  # noqa: BLE001 - diagnostics must not replace the connection error
+            logger.debug("Could not inspect environment or Windows proxy settings")
+            return
+        scheme = urlparse(url).scheme.lower()
+        if not (proxies.get(scheme) or proxies.get("all")):
+            return  # No applicable proxy, or this target is on its bypass list.
+        self._direct_proxy_warned = True
+        logger.warning("Direct HTTP connection to %s failed while an environment or Windows "
+                       "proxy is configured for this URL; try --http-proxy auto if that proxy "
+                       "can reach the target", urlparse(url).hostname)
     def _full_url(self, path_or_url: str) -> str:
         if path_or_url.lower().startswith(("http://", "https://")):
             return path_or_url
@@ -168,7 +266,7 @@ class HttpClient:
         try:
             if self._auth is AuthMode.NEGOTIATE:
                 return self._get_negotiate(url)
-            resp = self._session.get(url, timeout=self._timeout, headers=headers)
+            resp = self._request(url, timeout=self._timeout, headers=headers)
             logger.debug("HTTP GET %s -> %s (anonymous)", url, resp.status_code)
             # Truncate the body preview: a binary fetch (e.g. ccmsetup.exe) is
             # multiple MB, and this line now always lands in the full on-disk log.
@@ -181,7 +279,7 @@ class HttpClient:
             return HttpResult(resp.status_code, resp.content, ErrorClass.RESPONSE)
         except Exception as exc:  # noqa: BLE001 - classify any transport failure
             cls = classify_exception(exc)
-            logger.verbose("HTTP GET %s failed (%s): %s", url, cls.value, exc)
+            logger.verbose("HTTP GET %s failed (%s): %s", url, cls.value, _safe_error(exc))
             return HttpResult(None, None, cls)
 
     def close(self) -> None:
@@ -224,7 +322,7 @@ class HttpClient:
         """
         negotiator = self._build_negotiator(rung)
         if negotiator is None:  # anonymous
-            resp = self._session.get(url, timeout=self._timeout)
+            resp = self._request(url, timeout=self._timeout)
             logger.debug("HTTP GET %s -> %s (anonymous rung)", url, resp.status_code)
             return HttpResult(resp.status_code, resp.content, ErrorClass.RESPONSE)
         try:
@@ -232,7 +330,7 @@ class HttpClient:
             while True:
                 token, done = negotiator.step(server_token)
                 header = {"Authorization": "Negotiate " + base64.b64encode(token).decode()}
-                resp = self._session.get(url, headers=header, timeout=self._timeout)
+                resp = self._request(url, headers=header, timeout=self._timeout)
                 if resp.status_code != 401:
                     logger.debug("HTTP Negotiate(%s) %s -> %s", rung, url, resp.status_code)
                     return HttpResult(resp.status_code, resp.content, ErrorClass.RESPONSE)
@@ -243,7 +341,7 @@ class HttpClient:
                     logger.warning("HTTP Negotiate(%s) rejected on %s (401)", rung, url)
                     return HttpResult(resp.status_code, resp.content, ErrorClass.RESPONSE)
         except Exception as exc:  # noqa: BLE001 - protocol failure -> try next rung
-            logger.verbose("HTTP Negotiate(%s) protocol failure on %s: %s", rung, url, exc)
+            logger.verbose("HTTP Negotiate(%s) protocol failure on %s: %s", rung, url, _safe_error(exc))
             return None
 
     def _get_negotiate(self, url: str) -> HttpResult:
@@ -253,7 +351,7 @@ class HttpClient:
         # we stop probing and never waste another round-trip.
         if self._authenticated and self._reuse_works is not False:
             try:
-                resp = self._session.get(url, timeout=self._timeout)
+                resp = self._request(url, timeout=self._timeout)
                 if resp.status_code != 401:
                     self._reuse_works = True
                     logger.debug("HTTP GET %s -> %s (reused Negotiate auth)", url, resp.status_code)
@@ -262,7 +360,7 @@ class HttpClient:
                     logger.verbose("HTTP %s does not persist Negotiate auth; re-authenticating each request", self._host)
                 self._reuse_works = False
             except Exception as exc:  # noqa: BLE001 - connection dropped; re-handshake on a fresh one
-                logger.verbose("HTTP %s: reused connection failed (%s); re-authenticating", url, exc)
+                logger.verbose("HTTP %s: reused connection failed (%s); re-authenticating", url, _safe_error(exc))
 
         plan = http_auth.choose_auth(
             username=self._username, password=self._password, nt_hash=self._nt_hash,
