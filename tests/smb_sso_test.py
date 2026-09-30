@@ -406,6 +406,33 @@ def test_connect_smb_ticket_prefers_explicit_user(monkeypatch):
     assert method == "kerberosLogin" and user == "admin"
 
 
+@pytest.mark.parametrize(
+    ("credentials", "expected_call"),
+    [
+        ({"password": "pw"}, ("login", "admin", "pw", "SCCMLAB")),
+        ({"password": None, "nt_hash": "a" * 32}, ("login", "admin", "", "SCCMLAB")),
+        (
+            {"password": None, "kerberos_ticket": "Zm9v", "kdc_host": "dc.sccm.lab"},
+            ("kerberosLogin", "admin", "sccm.lab"),
+        ),
+    ],
+    ids=["password", "nt-hash", "ticket"],
+)
+def test_connect_smb_domain_user_routes_all_explicit_auth_methods(monkeypatch, credentials, expected_call):
+    """An explicit NetBIOS domain survives every SMB auth path that consumes a username."""
+    created = _patch_routing(monkeypatch)
+
+    smb_sso.connect_smb("host", "sccm.lab", "SCCMLAB\\admin", **credentials)
+
+    call = created["smb"].calls[0]
+    if expected_call[0] == "login":
+        assert call[:4] == expected_call
+    else:
+        # Kerberos uses the supplied DNS domain as its realm, while the client
+        # principal still comes from the explicit DOMAIN\\USER username.
+        assert call[:3] == expected_call
+
+
 # --- --ticket decoding (con-8a33) ------------------------------------------
 #
 # A malformed --ticket used to surface as a raw binascii.Error ("Only base64
