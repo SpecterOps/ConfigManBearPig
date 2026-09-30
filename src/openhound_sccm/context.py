@@ -19,6 +19,32 @@ from .log_context import get_logger
 logger = get_logger(__name__)
 
 
+def _as_multivalued_list(value: Any) -> list:
+    """Normalize an ``_entry_to_dict``-sourced multi-valued LDAP attribute
+    (``object_class``, ``service_principal_name``) to always be a list.
+
+    ``ADClient._entry_to_dict`` collapses a single-valued attribute to a bare
+    scalar and an absent one to ``None`` (``values[0] if len(values) == 1 else
+    values``), so across a real domain's resolved principals the same
+    attribute legitimately arrives as ``None``, a bare string, or a list —
+    servicePrincipalName especially, since SPN count varies per-principal (a
+    site server carries many, a plain user often none or one). dlt infers a
+    JSONL column's type from the first rows it sees and, once a table's
+    schema contract is frozen (as ldap_resolved_principals's is), rejects any
+    later row whose value needs a variant column for a different type — which
+    silently failed the *entire* load, not just the offending row, wiping AD
+    naming for the whole run. Coercing to one consistent shape here, before
+    the row ever reaches dlt, is what transforms.py's ``ad_props`` builder
+    already expects (its ``_ensure_columns``/``_arr()`` handling assumes an
+    array), so this also removes downstream ambiguity, not just the crash.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
 def _domain_from_dn(dn: str) -> str | None:
     """Derive a dotted domain name from a DN's DC= components, e.g.
     "CN=Bob,DC=corp,DC=local" -> "corp.local". Returns None if the DN has
@@ -318,9 +344,9 @@ class SourceContext:
             return  # already recorded via an earlier name/domain lookup
         self.resolved_principals[sid] = {
             "sid": sid,
-            "object_class": ad_object.get("object_class"),
+            "object_class": _as_multivalued_list(ad_object.get("object_class")),
             "user_account_control": ad_object.get("user_account_control"),
-            "service_principal_name": ad_object.get("service_principal_name"),
+            "service_principal_name": _as_multivalued_list(ad_object.get("service_principal_name")),
             "cn": ad_object.get("cn"),
             "dns_host_name": ad_object.get("dns_host_name"),
             "sam_account_name": ad_object.get("sam_account_name"),
