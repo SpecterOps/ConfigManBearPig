@@ -36,6 +36,7 @@ class SourceContext:
     nt_hash: str | None = None
     kerberos_ticket: str | None = None  # base64-encoded KRB-CRED (.kirbi) for pass-the-ticket
     dns_resolver: str | None = None
+    http_proxy: str | None = None
     # Collection (-m / --collection-methods)
     collection_methods: str = "All"
 

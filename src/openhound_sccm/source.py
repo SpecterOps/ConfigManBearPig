@@ -254,6 +254,8 @@ def source(
     enable_bad_opsec: bool | None = dlt.config.value,
     threads: int | None = dlt.config.value,
     show_cleartext_passwords: bool | None = dlt.config.value,
+    # Network
+    http_proxy: str | None = None,
     # DNS
     dns_resolver: str | None = dlt.config.value,
 ):
@@ -263,6 +265,12 @@ def source(
     enable_bad_opsec = bool(enable_bad_opsec)
     threads = threads if threads is not None else 1
     show_cleartext_passwords = bool(show_cleartext_passwords)
+    from .clients.http import parse_http_proxy
+    try:
+        http_proxy = parse_http_proxy(http_proxy)
+    except ValueError as ex:
+        logger.error("Invalid HTTP proxy configuration: %s", ex)
+        raise
 
     # Parse allowed targets from --computers and --computer-file. Both feed the
     # same expansion (lowercased FQDN + short-name forms) so Test-AllowedTarget
@@ -298,6 +306,7 @@ def source(
         discovered_domains=_shared_discovered_domains if _shared_discovered_domains is not None else set(),
         site_codes=_parse_csv_option(site_codes) or None,
         dns_resolver=dns_resolver,
+        http_proxy=http_proxy,
         disable_possible_edges=disable_possible_edges,
         enable_bad_opsec=enable_bad_opsec,
     )

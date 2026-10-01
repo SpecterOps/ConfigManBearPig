@@ -547,6 +547,7 @@ uv run openhound collect sccm ./out -d mayyhem.com --dc dc.mayyhem.com \
 | `--cf`, `--computer-file` | Path to a file of computer targets, one per line. |
 | `--sc`, `--site-codes` | Site codes for DNS collection (CSV or file path). |
 | `-x`, `--proxy` | Route **all** collection traffic (discovery + every per-host protocol) through a SOCKS5 proxy. Forms: `socks5://[user:pass@]host:port` or bare `host:port`. Requires `--dc` or `--dns`. See [Proxying / pivoting](#proxying--pivoting). |
+| `--http-proxy` | Proxy AdminService and HTTP web requests only: `auto`, `host[:port]`, or `user:pass@host[:port]`. A bare host uses port 80. Cannot be combined with `--proxy`. |
 | `--dns`, `--dns-resolver` | DNS nameserver IP used for all lookups (DC discovery, SRV probes). Omit to use the system default. |
 | `--enable-bad-opsec` | Enable noisy operations (e.g. NAA decryption) likely to trip EDR *(consumed by not-yet-ported phases)*. |
 
@@ -817,12 +818,26 @@ the KDC, and that traffic never touches our sockets. To use a logged-in identity
 through the pivot, export its Kerberos ticket and pass `--ticket`, or set up
 OS-level transparent proxying (tun2socks / Proxifier) on the outside box.
 
-**Ambient system/environment proxies are never used automatically.** `--proxy`
-above is the only way to route this collector's traffic through a proxy. The
-HTTP client explicitly disables `requests`' default trust of `HTTP_PROXY`/
-`HTTPS_PROXY` env vars and (on Windows) the registry-configured system proxy —
-a box configured with a corporate web proxy for general internet access will
-still reach internal AdminService/HTTP targets directly, not through that proxy.
+**HTTP proxy for web endpoints only.** AdminService and HTTP probes connect
+directly by default, even when Windows or environment proxy settings exist.
+Pass `--http-proxy auto` to use `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` (and
+`NO_PROXY` bypasses), or the current Windows user's static registry proxy
+settings when no proxy environment variables are set:
+
+```powershell
+uv run openhound collect sccm .\out -m HTTP -c ps1-sms.mayyhem.com --http-proxy auto
+```
+
+To choose an HTTP proxy explicitly, pass `--http-proxy proxy.example.com:8080`
+or `--http-proxy "user:pass@proxy.example.com:8080"`. Omit the port to use
+80. These forms proxy HTTP and HTTPS requests to AdminService and SCCM web
+endpoints only; LDAP, DNS, WMI, SMB, RemoteRegistry, and MSSQL keep their
+normal routes. `--http-proxy` and the SOCKS5 `--proxy` cannot be combined.
+The `auto` form reads environment and static Windows registry settings, not
+PAC/WPAD scripts. Proxy passwords are not printed in the collector log.
+If a configured proxy returns HTTP 407, the collector warns that proxy authentication is required.
+If a direct HTTP connection fails and an environment or static Windows proxy applies
+to that target, the collector suggests `--http-proxy auto` without changing the route.
 
 ---
 

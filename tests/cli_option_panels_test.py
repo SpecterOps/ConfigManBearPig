@@ -63,6 +63,7 @@ EXPECTED_PANEL = {
     "site_codes": "Collection",
     "dc_only": "Collection",
     "socks_proxy": "Collection",
+    "http_proxy": "Collection",
     "dns_resolver": "Collection",
     "enable_bad_opsec": "Collection",
     # Performance
