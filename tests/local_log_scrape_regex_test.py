@@ -1,8 +1,8 @@
 """Regex tests for the local client-log scrape in ``collectors/local.py``.
 
 ``local_client_logs_targets()`` scans ``CCM``/``ccmsetup`` logs for UNC paths
-and URLs, logs each hit at VERBOSE, and registers the *host* portion as a probe
-target. These tests lock the behaviour touched by ope-8b99:
+and URLs, logs the first hit per host and kind at VERBOSE, and registers the
+*host* portion as a probe target. These tests cover:
 
   * the "Found URL" VERBOSE line prints the WHOLE url -- scheme + host + port +
     path + query. The ported URL regex used to stop at the hostname, so its
@@ -12,6 +12,8 @@ target. These tests lock the behaviour touched by ope-8b99:
     probed.
   * UNC paths are already logged in full (that was never the bug); kept here as
     a contrast and a guard against an accidental UNC regression.
+  * repeated matches for a host are summarized without losing discovery, even
+    when its only evidence is leftover logs from a former client.
 
 The resource is an ``@app.resource`` generator; ``_raw()`` reaches the
 undecorated function so it runs directly against a stub context and a temp log
@@ -111,3 +113,46 @@ def test_found_unc_logs_the_full_path(tmp_path, monkeypatch, caplog):
         list(_raw(local.local_client_logs_targets)(ctx))
 
     assert f"Found UNC path in test.log: {unc}" in _messages(caplog)
+
+
+def test_repeated_references_keep_targets_without_flooding_logs(tmp_path, monkeypatch, caplog):
+    unc = r"\\MP.mayyhem.com\SMSPKGD$\content\file.txt"
+    _point_at_log(
+        tmp_path, monkeypatch,
+        f"GET {FULL_URL} 200 OK",
+        *(f"GET https://MP.MAYYHEM.COM/content/part{i} 200 OK" for i in range(100)),
+        f"Copying {unc}",
+    )
+    setup_logs = tmp_path / "ccmsetup" / "Logs"
+    setup_logs.mkdir(parents=True)
+    (setup_logs / "setup.log").write_text(
+        f"GET {FULL_URL} 200 OK\nCopying {unc}\nGET https://dp.mayyhem.com/content 200 OK",
+        encoding="utf-8",
+    )
+    ctx = _Ctx(resolve_ip={"mp.mayyhem.com": "10.1.2.3", "dp.mayyhem.com": "10.1.2.4"})
+
+    with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.local"):
+        list(_raw(local.local_client_logs_targets)(ctx))
+
+    messages = _messages(caplog)
+    assert [m for m in messages if m.startswith("Found URL in")] == [
+        f"Found URL in test.log: {FULL_URL}",
+        "Found URL in setup.log: https://dp.mayyhem.com/content",
+    ]
+    assert [m for m in messages if m.startswith("Found UNC path in")] == [
+        f"Found UNC path in test.log: {unc}",
+    ]
+    assert ("mp.mayyhem.com", "Local-ClientLogs", None) in ctx.register_calls
+    assert ("dp.mayyhem.com", "Local-ClientLogs", None) in ctx.register_calls
+    assert len(ctx.register_calls) == 2
+    assert "Client log scrape found 2 unique host(s); suppressed 102 repeated URL/UNC host reference(s)" in messages
+
+
+def test_leftover_logs_discover_hosts_without_ccm_namespace(tmp_path, monkeypatch):
+    _point_at_log(tmp_path, monkeypatch, f"GET {FULL_URL} 200 OK")
+    monkeypatch.setattr(local, "_wmi_ccm", lambda: None)
+    ctx = _Ctx(resolve_ip={"mp.mayyhem.com": "10.1.2.3"})
+
+    list(_raw(local.local_client_logs_targets)(ctx))
+
+    assert ctx.register_calls == [("mp.mayyhem.com", "Local-ClientLogs", None)]

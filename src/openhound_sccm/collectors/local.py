@@ -276,20 +276,35 @@ def local_client_logs_targets(ctx: "SourceContext") -> Iterable[dict[str, Any]]:
 
     # Maps discovered hostname (lowercase) to its source type for targeted log messages.
     discovered: dict[str, str] = {}
+    logged_references: set[tuple[str, str]] = set()
+    suppressed_matches = 0
 
     def _parse(path: str) -> None:
+        nonlocal suppressed_matches
         file_name = os.path.basename(path)
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     for m in unc_pattern.finditer(line):
-                        unc_path = m.group(0).strip()
-                        logger.verbose(f"Found UNC path in {file_name}: {unc_path}")
-                        discovered.setdefault(m.group(1).lower(), "UNC path")
+                        host = m.group(1).lower()
+                        discovered.setdefault(host, "UNC path")
+                        key = (host, "UNC path")
+                        if key not in logged_references:
+                            logged_references.add(key)
+                            logger.verbose(f"Found UNC path in {file_name}: {m.group(0).strip()}")
+                        else:
+                            # Count repeat evidence once in the summary below.
+                            suppressed_matches += 1
                     for m in url_pattern.finditer(line):
-                        full_url = m.group(0).strip()
-                        logger.verbose(f"Found URL in {file_name}: {full_url}")
-                        discovered.setdefault(m.group(1).lower(), "URL")
+                        host = m.group(1).lower()
+                        discovered.setdefault(host, "URL")
+                        key = (host, "URL")
+                        if key not in logged_references:
+                            logged_references.add(key)
+                            logger.verbose(f"Found URL in {file_name}: {m.group(0).strip()}")
+                        else:
+                            # Count repeat evidence once in the summary below.
+                            suppressed_matches += 1
         except Exception as ex:
             logger.error(f"Failed to search log file {path}: {ex}")
 
@@ -347,3 +362,8 @@ def local_client_logs_targets(ctx: "SourceContext") -> Iterable[dict[str, Any]]:
                 logger.debug(f"Host found in client logs resolved to non-RFC1918 IP address, skipping: {host} ({resolved_ip})")
         else:
             logger.verbose(f"Failed to resolve hostname {host} from {discovered[host]}")
+
+    logger.verbose(
+        "Client log scrape found %d unique host(s); suppressed %d repeated URL/UNC host reference(s)",
+        len(discovered), suppressed_matches,
+    )
