@@ -260,7 +260,7 @@ These resources run a single time per collection and seed the per-host work queu
 | Discovery resource | What it does | Status |
 |---|---|---|
 | **LDAP** ([collectors/ldap.py](src/openhound_sccm/collectors/ldap.py)) | Queries the AD **System Management** container for SCCM **sites** (`mSSMSSite`), **management points** (`mSSMSManagementPoint`), the container **DACL**, network-boot servers, devices with the `CmRcService` SPN, and computers whose names/descriptions match SCCM naming patterns (`sccm`, `mecm`, `sms`, …). Registers discovered site systems as per-host targets. | ✅ Implemented |
-| **Local** ([collectors/local.py](src/openhound_sccm/collectors/local.py)) | When run on an SCCM client: reads the `root\CCM` WMI namespace (`SMS_Authority`, `SMS_LookupMP`, `CCM_Client`) and parses CCM client logs to find management points / distribution points and the local client's SMSID. **Windows-only.** | ✅ Implemented (Windows) |
+| **Local** ([collectors/local.py](src/openhound_sccm/collectors/local.py)) | On a Windows SCCM client, reads the `root\CCM` WMI namespace (`SMS_Authority`, `SMS_LookupMP`, `CCM_Client`) and the client's SMSID. On any Windows host, also parses existing CCM/ccmsetup logs for management points and distribution points, including logs left by a former client. The first URL and UNC match for each host is logged at VERBOSE; later matches are counted in one summary. Discovery still considers every distinct host. | ✅ Implemented (Windows) |
 | **DNS** ([collectors/dns.py](src/openhound_sccm/collectors/dns.py)) | For each discovered site code, resolves the `_mssms_mp_<sitecode>._tcp.<domain>` SRV record (with an ADIDNS/LDAP fallback) to find management points published to DNS. | ✅ Implemented |
 
 ## Stage 2 — Per-host phases
@@ -702,6 +702,11 @@ host-by-host for the per-host phases and resource-by-resource for discovery — 
 readable after the fact without re-running. `collect_issues_<timestamp>.log` holds only warnings and
 errors, each with a traceback, and is not created at all by a clean run. `--debug` additionally folds
 the `dlt`/`ldap3` internals into the full log.
+
+If a RemoteRegistry host is missing from the target index, the issues log warns that its rows will
+lack host AD identity. The collector still writes the registry values it can read, but rows without
+a host SID cannot support identity-based edges such as `HasSession`. A short hostname that is later
+resolved to an FQDN stays indexed under both names, so normal discovery retains that identity.
 
 #### What a low-privilege run looks like
 

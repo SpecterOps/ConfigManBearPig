@@ -100,7 +100,7 @@ class SourceContext:
     # at iteration time so late additions are picked up.
     #
     # Two parallel indexes:
-    #   target_hosts_by_hostname — always populated; key = lowercased canonical hostname
+    #   target_hosts_by_hostname — lowercased canonical hostname and prior short-name aliases
     #   _target_hosts_by_sid      — only when SID available; key = objectSid string
     # Both dicts hold references to the same entry dicts, so a mutation via
     # either index is immediately visible via the other.
@@ -414,10 +414,10 @@ class SourceContext:
 
             if existing is not None:
                 logger.verbose(f"Already registered target: {existing.ad_object.get('dns_host_name') if existing.ad_object else existing.hostname}")
-                # FQDN upgrade: re-key target_hosts_by_hostname
+                # Keep the queued short name as an alias when upgrading to an FQDN.
+                # A worker may still receive that name after this entry is upgraded.
                 if "." in canonical_lower and "." not in existing.hostname.lower():
                     logger.verbose("Upgrading hostname %r -> %r", existing.hostname, canonical)
-                    del self.target_hosts_by_hostname[existing.hostname.lower()]
                     existing.hostname = canonical
                     self.target_hosts_by_hostname[canonical_lower] = existing
                 # Backfill ad_object + SID index if we now have one
@@ -458,11 +458,15 @@ class SourceContext:
 
 
     def target_hosts_snapshot(self) -> list:
-        """Return the current list of probe targets (TargetEntry objects) as a copy.
+        """Return each current probe target once, even when it has a short-name alias.
 
         Per-host resources iterate this so late-registered hosts are picked
         up by phases that haven't started yet. Thread-safe against concurrent
         ``register_target`` mutations.
         """
         with self._ensure_target_lock():
-            return list(self.target_hosts_by_hostname.values())
+            unique = {
+                entry.hostname.lower(): entry
+                for entry in self.target_hosts_by_hostname.values()
+            }
+            return list(unique.values())

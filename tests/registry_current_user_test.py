@@ -4,7 +4,7 @@ from openhound_sccm.collectors import registry
 
 
 class _FakeProbe:
-    hostname = "host1.lab"
+    hostname = "HOST1.lab"
     def read_values(self, _key):
         return [("UserSID", "S-1-5-21-1-2-3-1106"), ("Session", 1)]
 

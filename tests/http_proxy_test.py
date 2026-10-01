@@ -156,6 +156,8 @@ def test_scoped_option_does_not_hide_windows_registry_proxy(monkeypatch):
     assert urllib.request.getproxies_environment() == {}
 
 def test_http_and_socks_proxy_cannot_be_combined(tmp_path, monkeypatch, caplog):
+    # The real CLI log setup changes pytest capture handlers process-wide.
+    monkeypatch.setattr("openhound_sccm.main._apply_log_level", lambda *args: None)
     monkeypatch.delenv("SOURCES__SCCM__SOCKS_PROXY", raising=False)
     monkeypatch.delenv("SOURCES__SCCM__HTTP_PROXY_CONFIG", raising=False)
     app = typer.Typer()
