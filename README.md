@@ -702,6 +702,11 @@ readable after the fact without re-running. `collect_issues_<timestamp>.log` hol
 errors, each with a traceback, and is not created at all by a clean run. `--debug` additionally folds
 the `dlt`/`ldap3` internals into the full log.
 
+If a RemoteRegistry host is missing from the target index, the issues log warns that its rows will
+lack host AD identity. The collector still writes the registry values it can read, but rows without
+a host SID cannot support identity-based edges such as `HasSession`. A short hostname that is later
+resolved to an FQDN stays indexed under both names, so normal discovery retains that identity.
+
 #### What a low-privilege run looks like
 
 Collecting as a plain domain user is a supported, first-class mode — see

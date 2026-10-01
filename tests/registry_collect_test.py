@@ -20,6 +20,7 @@ TARGET = "ps1-pss.mayyhem.com"
 TRIGGERS = registry.SCCM_REG_KEYS["triggers"]
 COMPONENTS = registry.SCCM_REG_KEYS["component_servers"]
 MULTISITE = registry.SCCM_REG_KEYS["multisite_component_servers"]
+CURRENT_USER = registry.SCCM_REG_KEYS["current_user"]
 
 
 class _Entry:
@@ -190,37 +191,54 @@ def test_none_result_does_not_crash(monkeypatch):
 
 # --- target_hosts_by_hostname case sensitivity ---------------------------------
 
-def test_mixed_case_target_does_not_kill_the_registry_phase(monkeypatch):
-    """Regression: target_hosts_by_hostname is keyed by lowercased hostname
-    (context.py), but collect_registry is called with whatever case the target
-    was actually discovered in -- e.g. LDAP name-pattern matches return the AD
-    computer's own casing ('MECM.sccm.lab'), not lowercase. Every lookup against
-    that dict must lower() its key first, or get_ntlm_settings raises KeyError
-    before ever reaching the low-privilege-readable site-code / component-server
-    keys later in the same generator -- silently losing the whole RemoteRegistry
-    phase for that host, not just the NTLM-settings row."""
-    mixed_case_target = "PS1-PSS.MAYYHEM.COM"
-    ctx = FakeCtx()
-    ctx.target_hosts_by_hostname = {TARGET: _Entry(ad_object={"name": "PS1-PSS"})}
+def _mixed_case_probe():
+    instance_key = "MSSQL13.CONFIGMGRSEC"
+    probe = FakeProbe(
+        enum_results=_site_server(**{COMPONENTS: ["PS1-PSS.MAYYHEM.COM"], MULTISITE: []}),
+        values_by_key={
+            CURRENT_USER: [("UserSID", "S-1-USER")],
+            INSTANCE_NAMES: [("CONFIGMGRSEC", instance_key)],
+            _supersocket(instance_key): [],
+        },
+    )
+    probe.hostname = "PS1-PSS.MAYYHEM.COM"
+    return probe
 
-    def _fake_probe(*a, **k):
-        probe = FakeProbe(_site_server(**{COMPONENTS: ["PS1-CCM.MAYYHEM.COM"]}), [])
-        probe.hostname = mixed_case_target
-        return probe
 
-    monkeypatch.setattr(registry, "_RegistryProbe", _fake_probe)
+def test_mixed_case_target_preserves_all_registry_host_rows(monkeypatch):
+    """All five lookups find the lowercase index key and retain host identity."""
+    ctx = FakeCtx(resolve_result={"object_sid": "S-1-USER"}, register_result=None)
+    ctx.target_hosts_by_hostname = {
+        TARGET: _Entry(ad_object={"name": "PS1-PSS", "object_sid": "S-1-HOST"}),
+    }
+    monkeypatch.setattr(registry, "_RegistryProbe", lambda *a, **k: _mixed_case_probe())
 
-    rows = list(registry.collect_registry(mixed_case_target, ctx))
+    rows = list(registry.collect_registry("PS1-PSS.MAYYHEM.COM", ctx))
 
-    # Reached past get_ntlm_settings (no KeyError) and all the way to the
-    # component-server site-server row -- the exact data this bug was blocking.
-    site_server_rows = [
-        row for table, row in rows
-        if table == "remoteregistry_computers"
-        and row["source"] == "RemoteRegistry-ComponentServers"
-        and row["sccm_site_system_roles"] == ["SMS Site Server@PS1"]
-    ]
-    assert len(site_server_rows) == 1
+    assert ("remoteregistry_sites", {"source": "RemoteRegistry-Triggers", "site_code": "PS1"}) in rows
+    host_rows = [row for table, row in rows if table == "remoteregistry_computers"]
+    assert {row["source"] for row in host_rows} == {
+        "RemoteRegistry-NTLMSettings", "RemoteRegistry-ComponentServers",
+        "RemoteRegistry-MultisiteComponentServers",
+    }
+    assert all(row["object_sid"] == "S-1-HOST" for row in host_rows)
+    assert next(row for table, row in rows if table == "remoteregistry_users")["host_object_sid"] == "S-1-HOST"
+    assert next(row for table, row in rows if table == "remoteregistry_mssql_servers")["domain_computer_sid"] == "S-1-HOST"
+
+
+def test_missing_target_emits_partial_rows_and_warns(monkeypatch, caplog):
+    ctx = FakeCtx(resolve_result={"object_sid": "S-1-USER"}, register_result=None)
+    ctx.target_hosts_by_hostname = {}
+    monkeypatch.setattr(registry, "_RegistryProbe", lambda *a, **k: _mixed_case_probe())
+
+    with caplog.at_level(logging.WARNING, logger="openhound_sccm.collectors.registry"):
+        rows = list(registry.collect_registry("PS1-PSS.MAYYHEM.COM", ctx))
+
+    assert any(table == "remoteregistry_sites" for table, _ in rows)
+    assert any(table == "remoteregistry_computers" for table, _ in rows)
+    assert next(row for table, row in rows if table == "remoteregistry_users")["host_object_sid"] is None
+    assert next(row for table, row in rows if table == "remoteregistry_mssql_servers")["domain_computer_sid"] is None
+    assert sum("No registered target" in record.getMessage() for record in caplog.records) == 1
 
 
 # --- Multisite Component Servers ----------------------------------------------
