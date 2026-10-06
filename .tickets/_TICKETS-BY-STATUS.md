@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**150 tickets** — 6 in progress · 29 open · 115 closed
+**151 tickets** — 6 in progress · 30 open · 115 closed
 
 ## In progress (6)
 
@@ -18,7 +18,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-907c`](con-907c.md) | 2 | task | Rebaseline fixture expected values on the full lab + add host-level SEC assertions | testing, integration, fixtures, lab |
 | [`ope-1f0f`](ope-1f0f.md) | 2 | task | Code-Quality Pass: Conditional Logging, Exception Handling, Variable Scope, Linting & Cleanup -type chore -priority 2 -assignee Mayyhem -tags sccm,... | — |
 
-## Open (29)
+## Open (30)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -31,6 +31,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-0289`](con-0289.md) | 2 | bug | Integration fixtures cannot be gated on possible-edges, so low-priv + --disable-possible-edges reports 4 false failures | sccm, integration, fixtures, possible-edges |
 | [`con-0394`](con-0394.md) | 2 | task | Positively identify a secondary site or site server as a plain domain user | sccm, lowpriv, secondary, discovery |
 | [`con-2ca2`](con-2ca2.md) | 2 | bug | _safe silently swallows BinderException, turning transform bugs into no-ops | preproc, diagnostics, transforms, testing |
+| [`con-7b9e`](con-7b9e.md) | 2 | bug | Fix System Management ACL Full Control filtering in deprecated PowerShell collector | powershell, sccm, ldap, acl |
 | [`con-c542`](con-c542.md) | 2 | task | Tag fixture cases from measured privileged/unprivileged A/B | testing, integration, fixtures, lowpriv |
 | [`con-d857`](con-d857.md) | 2 | task | Add TAKEOVER from parent CAS to child primary as possible/assumed edge | — |
 | [`ope-1172`](ope-1172.md) | 2 | task | Test different port / named instance | — |

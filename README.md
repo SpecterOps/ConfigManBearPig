@@ -1685,6 +1685,8 @@ Example (`SCCM_AdminsReplicatedTo`, abbreviated):
 
 Links each AD principal that holds Full Control over the System Management container to the [`Container`](#container) node for it. Wires up `ldap_system_management_dacl`, which the collector always parsed for its DACL but which fed no edge at all before the low-privilege work — this is "who can control SCCM via AD", the attack surface the container's ACL actually represents.
 
+The LDAP parser excludes inherit-only and `ObjectType`-scoped ACEs. An `InheritedObjectType` GUID alone limits child inheritance, so an otherwise effective Full Control ACE still counts on this container.
+
 - **Start:** the Full-Control principal (any AD SID — `Computer`, `User`, or `Group`)
 - **End:** [`Container`](#container) (the System Management container)
 - **Traversable:** yes — standard BloodHound base kind, in `TRAVERSABLE_EDGE_KINDS` alongside `GenericAll`'s usual SharpHound meaning

@@ -678,6 +678,7 @@ def ldap_system_management_dacl(ctx: SourceContext) -> Iterable[Any]:
             obj_type = "unknown"
             if "computer" in [c.lower() for c in obj_class]:
                 obj_type = "computer"
+                logger.info(f"Found {obj_type} with GenericAll on System Management container: {sam} ({sid_str})")
 
                 # Add as collection target. register_target logs why it skipped
                 # (filtered host or empty name), so we don't inspect the result.
@@ -689,8 +690,10 @@ def ldap_system_management_dacl(ctx: SourceContext) -> Iterable[Any]:
 
             elif "user" in [c.lower() for c in obj_class]:
                 obj_type = "user"
+                logger.info(f"Found {obj_type} with GenericAll on System Management container: {sam} ({sid_str})")
             elif "group" in [c.lower() for c in obj_class]:
                 obj_type = "group"
+                logger.info(f"Found {obj_type} with GenericAll on System Management container: {sam} ({sid_str})")
                 # Members effectively inherit Full Control on the container (ope-e191) —
                 # recurse so member computers get registered as scan targets too, and
                 # (Task 12) collect a MemberOf row for every member -> containing-group
@@ -699,7 +702,6 @@ def ldap_system_management_dacl(ctx: SourceContext) -> Iterable[Any]:
                 # feed both the DACL-principal table and the membership table.
                 for member_row in _expand_group_targets(ctx, ad_obj, set()):
                     yield dlt.mark.with_table_name(member_row, "ldap_smc_group_members")
-            logger.info(f"Found {obj_type} with GenericAll on System Management container: {sam} ({sid_str})")
 
             # Task 11: stamp the container's identity on every principal row so the
             # transform can build the Container node + GenericAll edge from this
@@ -729,7 +731,7 @@ def _expand_group_targets(ctx: SourceContext, group_obj: dict[str, Any],
     group_dn = group_obj.get("distinguished_name")
     group_sid = group_obj.get("object_sid")
     if not group_dn or group_dn in visited:
-        logger.debug("System Management container ACL group expansion: skipping visited/empty group %s", group_dn)
+        logger.info("System Management container ACL group expansion (%s): skipping visited/empty group", group_obj.get("sam_account_name"))
         return rows
     visited.add(group_dn)
     grp = next(ctx.ad.paged_search("(objectClass=*)", ["member"], base=group_dn, scope=BASE), None) or {}
@@ -742,17 +744,17 @@ def _expand_group_targets(ctx: SourceContext, group_obj: dict[str, Any],
     # knows membership may be incomplete rather than silently under-collecting.
     if any(str(k).lower().startswith("member;range=") for k in grp):
         logger.warning(
-            "System Management container ACL group expansion: group %s returned a range-limited member attribute "
+            "System Management container ACL group expansion (%s): group returned a range-limited member attribute "
             "(ldap3 auto_range did not complete); membership may be incomplete — some "
             "controlling principals could be undiscovered. Review manually.",
             group_dn)
     if not members:
-        logger.debug("System Management container ACL group expansion: group %s has no members", group_dn)
+        logger.info("System Management container ACL group expansion (%s): group has no members", group_obj.get("sam_account_name"))
         return rows
     for member_dn in members:
         member = ctx.resolve_principal(member_dn)
         if not member:
-            logger.warning("System Management container ACL group expansion: could not resolve member %s", member_dn)
+            logger.warning("System Management container ACL group expansion (%s): could not resolve member %s", group_obj.get("sam_account_name"), member_dn)
             continue
         member_sid = member.get("object_sid")
         oc = member.get("object_class", [])
@@ -768,21 +770,30 @@ def _expand_group_targets(ctx: SourceContext, group_obj: dict[str, Any],
             # No SID on one side means no MemberOf row can be keyed -- log and move
             # on rather than emit an unusable row (mirrors the existing "could not
             # resolve member" skip just above).
-            logger.debug(
-                "System Management container ACL group expansion: %s has no resolvable "
+            logger.verbose(
+                "System Management container ACL group expansion (%s): %s has no resolvable "
                 "SID pair (group=%s member=%s); skipping MemberOf row",
-                member_dn, group_sid, member_sid)
+                group_obj.get("sam_account_name"), member_dn, group_sid, member_sid)
         if "computer" in ocl:
             ctx.register_target(identifier=member.get("dns_host_name"),
                                 source="LDAP-GenericAllSystemManagement", ad_object=member)
         elif "group" in ocl:
             rows.extend(_expand_group_targets(ctx, member, visited))
         elif "user" in ocl:
-            logger.info("System Management container ACL group expansion: user member %s controls the container (modeled, not a scan target)",
-                        member.get("sam_account_name"))
+            logger.info("System Management container ACL group expansion (%s): user member %s controls the container (modeled, not a scan target)",
+                        group_obj.get("sam_account_name"), member.get("sam_account_name"))
         else:
-            logger.warning("System Management container ACL group expansion: member %s has unhandled objectClass %s", member_dn, ocl)
+            logger.warning("System Management container ACL group expansion (%s): member %s has unhandled objectClass %s", group_obj.get("sam_account_name"), member_dn, ocl)
     return rows
+
+
+# Built-in principals that hold Full Control on essentially every object and say
+# nothing about whether a host runs SCCM.
+IGNORED_ACE_SIDS = frozenset({
+    "S-1-5-18",      # LOCAL SYSTEM
+    "S-1-5-32-544",  # BUILTIN\\Administrators
+    "S-1-3-0",       # CREATOR OWNER
+})
 
 
 def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
@@ -793,6 +804,22 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
     the raw Windows GENERIC_ALL bit (0x10000000). The .NET ActiveDirectoryRights
     enum GenericAll = 0x000F01FF. We check for both, plus any mask that includes
     all the AD-specific rights.
+
+    The access mask on its own is not enough to call an ACE Full Control, so two
+    further checks are applied:
+
+    - An ACE whose AceFlags carry INHERIT_ONLY (0x08) grants nothing on this
+      container. It sits here only so Active Directory can copy it down to child
+      objects.
+    - An object ACE (type 0x05) carrying an ObjectType GUID grants its mask over
+      that one property set or extended right, not over the whole object. One
+      carrying an InheritedObjectType GUID only limits which child classes
+      inherit the ACE; it can still grant access on this container.
+
+    Exchange's `setup /PrepareAD` writes both kinds at the domain root with a
+    0x000F01FF mask for Exchange Trusted Subsystem and Organization Management,
+    and they inherit down onto System Management. Counting them as Full Control
+    made every Exchange server look like an SCCM site server.
 
     Structure reference:
     - SECURITY_DESCRIPTOR header (20 bytes for self-relative)
@@ -827,6 +854,9 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
     GENERIC_ALL = 0x10000000
     ACCESS_ALLOWED_ACE_TYPE = 0x00
     ACCESS_ALLOWED_OBJECT_ACE_TYPE = 0x05
+    INHERIT_ONLY_ACE = 0x08
+    ACE_OBJECT_TYPE_PRESENT = 0x01
+    ACE_INHERITED_OBJECT_TYPE_PRESENT = 0x02
 
     for _ in range(ace_count):
         if pos + 4 > len(sd_bytes):
@@ -834,6 +864,7 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
             break
 
         ace_type = sd_bytes[pos]
+        ace_flags = sd_bytes[pos + 1]
         ace_size = struct.unpack_from("<H", sd_bytes, pos + 2)[0]
 
         if ace_size < 4 or pos + ace_size > len(sd_bytes):
@@ -850,7 +881,11 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
         access_mask = struct.unpack_from("<I", sd_bytes, pos + 4)[0]
         is_generic_all = (access_mask & GENERIC_ALL) or (access_mask & AD_GENERIC_ALL) == AD_GENERIC_ALL
 
-        if is_generic_all:
+        if is_generic_all and (ace_flags & INHERIT_ONLY_ACE):
+            logger.debug(
+                "System Management container ACL: skipping INHERIT_ONLY ACE at offset %d; "
+                "it grants nothing on the container itself", pos)
+        elif is_generic_all:
             sid_data = None
 
             if ace_type == ACCESS_ALLOWED_ACE_TYPE:
@@ -862,16 +897,28 @@ def _parse_sd_generic_all(sd_bytes: bytes) -> list[str]:
                 #   [ObjectType(16)] + [InheritedObjectType(16)] + SID
                 if pos + 12 <= len(sd_bytes):
                     obj_flags = struct.unpack_from("<I", sd_bytes, pos + 8)[0]
-                    sid_start = pos + 12
-                    if obj_flags & 0x01:  # ACE_OBJECT_TYPE_PRESENT
-                        sid_start += 16
-                    if obj_flags & 0x02:  # ACE_INHERITED_OBJECT_TYPE_PRESENT
-                        sid_start += 16
-                    sid_data = sd_bytes[sid_start:pos + ace_size]
+                    if obj_flags & ACE_OBJECT_TYPE_PRESENT:
+                        # ObjectType scopes the rights to one property set or extended right.
+                        logger.debug(
+                            "System Management container ACL: skipping scoped object ACE at "
+                            "offset %d (object flags 0x%02x)", pos, obj_flags)
+                    else:
+                        sid_start = pos + 12
+                        if obj_flags & ACE_INHERITED_OBJECT_TYPE_PRESENT:
+                            # This GUID restricts inheritance by children, not access here.
+                            sid_start += 16
+                        sid_data = sd_bytes[sid_start:pos + ace_size]
+                else:
+                    logger.debug(
+                        "System Management container ACL: object ACE at offset %d too short "
+                        "for its flags field; skipping", pos)
 
             if sid_data:
                 sid_str = bytes_to_sid(sid_data)
-                if sid_str:
+                if sid_str and sid_str in IGNORED_ACE_SIDS:
+                    logger.debug(
+                        "System Management container ACL: skipping built-in principal %s", sid_str)
+                elif sid_str:
                     results.append(sid_str)
 
         pos += ace_size

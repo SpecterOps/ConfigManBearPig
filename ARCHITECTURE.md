@@ -399,6 +399,11 @@ Two more pieces wire discovery into this loop:
   while the snapshot returns the target only once. If a RemoteRegistry worker has no registered target,
   it warns and emits the available rows without a host AD SID.
 
+The System Management DACL parser supplies another gate before target registration: inherit-only and
+`ObjectType`-scoped ACEs cannot establish Full Control on the container. `InheritedObjectType` alone only
+limits which children inherit an ACE, so an otherwise effective Full Control ACE still feeds group
+expansion and target discovery.
+
 One discovery path recurses on its own, one level below `register_target`:
 [`_expand_group_targets`](src/openhound_sccm/collectors/ldap.py#L618-L661) (ope-e191). When
 `ldap_system_management_dacl` finds a **group** holding GenericAll on the System Management container,
@@ -2112,6 +2117,7 @@ took a separate, manual step outside `openhound collect sccm`.
 
 | Date | Change |
 |---|---|
+| 2026-10-05 | **System Management ACL scope preserves effective inheritance-type ACEs** (section 3). The DACL parser skips inherit-only and ObjectType-scoped grants, but an InheritedObjectType GUID alone limits child inheritance and does not remove Full Control on the container. A regression test distinguishes that case from inherit-only; a DC-only lab run with disposable Exchange-like and SCCM principals confirmed DACL rows, GenericAll edges, and target registration. |
 | 2026-09-30 | **Added opt-in `--http-proxy` on the PR #11 branch.** Direct HTTP remains the default. An explicit HTTP proxy or `auto` routes AdminService and HTTP role probes only; `auto` reads environment and static Windows registry proxy settings and honors bypasses while the Requests session keeps `trust_env=False` to avoid ambient `.netrc` credentials. The option cannot be combined with the process-wide SOCKS5 `--proxy`. Proxy 407 responses produce a visible warning, and a failed direct HTTP connection suggests `auto` when environment or static Windows proxy settings apply to that target. |
 | 2026-09-30 | **Bounded verbose output from local client logs without losing host discovery** (§7). The scraper keeps reading CCM/ccmsetup logs on Windows even when `root\CCM` is absent. It logs one full URL and UNC sample per host, counts suppressed matches in one summary, and leaves the target set unchanged. A test covers repeated references across both log directories and discovery from logs left by a former client. |
 | 2026-09-30 | **Preserved target identity across hostname upgrades and incomplete RemoteRegistry discovery** (§3). A queued short hostname remains an alias when its target is upgraded to an FQDN; snapshots deduplicate the aliases. Registry lookups use normalized hostnames and emit partial rows with a warning if a target is genuinely absent, instead of failing the phase. Regression tests cover mixed-case names, the queued-name upgrade, and missing targets. |
