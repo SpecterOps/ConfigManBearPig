@@ -2960,6 +2960,50 @@ function Get-MssqlEpaSettingsViaRemoteRegistry {
     }
 }
 
+function Test-SystemManagementFullControlRule {
+    param([System.DirectoryServices.ActiveDirectoryAccessRule]$Rule)
+
+    if ($Rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+        Write-LogMessage Verbose "Skipping non-Allow System Management ACE for $($Rule.IdentityReference)"
+        return $false
+    }
+
+    $rights = [int]$Rule.ActiveDirectoryRights
+    $genericAll = [int][System.DirectoryServices.ActiveDirectoryRights]::GenericAll
+    if ((($rights -band $genericAll) -ne $genericAll) -and (($rights -band 0x10000000) -eq 0)) {
+        Write-LogMessage Verbose "Skipping System Management ACE without Full Control for $($Rule.IdentityReference)"
+        return $false
+    }
+
+    if (([int]$Rule.PropagationFlags -band [int][System.Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0) {
+        Write-LogMessage Verbose "Skipping inherit-only System Management ACE for $($Rule.IdentityReference)"
+        return $false
+    }
+
+    if (([int]$Rule.ObjectFlags -band [int][System.Security.AccessControl.ObjectAceFlags]::ObjectAceTypePresent) -ne 0) {
+        Write-LogMessage Verbose "Skipping object-type-scoped System Management ACE for $($Rule.IdentityReference)"
+        return $false
+    }
+
+    $identity = $Rule.IdentityReference.ToString()
+    if ($identity -like 'NT AUTHORITY\*') {
+        Write-LogMessage Verbose "Skipping built-in System Management ACE for $identity"
+        return $false
+    }
+
+    try {
+        $sid = $Rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        if ($sid -in @('S-1-5-18', 'S-1-5-32-544', 'S-1-3-0')) {
+            Write-LogMessage Verbose "Skipping built-in System Management ACE for $identity"
+            return $false
+        }
+    } catch {
+        Write-LogMessage Verbose "Could not translate System Management ACE principal $identity to a SID: $_"
+    }
+
+    return $true
+}
+
 function Invoke-LDAPCollection {
     Write-LogMessage Info "Starting LDAP collection..."
     
@@ -3457,9 +3501,7 @@ function Invoke-LDAPCollection {
             if ($script:ADModuleAvailable) {
                 $acl = Get-Acl -Path "AD:\$systemManagementDN"
                 $genericAllAccounts = $acl.Access | Where-Object {
-                    $_.AccessControlType -eq "Allow" -and
-                    $_.ActiveDirectoryRights -eq "GenericAll"
-                    $_.IdentityReference -notlike "NT AUTHORITY\*"
+                    Test-SystemManagementFullControlRule -Rule $_
                 }
                 
                 foreach ($account in $genericAllAccounts) {
@@ -3531,9 +3573,7 @@ function Invoke-LDAPCollection {
                     $accessRules = $ntSecurityDescriptor.GetAccessRules($true, $true, [System.Security.Principal.NTAccount])
                     
                     foreach ($rule in $accessRules) {
-                        if ($rule.AccessControlType -eq "Allow" -and
-                            $rule.ActiveDirectoryRights -match "GenericAll" -and
-                            $rule.IdentityReference -notlike "NT AUTHORITY\*")  {
+                        if (Test-SystemManagementFullControlRule -Rule $rule) {
                             
                             Write-LogMessage Success "Found principal with GenericAll on System Management container: $($rule.IdentityReference)"
                             
