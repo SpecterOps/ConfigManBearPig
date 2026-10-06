@@ -9987,7 +9987,7 @@ try {
     $script:Edges = @()
 
     # Script version information
-    $script:ScriptVersion = "1.2"
+    $script:ScriptVersion = "1.3"
     $script:ScriptName = "ConfigManBearPig"
 
     if ($Version) {
