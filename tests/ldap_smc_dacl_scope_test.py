@@ -5,8 +5,8 @@
 # An access mask of 0x000F01FF alone does not mean Full Control. Exchange's
 # `setup /PrepareAD` writes ACEs at the domain root that carry that exact mask but are
 # scoped away from the container -- some are INHERIT_ONLY (they exist only to be copied
-# to child objects), others are object ACEs whose mask applies to a single property set
-# or to one child object class. Those ACEs inherit down onto System Management. Reading
+# to child objects), others are object ACEs whose mask applies to a single property set.
+# Those ACEs inherit down onto System Management. Reading
 # the mask and nothing else made Exchange Trusted Subsystem look like a site server
 # owner, and the group walk in _expand_group_targets then registered every Exchange
 # server as an SCCM scan target.
@@ -30,6 +30,8 @@ SITE_SERVER_SID = "S-1-5-21-1-2-3-1104"
 SCCM_GROUP_SID = "S-1-5-21-1-2-3-1105"
 EXCHANGE_SID = "S-1-5-21-1-2-3-1106"
 LOCAL_SYSTEM_SID = "S-1-5-18"
+BUILTIN_ADMIN_SID = "S-1-5-32-544"
+CREATOR_OWNER_SID = "S-1-3-0"
 
 GUID = bytes(range(16))
 
@@ -91,10 +93,18 @@ def test_object_ace_scoped_to_a_property_set_is_ignored():
     assert _parse_sd_generic_all(sd) == []
 
 
-def test_object_ace_scoped_to_a_child_class_is_ignored():
+def test_inherit_only_object_ace_with_child_class_is_ignored():
     sd = _descriptor(_object_ace(EXCHANGE_SID, ACE_INHERITED_OBJECT_TYPE_PRESENT,
                                  flags=INHERITED_ACE | INHERIT_ONLY_ACE))
     assert _parse_sd_generic_all(sd) == []
+
+
+def test_inherited_object_type_without_inherit_only_applies_here():
+    # InheritedObjectType limits which children receive the ACE; it does not
+    # restrict an otherwise effective ACE on this container.
+    sd = _descriptor(_object_ace(SCCM_GROUP_SID, ACE_INHERITED_OBJECT_TYPE_PRESENT,
+                                 flags=CONTAINER_INHERIT_ACE))
+    assert _parse_sd_generic_all(sd) == [SCCM_GROUP_SID]
 
 
 def test_unscoped_object_ace_is_reported():
@@ -104,8 +114,9 @@ def test_unscoped_object_ace_is_reported():
 
 
 def test_built_in_principals_are_ignored():
-    sd = _descriptor(_plain_ace(LOCAL_SYSTEM_SID))
-    assert _parse_sd_generic_all(sd) == []
+    for sid in (LOCAL_SYSTEM_SID, BUILTIN_ADMIN_SID, CREATOR_OWNER_SID):
+        sd = _descriptor(_plain_ace(sid))
+        assert _parse_sd_generic_all(sd) == []
 
 
 def test_exchange_prepare_ad_pattern_leaves_only_the_site_server():

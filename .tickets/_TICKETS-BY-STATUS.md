@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**148 tickets** — 6 in progress · 29 open · 113 closed
+**151 tickets** — 6 in progress · 30 open · 115 closed
 
 ## In progress (6)
 
@@ -18,7 +18,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-907c`](con-907c.md) | 2 | task | Rebaseline fixture expected values on the full lab + add host-level SEC assertions | testing, integration, fixtures, lab |
 | [`ope-1f0f`](ope-1f0f.md) | 2 | task | Code-Quality Pass: Conditional Logging, Exception Handling, Variable Scope, Linting & Cleanup -type chore -priority 2 -assignee Mayyhem -tags sccm,... | — |
 
-## Open (29)
+## Open (30)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -31,6 +31,7 @@ Regenerate after any status change rather than editing by hand.
 | [`con-0289`](con-0289.md) | 2 | bug | Integration fixtures cannot be gated on possible-edges, so low-priv + --disable-possible-edges reports 4 false failures | sccm, integration, fixtures, possible-edges |
 | [`con-0394`](con-0394.md) | 2 | task | Positively identify a secondary site or site server as a plain domain user | sccm, lowpriv, secondary, discovery |
 | [`con-2ca2`](con-2ca2.md) | 2 | bug | _safe silently swallows BinderException, turning transform bugs into no-ops | preproc, diagnostics, transforms, testing |
+| [`con-7b9e`](con-7b9e.md) | 2 | bug | Fix System Management ACL Full Control filtering in deprecated PowerShell collector | powershell, sccm, ldap, acl |
 | [`con-c542`](con-c542.md) | 2 | task | Tag fixture cases from measured privileged/unprivileged A/B | testing, integration, fixtures, lowpriv |
 | [`con-d857`](con-d857.md) | 2 | task | Add TAKEOVER from parent CAS to child primary as possible/assumed edge | — |
 | [`ope-1172`](ope-1172.md) | 2 | task | Test different port / named instance | — |
@@ -52,13 +53,15 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (113)
+## Closed (115)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
 | [`con-3354`](con-3354.md) | 1 | bug | Site-code conflict discards a real secondary site (one scalar site_code per target) | sccm, context, site-discovery, data-loss |
 | [`con-401c`](con-401c.md) | 1 | bug | Collector console log output does not reach redirected stdout | logging, diagnostics, cli |
+| [`con-46f6`](con-46f6.md) | 1 | bug | ldap_resolved_principals failed to persist entirely against a real environment | real-env, ldap, dlt |
 | [`con-7296`](con-7296.md) | 1 | task | Emit MSSQL nodes/edges as source_kind=MSSQL payload + zip graph output on --run-all | sccm, mssql, convert, packaging |
+| [`con-ba1f`](con-ba1f.md) | 1 | bug | HTTP client trusted the ambient system/environment proxy | real-env, http, proxy |
 | [`con-c522`](con-c522.md) | 1 | task | Clear 14 Dependabot alerts via lock-only dependency bump | security, dependencies |
 | [`ope-0495`](ope-0495.md) | 1 | task | SCCM collector vs live CMBP unit-test parity gaps (2026-07-14 comparison) | — |
 | [`ope-1201`](ope-1201.md) | 1 | bug | node_mssql_server drops registry-only SQL servers (coalesce port VARCHAR vs INTEGER_LITERAL) | sccm, preproc, mssql, dlt |

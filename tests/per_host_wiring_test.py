@@ -72,6 +72,24 @@ def test_register_existing_target_does_not_resubmit():
     assert wq.submitted == ["hostA"]  # submitted exactly once
 
 
+def test_fqdn_upgrade_keeps_queued_short_name_as_alias():
+    wq = FakeWorkQueue()
+    ctx = _ctx(work_queue=wq)
+    short = ctx.register_target(
+        "HOST", source="first", ad_object={"name": "HOST", "object_sid": "S-1-2"},
+    )
+    fqdn = ctx.register_target(
+        "HOST.example.com", source="second",
+        ad_object={"name": "HOST", "dns_host_name": "HOST.example.com", "object_sid": "S-1-2"},
+    )
+
+    assert fqdn is short
+    assert wq.submitted == ["HOST"]
+    assert ctx.target_hosts_by_hostname[wq.submitted[0].lower()] is short
+    assert ctx.target_hosts_by_hostname["host.example.com"] is short
+    assert ctx.target_hosts_snapshot() == [short]
+
+
 def test_allow_list_blocks_non_listed_discoveries():
     wq = FakeWorkQueue()
     ctx = _ctx(allowed={"hosta"}, work_queue=wq)

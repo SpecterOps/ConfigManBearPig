@@ -260,7 +260,7 @@ These resources run a single time per collection and seed the per-host work queu
 | Discovery resource | What it does | Status |
 |---|---|---|
 | **LDAP** ([collectors/ldap.py](src/openhound_sccm/collectors/ldap.py)) | Queries the AD **System Management** container for SCCM **sites** (`mSSMSSite`), **management points** (`mSSMSManagementPoint`), the container **DACL**, network-boot servers, devices with the `CmRcService` SPN, and computers whose names/descriptions match SCCM naming patterns (`sccm`, `mecm`, `sms`, …). Registers discovered site systems as per-host targets. | ✅ Implemented |
-| **Local** ([collectors/local.py](src/openhound_sccm/collectors/local.py)) | When run on an SCCM client: reads the `root\CCM` WMI namespace (`SMS_Authority`, `SMS_LookupMP`, `CCM_Client`) and parses CCM client logs to find management points / distribution points and the local client's SMSID. **Windows-only.** | ✅ Implemented (Windows) |
+| **Local** ([collectors/local.py](src/openhound_sccm/collectors/local.py)) | On a Windows SCCM client, reads the `root\CCM` WMI namespace (`SMS_Authority`, `SMS_LookupMP`, `CCM_Client`) and the client's SMSID. On any Windows host, also parses existing CCM/ccmsetup logs for management points and distribution points, including logs left by a former client. The first URL and UNC match for each host is logged at VERBOSE; later matches are counted in one summary. Discovery still considers every distinct host. | ✅ Implemented (Windows) |
 | **DNS** ([collectors/dns.py](src/openhound_sccm/collectors/dns.py)) | For each discovered site code, resolves the `_mssms_mp_<sitecode>._tcp.<domain>` SRV record (with an ADIDNS/LDAP fallback) to find management points published to DNS. | ✅ Implemented |
 
 ## Stage 2 — Per-host phases
@@ -547,6 +547,7 @@ uv run openhound collect sccm ./out -d mayyhem.com --dc dc.mayyhem.com \
 | `--cf`, `--computer-file` | Path to a file of computer targets, one per line. |
 | `--sc`, `--site-codes` | Site codes for DNS collection (CSV or file path). |
 | `-x`, `--proxy` | Route **all** collection traffic (discovery + every per-host protocol) through a SOCKS5 proxy. Forms: `socks5://[user:pass@]host:port` or bare `host:port`. Requires `--dc` or `--dns`. See [Proxying / pivoting](#proxying--pivoting). |
+| `--http-proxy` | Proxy AdminService and HTTP web requests only: `auto`, `host[:port]`, or `user:pass@host[:port]`. A bare host uses port 80. Cannot be combined with `--proxy`. |
 | `--dns`, `--dns-resolver` | DNS nameserver IP used for all lookups (DC discovery, SRV probes). Omit to use the system default. |
 | `--enable-bad-opsec` | Enable noisy operations (e.g. NAA decryption) likely to trip EDR *(consumed by not-yet-ported phases)*. |
 
@@ -702,6 +703,11 @@ readable after the fact without re-running. `collect_issues_<timestamp>.log` hol
 errors, each with a traceback, and is not created at all by a clean run. `--debug` additionally folds
 the `dlt`/`ldap3` internals into the full log.
 
+If a RemoteRegistry host is missing from the target index, the issues log warns that its rows will
+lack host AD identity. The collector still writes the registry values it can read, but rows without
+a host SID cannot support identity-based edges such as `HasSession`. A short hostname that is later
+resolved to an FQDN stays indexed under both names, so normal discovery retains that identity.
+
 #### What a low-privilege run looks like
 
 Collecting as a plain domain user is a supported, first-class mode — see
@@ -816,6 +822,27 @@ single sign-on (SSPI) cannot be tunneled by the tool**: Windows itself contacts
 the KDC, and that traffic never touches our sockets. To use a logged-in identity
 through the pivot, export its Kerberos ticket and pass `--ticket`, or set up
 OS-level transparent proxying (tun2socks / Proxifier) on the outside box.
+
+**HTTP proxy for web endpoints only.** AdminService and HTTP probes connect
+directly by default, even when Windows or environment proxy settings exist.
+Pass `--http-proxy auto` to use `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` (and
+`NO_PROXY` bypasses), or the current Windows user's static registry proxy
+settings when no proxy environment variables are set:
+
+```powershell
+uv run openhound collect sccm .\out -m HTTP -c ps1-sms.mayyhem.com --http-proxy auto
+```
+
+To choose an HTTP proxy explicitly, pass `--http-proxy proxy.example.com:8080`
+or `--http-proxy "user:pass@proxy.example.com:8080"`. Omit the port to use
+80. These forms proxy HTTP and HTTPS requests to AdminService and SCCM web
+endpoints only; LDAP, DNS, WMI, SMB, RemoteRegistry, and MSSQL keep their
+normal routes. `--http-proxy` and the SOCKS5 `--proxy` cannot be combined.
+The `auto` form reads environment and static Windows registry settings, not
+PAC/WPAD scripts. Proxy passwords are not printed in the collector log.
+If a configured proxy returns HTTP 407, the collector warns that proxy authentication is required.
+If a direct HTTP connection fails and an environment or static Windows proxy applies
+to that target, the collector suggests `--http-proxy auto` without changing the route.
 
 ---
 
@@ -1657,6 +1684,8 @@ Example (`SCCM_AdminsReplicatedTo`, abbreviated):
 ## GenericAll
 
 Links each AD principal that holds Full Control over the System Management container to the [`Container`](#container) node for it. Wires up `ldap_system_management_dacl`, which the collector always parsed for its DACL but which fed no edge at all before the low-privilege work — this is "who can control SCCM via AD", the attack surface the container's ACL actually represents.
+
+The LDAP parser excludes inherit-only and `ObjectType`-scoped ACEs. An `InheritedObjectType` GUID alone limits child inheritance, so an otherwise effective Full Control ACE still counts on this container.
 
 - **Start:** the Full-Control principal (any AD SID — `Computer`, `User`, or `Group`)
 - **End:** [`Container`](#container) (the System Management container)
