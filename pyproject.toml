@@ -149,16 +149,15 @@ source = "vcs"
 # PyPI rejects versions with a local segment (+g1a2b3c), which setuptools-scm adds by
 # default on any non-tag commit.
 local_scheme = "no-local-version"
-# Keeps `uv build` working in a tagless or shallow checkout. CI asserts the built version
-# matches the tag, so a stray 0.0.0 can never reach PyPI.
-fallback_version = "0.0.0"
+# GitHub's source archives have no .git directory. Git expands .git_archival.txt
+# there; the archive directory name is a fallback if the host omits that expansion.
+# With neither source available, fail rather than silently stamp 0.0.0.
+parentdir_prefix_version = "ConfigManBearPig-"
 # Only consider MAJOR.MINOR.PATCH tags when deriving the version.
 #
 # This repository also carries `v1.2-powershell`, which archives the final PowerShell
 # release. Without this filter setuptools-scm picks that tag up, fails to parse it, and
-# raises -- so `uv lock`, `uv sync` and every build break outright. Note that
-# `fallback_version` does NOT cover this: it applies when there is no tag at all, not when
-# the nearest tag is unparseable.
+# raises -- so `uv lock`, `uv sync` and every build break outright.
 git_describe_command = [
     "git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*.[0-9]*.[0-9]*",
 ]

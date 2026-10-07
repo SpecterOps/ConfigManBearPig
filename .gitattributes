@@ -13,3 +13,4 @@
 #
 # .git/config is not a committable file, which is why the requirement is written here.
 .tickets/_TICKETS-BY-STATUS.md merge=ours
+.git_archival.txt export-subst

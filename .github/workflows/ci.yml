@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # hatch-vcs needs tags now that an unknown version is an error instead of 0.0.0.
+          fetch-depth: 0
 
       # python-preference = "only-system" forbids uv from downloading an interpreter, so
       # one satisfying requires-python (>=3.13) must already be on PATH. ubuntu-latest's

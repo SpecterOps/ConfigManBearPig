@@ -23,9 +23,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # hatch-vcs reads git tags. A shallow clone has none, so it would silently
-          # stamp a fallback version and publish it under the wrong number — forever,
-          # since PyPI filenames are immutable.
+          # hatch-vcs reads git tags. A shallow clone has none, so the build would
+          # fail before publishing. Keep full history for the version check below.
           fetch-depth: 0
 
       # python-preference = "only-system" forbids uv from downloading a managed
@@ -52,6 +51,20 @@ jobs:
           expected="${GITHUB_REF_NAME#v}"
           echo "built=$version tag=$expected"
           test "$version" = "$expected"
+
+      - name: Verify the downloadable source archive version
+        # GitHub's auto-generated source download has no .git directory. Build the
+        # same kind of archive before publishing so it cannot become version 0.0.0.
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REF_NAME#v}"
+          archive_dir="$(mktemp -d)"
+          git archive --format=tar --prefix="ConfigManBearPig-${expected}/" "$GITHUB_REF_NAME" \
+            | tar -xf - -C "$archive_dir"
+          uv build --wheel --out-dir "$archive_dir/dist" "$archive_dir/ConfigManBearPig-${expected}"
+          archive_version="$(basename "$(ls "$archive_dir"/dist/*.whl | head -1)" | cut -d- -f2)"
+          echo "archive build=$archive_version tag=$expected"
+          test "$archive_version" = "$expected"
 
       - name: Verify the collector's data files are in the wheel
         # extension.yaml and the two schema JSONs live inside src/openhound_sccm/ because
