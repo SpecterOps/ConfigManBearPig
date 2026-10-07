@@ -72,6 +72,7 @@ EXPECTED_PANEL = {
     "clean": "Output",
     "run_all": "Output",
     "progress": "Output",
+    "version": "Output",
     "disable_possible_edges": "Output",
     "show_cleartext_passwords": "Output",
     "tables": "Output",

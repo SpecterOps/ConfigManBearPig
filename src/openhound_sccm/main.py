@@ -1,5 +1,6 @@
 import copy
 import datetime
+import importlib.metadata
 import duckdb
 import logging
 import os
@@ -147,6 +148,13 @@ app = OpenHound(
     source_kind="SCCM",
     help="OpenGraph collector for sccm"
 )
+
+
+def _show_version(ctx: typer.Context, value: bool) -> None:
+    if value and not ctx.resilient_parsing:
+        # No collection or logging session exists for this metadata-only command.
+        typer.echo(f"ConfigManBearPig {importlib.metadata.version('configmanbearpig')}")
+        raise typer.Exit()
 
 # ---------------------------------------------------------------------------
 # Flag → env-var translation
@@ -1223,6 +1231,10 @@ def collect_sccm(
         ProgressOption.off, rich_help_panel="Output",
         help="Progress backend. 'off' (default) silences dlt's progress counters so only the "
         "collector's own logs print; 'tqdm' / 'log' / 'alive_progress' re-enable a live tracker.",
+    ),
+    version: bool = typer.Option(
+        False, "--version", callback=_show_version, is_eager=True, rich_help_panel="Output",
+        help="Show the installed ConfigManBearPig version and exit.",
     ),
     # --disable-possible-edges and --show-cleartext-passwords change what the
     # graph/console shows, so they sit under Output alongside the dlt contracts.

@@ -476,7 +476,7 @@ zero domain credentials presented anywhere in the run.
 
 # Command Line Options
 
-The collector adds CMBP-style flags to the framework's `collect` command. Every flag also has an environment-variable equivalent (`SOURCES__SCCM__<NAME>`), and CLI flag values take precedence. Run `uv run openhound collect sccm --help` for the authoritative list.
+The collector adds CMBP-style flags to the framework's `collect` command. Collection settings also have environment-variable equivalents (`SOURCES__SCCM__<NAME>`), and CLI flag values take precedence. Run `uv run openhound collect sccm --help` for the authoritative list. Run `uv run openhound collect sccm --version` to print the installed ConfigManBearPig package version and exit; no output path is needed.
 
 ```text
 uv run openhound collect sccm <output_path> [resources...] [options]
@@ -577,6 +577,7 @@ Use `-c`/`--computers <host>` to scope a run to specific hosts (e.g. an SMS Prov
 | `--clean` | Discard a previous collection in `OUTPUT_PATH` before collecting: removes the `sccm/` dataset dir, `graph/`, and `lookup.duckdb`. Timestamped per-run logs and integration/compare reports are always kept. See [below](#--clean-and-re-running-into-a-used-output-directory). |
 | `--run-all` | After collecting, automatically run **preprocess** and **convert** in-process, producing the OpenGraph files in a single command. All paths are derived from `OUTPUT_PATH`: `lookup.duckdb`, the `sccm/` dataset dir, and `graph/`. The run also writes `graph\configmanbearpig_collection_<timestamp>.zip` — a single upload-ready archive of the graph `.json` files for BloodHound File Ingest (the loose files are kept too; `<timestamp>` matches the run's `collect_full_<ts>.log`). On completion it logs a consolidated list of the run's output files — raw JSONL, the lookup DB, each OpenGraph JSON, and the collect logs (`collect_full_*`, and `collect_issues_*` when a warning/error occurred) — so you don't have to scroll back through the run. The **last line of that block is the `.zip`**, the one artifact you upload. Omit the flag to run the three stages manually (the default; a "next steps" hint is printed). |
 | `--progress` | Progress backend. `off` (default) silences dlt's per-resource progress counters so only the collector's own `[target][phase]` logs print; pass `tqdm`, `log`, or `alive_progress` to re-enable a live tracker. |
+| `--version` | Print the installed ConfigManBearPig package version and exit. No output path is needed. |
 | `--disable-possible-edges` | Remove or tighten the *assumed* node/edge families (see [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content) and [below](#--disable-possible-edges-and-the-coerce-and-relay-edges)); never removes confirmed data. The flag is persisted at collect time in the `collection_settings` table and read by preprocess — it has no effect if set after collection. |
 | `--show-cleartext-passwords` | Display cleartext passwords when discovered *(consumed by not-yet-ported phases)*. |
 | `--tables` / `--columns` / `--data-type` | DLT schema contracts for new tables / unknown columns / type mismatches. |
