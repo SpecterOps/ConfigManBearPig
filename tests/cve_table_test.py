@@ -45,5 +45,12 @@ def test_patched_version_excludes_fixed_cves():
     assert "CVE-2025-59213 (Unauth SQLi)" in result       # KB34503790 not yet installed
 
 
+def test_2509_rollup_excludes_console_extension_cve():
+    cve = "CVE-2026-47301 (EoP)"
+    assert cve in lookup_cves("5.00.9141.1015")
+    assert cve not in lookup_cves("5.00.9141.1032")
+    assert cve not in lookup_cves("5.0.9141.1032")
+
+
 def test_threshold_constant_is_2509_build():
     assert ADMINSERVICE_NTLM_MIN_BUILD == 9141
