@@ -98,5 +98,5 @@ ROLE_COLUMNS = ("CopiedFromID", "CreatedBy", "CreatedDate", "IsBuiltIn", "IsSecA
                 "RoleName", "RoleDescription", "SourceSite")
 ADMIN_COLUMNS = ("AccountType", "AdminID", "AdminSid", "CategoryNames", "CollectionNames", "CreatedBy",
                  "CreatedDate", "DisplayName", "DistinguishedName", "IsGroup", "LastModifiedBy",
-                 "LastModifiedDate", "LogonName", "RoleNames", "Roles", "SourceSite")
+                 "LastModifiedDate", "LogonName", "Permissions", "RoleNames", "Roles", "SourceSite")
 SYSRES_COLUMNS = ("NetworkOSPath", "SiteCode", "RoleName", "Type")

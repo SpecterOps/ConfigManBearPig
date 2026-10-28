@@ -34,7 +34,7 @@ def _seed(con):
         "('S-1-5-21-1-2-3-1104','S-1-DB:1433','MSSQL_HostFor', ['x']), "
         # MSSQL<->MSSQL: server -> its sysadmin role. both MSSQL -> MSSQL payload
         "('S-1-DB:1433','sysadmin@S-1-DB:1433','MSSQL_Contains', ['x']), "
-        # MSSQL<->SCCM: database -> site. one SCCM endpoint, no AD -> SCCM payload
+        # MSSQL<->SCCM: database -> site belongs in the separate hybrid file.
         r"('S-1-DB:1433\CM_PS1','PS1','SCCM_AssignAllPermissions', ['x'])"
     )
 
@@ -50,6 +50,7 @@ def test_split_partitions_completely_and_disjointly():
 
     ad = _rows("graph_edges_ad")
     mssql = _rows("graph_edges_mssql")
+    hybrid = _rows("graph_edges_hybrid")
     sccm = _rows("graph_edges_sccm")
 
     assert ad == {
@@ -64,8 +65,11 @@ def test_split_partitions_completely_and_disjointly():
     assert sccm == {
         "PS1|CAS|SCCM_Contains",
         "PS1|GUID:dev1|SCCM_HasClient",
+    }
+    assert hybrid == {
         r"S-1-DB:1433\CM_PS1|PS1|SCCM_AssignAllPermissions",
     }
-    # Complete + disjoint partition of the 8 original edges.
-    assert len(ad) + len(mssql) + len(sccm) == 8
-    assert ad.isdisjoint(mssql) and ad.isdisjoint(sccm) and mssql.isdisjoint(sccm)
+    # Every original relationship goes to exactly one of the four outputs.
+    outputs = (ad, mssql, hybrid, sccm)
+    assert sum(map(len, outputs)) == 8
+    assert len(set.union(*outputs)) == 8

@@ -14,6 +14,8 @@ import duckdb
 
 from openhound_collector_common.dlt.duckdb_safe import arr_sql, ensure_columns, safe_execute
 
+from .role_assignments import build_collection_coverage, build_role_assignments
+
 logger = logging.getLogger(__name__)
 
 # Truthy spellings accepted for the SOURCES__SCCM__DISABLE_POSSIBLE_EDGES env override.
@@ -2996,6 +2998,8 @@ def _enrich_role_members(con: duckdb.DuckDBPyConnection, schema: str) -> None:
               f"JOIN {schema}.role_by_name rbn ON upper(trim(t.rn)) = rbn.name "
               f"WHERE a.logon_name IS NOT NULL AND trim(t.rn) != '' AND len({_arr('a.roles')}) = 0")
 
+    # Detailed assignments can identify a role even when its summary list is absent.
+    con.execute(f"INSERT INTO _rmembers SELECT role_id, admin_id FROM {schema}.admin_role_assignments")
     # Attach the aggregated member lists to node_security_role.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_security_role AS "
@@ -3048,6 +3052,14 @@ def _enrich_admin_assignments(con: duckdb.DuckDBPyConnection, schema: str) -> No
               f"JOIN {schema}.collection_by_name cbn ON upper(trim(t.cn)) = cbn.name "
               f"WHERE a.logon_name IS NOT NULL AND trim(t.cn) != ''")
 
+    # Keep the overview lists complete using native IDs from the detailed records.
+    # These lists are for display; access calculations use the paired table itself.
+    con.execute(f"INSERT INTO _aassign SELECT logon_key, 'role_id', role_id "
+                f"FROM {schema}.admin_role_assignments")
+    con.execute(f"INSERT INTO _aassign SELECT logon_key, 'member_of', role_id{suffix} "
+                f"FROM {schema}.admin_role_assignments")
+    con.execute(f"INSERT INTO _aassign SELECT a.logon_key, 'collection_id', collection_id{suffix} "
+                f"FROM {schema}.admin_role_assignments a, unnest(a.collection_ids) c(collection_id)")
     # Correlated-subquery aggregation: attach all three list columns to node_admin_user.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_admin_user AS SELECT a.*, "
@@ -4498,12 +4510,17 @@ def _graph_edges_init(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     assumed/assumption_basis (Task 3/4/5, D3) are populated only by the MSSQL
     site-DB-scaffolding edges (Task 4, basis-derived) and the Tier-B SCCM
     permission/coerce/local-admin edges (Task 5, unconditionally true) -- every
-    other builder leaves them NULL, meaning "not an assumption"."""
+    other builder leaves them NULL, meaning "not an assumption".
+
+    collection_ids/security_scope_ids preserve role-specific assignment evidence.
+    Missing details remain NULL; confirmed empty assignments remain empty lists.
+    """
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.graph_edges "
         f"(start_id VARCHAR, end_id VARCHAR, kind VARCHAR, collection_source VARCHAR[], "
         f"coercion_victim_and_relay_target_pairs VARCHAR[], coercion_victim_hostnames VARCHAR[], "
-        f"sccm_infra BOOLEAN, assumed BOOLEAN, assumption_basis VARCHAR)"
+        f"sccm_infra BOOLEAN, assumed BOOLEAN, assumption_basis VARCHAR, "
+        f"collection_ids VARCHAR[], security_scope_ids VARCHAR[])"
     )
 
 
@@ -4635,7 +4652,9 @@ def _edge_is_mapped_to(con: duckdb.DuckDBPyConnection, schema: str) -> None:
 def _edge_is_assigned(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     """AdminUser -> Collection / SecurityRole (CMBP ps1:7819/7841/7867).
 
-    Three arms per admin source:
+    Detailed assignments supply role-specific evidence first. The three summary
+    arms below keep overview relationships available even without complete details;
+    they never establish a role's device coverage.
       1. Collection by name: split collection_names (comma-separated), join collection_by_name.
       2. Role by id list: unnest the roles JSON/CSV array via _arr(), one edge per role id.
       3. Role by name fallback: ONLY when roles is empty — split role_names, join role_by_name.
@@ -4650,6 +4669,20 @@ def _edge_is_assigned(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         return f"upper({col}) || '@{root_lit}'" if root_lit else f"upper({col})"
 
     start_expr = _id("a.logon_name")
+    # Each administrator-to-role edge carries only that role's assigned collections
+    # and scopes. The collection overview edges do not establish role coverage.
+    con.execute(
+        f"INSERT INTO {schema}.graph_edges BY NAME "
+        f"SELECT admin_id AS start_id, {_id('role_id')} AS end_id, "
+        f"'{SCCM_IS_ASSIGNED}' AS kind, collection_source, collection_ids, security_scope_ids "
+        f"FROM {schema}.admin_role_assignments"
+    )
+    con.execute(
+        f"INSERT INTO {schema}.graph_edges BY NAME "
+        f"SELECT a.admin_id AS start_id, {_id('c.collection_id')} AS end_id, "
+        f"'{SCCM_IS_ASSIGNED}' AS kind, a.collection_source "
+        f"FROM {schema}.admin_role_assignments a, unnest(a.collection_ids) c(collection_id)"
+    )
     _src_tags = {
         "adminservice_admins": "AdminService-SMS_Admin",
         "wmi_admins": "WMI-SMS_Admin",
@@ -4867,12 +4900,12 @@ _ROLE_EDGE_KIND = {
     "SMS000ER": "SCCM_OperationsAdministrator",
     "SMS000FR": "SCCM_SecurityAdministrator",
 }
-# Built-in roles CMBP knows but creates no client-device edge for (CMBP ps1:1803-1818).
-# Built-in roles CMBP knows but creates no client-device edge for (full built-in list
-# at CMBP ps1:1803-1810). NOTE the deliberate divergence: CMBP's runtime -notin array
-# (ps1:1811-1818) omits SMS0003R (Remote Tools Operator) — a CMBP oversight that makes it
-# spuriously log a "custom role" warning for that built-in. We include SMS0003R here (all 8
-# built-ins) so the custom-role skip warning fires only for genuinely custom roles.
+# Older built-in roles intentionally omitted from device-access calculations
+# (CMBP ps1:1803-1818). Routine assignments to these roles do not need a warning.
+# Remote Tools Operator (SMS0003R) is included, correcting the original PS list.
+# This is not an exhaustive list of built-in roles: newer roles such as CMPivot
+# Administrator can also fall outside both lists. The warning must therefore say
+# "unsupported role", because an unfamiliar role ID does not establish its type.
 _ROLE_KNOWN_NO_EDGE = ("SMS0002R", "SMS0003R", "SMS0004R", "SMS0007R", "SMS000BR", "SMS000CR", "SMS000GR", "SMS000HR")
 
 
@@ -4900,31 +4933,35 @@ def _edge_contains(con: duckdb.DuckDBPyConnection, schema: str) -> None:
 
 
 def _edge_rbac_role_grants(con: duckdb.DuckDBPyConnection, schema: str) -> None:
-    """The 7 RBAC role edges (AdminUser -> ClientDevice), reconstructed from graph_edges
-    (CMBP ps1:1714-1827). Path: IsAssigned(admin->role) JOIN IsAssigned(admin->Device-collection)
-    JOIN HasMember(collection->clientdevice). The role's well-known id picks the edge kind.
-    Custom (non-built-in) roles assigned to admins are counted and logged (CMBP ps1:1820)."""
+    """Calculate the seven supported role edges using that role's own collections.
+
+    The original assigned collection ID accompanies each resulting device edge as
+    evidence, including when access reaches a limiting-collection descendant.
+    """
     role_map = ", ".join(f"('{rid}','{kind}')" for rid, kind in _ROLE_EDGE_KIND.items())
-    # -- Walk graph_edges: an admin --IsAssigned--> a security role, and the SAME admin
-    # -- --IsAssigned--> a Device-type collection, whose members --HasMember--> client devices.
-    # -- The role's well-known id selects the edge kind.
-    _safe(con, "edge_rbac_role_grants",
-          f"INSERT INTO {schema}.graph_edges BY NAME "
-          f"SELECT admin_to_role.start_id AS start_id, collection_to_device.end_id AS end_id, role_edge_kind.edge_kind AS kind, "
-          f"['SCCM_Invoke-PostProcessing'] AS collection_source "
-          f"FROM {schema}.graph_edges admin_to_role "
-          f"JOIN {schema}.node_security_role role "
-          f"  ON role.role_id || '@' || role.root_site_code = admin_to_role.end_id "
-          f"JOIN (VALUES {role_map}) AS role_edge_kind(role_id, edge_kind) ON upper(role.role_id) = role_edge_kind.role_id "
-          f"JOIN {schema}.graph_edges admin_to_collection "
-          f"  ON admin_to_collection.start_id = admin_to_role.start_id AND admin_to_collection.kind = 'SCCM_IsAssigned' "
-          f"JOIN {schema}.node_collection device_collection "
-          f"  ON device_collection.collection_id || '@' || device_collection.root_site_code = admin_to_collection.end_id AND device_collection.collection_type = 2 "
-          f"JOIN {schema}.graph_edges collection_to_device "
-          f"  ON collection_to_device.start_id = admin_to_collection.end_id AND collection_to_device.kind = 'SCCM_HasMember' "
-          f"JOIN {schema}.node_client_device client_device ON client_device.smsid = collection_to_device.end_id "
-          f"WHERE admin_to_role.kind = 'SCCM_IsAssigned'")
-    # Diagnostic: count custom roles assigned to admins that produce no device edge (CMBP warns per role).
+    # Pairing happens in admin_collection_permissions; never join the administrator's
+    # independent role and collection overview edges to calculate access.
+    _safe(con, "edge_rbac_role_grants", f"""
+        INSERT INTO {schema}.graph_edges BY NAME
+        SELECT coverage.admin_id AS start_id, collection_to_device.end_id AS end_id,
+               role_edge_kind.edge_kind AS kind, assignment.collection_source,
+               [coverage.assigned_collection_id] AS collection_ids
+        FROM {schema}.admin_collection_permissions coverage
+        JOIN {schema}.admin_role_assignments assignment
+          ON assignment.admin_id = coverage.admin_id AND assignment.role_id = coverage.role_id
+        JOIN (VALUES {role_map}) AS role_edge_kind(role_id, edge_kind)
+          ON coverage.role_id = role_edge_kind.role_id
+        JOIN {schema}.node_collection device_collection
+          ON device_collection.collection_id = coverage.collection_id
+          AND device_collection.collection_type = 2
+        JOIN {schema}.graph_edges collection_to_device
+          ON collection_to_device.start_id = device_collection.collection_id || '@' || device_collection.root_site_code
+          AND collection_to_device.kind = 'SCCM_HasMember'
+        JOIN {schema}.node_client_device client_device
+          ON client_device.smsid = collection_to_device.end_id
+    """)
+    # Report assigned roles outside our supported or known-benign lists. These may
+    # be newer built-in roles or custom roles; neither gets a calculated device edge.
     skip_list = ", ".join(f"'{r}'" for r in (*_ROLE_EDGE_KIND, *_ROLE_KNOWN_NO_EDGE))
     try:
         cnt = _scalar(con,
@@ -4933,13 +4970,13 @@ def _edge_rbac_role_grants(con: duckdb.DuckDBPyConnection, schema: str) -> None:
             f"WHERE admin_to_role.kind = 'SCCM_IsAssigned' AND upper(role.role_id) NOT IN ({skip_list})"
         )
     except duckdb.Error as err:
-        logger.warning("edge_rbac_role_grants: custom-role audit query failed: %s", err)
+        logger.warning("edge_rbac_role_grants: role-support check failed: %s", err)
         cnt = 0
     if cnt:
-        logger.warning("edge_rbac_role_grants: %d custom security role(s) assigned to admins have no "
-                       "traversable client-device edge (matches CMBP skip behaviour)", cnt)
+        logger.warning("edge_rbac_role_grants: %d assigned security role(s) are not supported for "
+                       "device-access calculations; these may be built-in or custom roles", cnt)
     else:
-        logger.debug("edge_rbac_role_grants: no custom roles to skip")
+        logger.debug("edge_rbac_role_grants: no additional unsupported role IDs to report")
 
 
 def _edge_all_permissions(con: duckdb.DuckDBPyConnection, schema: str) -> None:
@@ -4950,24 +4987,18 @@ def _edge_all_permissions(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     from .kinds.edges import SCCM_ALL_PERMISSIONS
     nonsec = (f"(SELECT site_code FROM {schema}.site_hierarchy "
               f"WHERE {_NON_SECONDARY_SITE_TYPE_SQL} AND site_code IS NOT NULL)")
-    # -- An admin --IsAssigned--> the Full Administrator role (SMS0001R) AND
-    # -- --IsAssigned--> BOTH the All Systems (SMS00001) and All Users and User Groups
-    # -- (SMS00004) collections -> grant SCCM_AllPermissions to every non-secondary site.
+    # Both global collections must belong to the Full Administrator assignment.
+    # A global collection attached to another role cannot satisfy this check.
     _safe(con, "edge_all_permissions",
           f"INSERT INTO {schema}.graph_edges BY NAME "
-          f"SELECT admin_to_full_admin_role.start_id AS start_id, site.site_code AS end_id, "
-          f"'{SCCM_ALL_PERMISSIONS}' AS kind, ['SCCM_Invoke-PostProcessing'] AS collection_source "
-          f"FROM {schema}.graph_edges admin_to_full_admin_role "
-          f"JOIN {schema}.node_security_role full_admin_role "
-          f"  ON full_admin_role.role_id || '@' || full_admin_role.root_site_code = admin_to_full_admin_role.end_id AND upper(full_admin_role.role_id) = 'SMS0001R' "
-          f"JOIN {schema}.graph_edges admin_to_all_systems ON admin_to_all_systems.start_id = admin_to_full_admin_role.start_id AND admin_to_all_systems.kind = 'SCCM_IsAssigned' "
-          f"JOIN {schema}.node_collection all_systems_collection "
-          f"  ON all_systems_collection.collection_id || '@' || all_systems_collection.root_site_code = admin_to_all_systems.end_id AND upper(all_systems_collection.collection_id) = 'SMS00001' "
-          f"JOIN {schema}.graph_edges admin_to_all_users ON admin_to_all_users.start_id = admin_to_full_admin_role.start_id AND admin_to_all_users.kind = 'SCCM_IsAssigned' "
-          f"JOIN {schema}.node_collection all_users_collection "
-          f"  ON all_users_collection.collection_id || '@' || all_users_collection.root_site_code = admin_to_all_users.end_id AND upper(all_users_collection.collection_id) = 'SMS00004' "
+          f"SELECT assignment.admin_id AS start_id, site.site_code AS end_id, "
+          f"'{SCCM_ALL_PERMISSIONS}' AS kind, assignment.collection_source, "
+          f"['SMS00001', 'SMS00004'] AS collection_ids "
+          f"FROM {schema}.admin_role_assignments assignment "
           f"CROSS JOIN {nonsec} site "
-          f"WHERE admin_to_full_admin_role.kind = 'SCCM_IsAssigned'")
+          f"WHERE assignment.role_id = 'SMS0001R' "
+          f"AND list_contains(assignment.collection_ids, 'SMS00001') "
+          f"AND list_contains(assignment.collection_ids, 'SMS00004')")
 
 
 def _edge_assign_all_permissions(con: duckdb.DuckDBPyConnection, schema: str) -> None:
@@ -5699,6 +5730,9 @@ def _graph_edges_dedup(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     collection_source tags from all duplicate rows are merged into one distinct list
     (same array-union idiom as site_system_roles in _node_computer).
 
+    Role-specific collection_ids/security_scope_ids are also unioned, preserving
+    NULL when no duplicate has detailed evidence and [] for a known empty list.
+
     sccm_infra: bool_or() so a row set true by one source (or one duplicate) wins over
     a NULL from another; stays NULL only when every duplicate row left it NULL.
 
@@ -5720,7 +5754,10 @@ def _graph_edges_dedup(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"    FILTER (WHERE coercion_victim_hostnames IS NOT NULL))), CAST([] AS VARCHAR[])) "
         f"    AS coercion_victim_hostnames, "
         f"  bool_or(sccm_infra) AS sccm_infra, "
-        f"  bool_or(assumed) AS assumed, max(assumption_basis) AS assumption_basis "
+        f"  bool_or(assumed) AS assumed, max(assumption_basis) AS assumption_basis, "
+        # Keep NULL for unknown assignments and [] for a confirmed empty list.
+        f"  list_sort(list_distinct(flatten(list(collection_ids) FILTER (WHERE collection_ids IS NOT NULL)))) AS collection_ids, "
+        f"  list_sort(list_distinct(flatten(list(security_scope_ids) FILTER (WHERE security_scope_ids IS NOT NULL)))) AS security_scope_ids "
         f"FROM {schema}.graph_edges "
         f"GROUP BY start_id, end_id, kind"
     )
@@ -5804,7 +5841,7 @@ def _node_backfill(con: duckdb.DuckDBPyConnection, schema: str) -> None:
 
 
 def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
-    """Partition graph_edges into three payloads: AD-touching, MSSQL-only, SCCM-only.
+    """Separate AD, SQL-only, SQL-to-SCCM, and SCCM-only relationships.
 
     Routing precedence (each edge lands in exactly one payload):
       1. AD    -- EITHER endpoint is an AD node id (Computer/User/Group coalesce
@@ -5813,15 +5850,16 @@ def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
                   (MSSQL_HostFor, MSSQL_HasLogin, the service-account and relay edges) here.
       2. MSSQL -- NOT AD-touching AND BOTH endpoints are MSSQL node ids. Emitted under
                   source_kind="MSSQL" so the separate MSSQL source owns its own SQL topology.
-      3. SCCM  -- everything else: not AD-touching, not both-MSSQL, so at least one endpoint
-                  is an SCCM node. This keeps MSSQL<->SCCM edges (SCCM_AssignAllPermissions,
-                  database -> site) here.
+      3. Hybrid -- NOT AD-touching AND exactly one endpoint is a MSSQL node.
+                   SQL-to-SCCM connections belong in untagged hybrid_edges.json.
+      4. SCCM  -- everything else: neither AD-touching nor SQL-touching.
 
     Runs LAST, after _node_backfill, so the AD id set includes the stub ids minted there.
     Every node_* table it reads is built earlier in transforms() with CREATE OR REPLACE
-    TABLE, so all are guaranteed present. EXISTS/NOT EXISTS make the three outputs an exact,
-    disjoint, complete partition, NULL-safe even for a malformed edge with a NULL endpoint
-    (it falls to the SCCM side deterministically). MSSQL node ids never collide with AD SIDs,
+    TABLE, so all are guaranteed present. EXISTS/NOT EXISTS make the four outputs an exact,
+    disjoint, complete partition, even for a malformed edge with a NULL endpoint.
+    The edge model logs and drops incomplete endpoints during conversion.
+    MSSQL node ids never collide with AD SIDs,
     but the explicit NOT-AD guard on the MSSQL and SCCM arms keeps the precedence unambiguous.
     """
     # _ad_ids / _mssql_ids are session-local TEMP TABLEs (DuckDB's temp schema);
@@ -5842,11 +5880,11 @@ def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"UNION SELECT role_id FROM {schema}.node_mssql_server_role WHERE role_id IS NOT NULL "
         f"UNION SELECT role_id FROM {schema}.node_mssql_database_role WHERE role_id IS NOT NULL"
     )
-    # The full 9-column projection every payload keeps identical (one place, added arrays free).
+    # Every payload keeps the complete evidence columns through conversion.
     cols = (
         "e.start_id, e.end_id, e.kind, e.collection_source, "
         "e.coercion_victim_and_relay_target_pairs, e.coercion_victim_hostnames, e.sccm_infra, "
-        "e.assumed, e.assumption_basis"
+        "e.assumed, e.assumption_basis, e.collection_ids, e.security_scope_ids"
     )
     start_ad = "EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.start_id)"
     end_ad = "EXISTS (SELECT 1 FROM _ad_ids a WHERE a.id = e.end_id)"
@@ -5865,19 +5903,28 @@ def _graph_edges_split(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"WHERE NOT {start_ad} AND NOT {end_ad} "
         f"  AND {start_mssql} AND {end_mssql}"
     )
-    # 3. SCCM payload: not AD-touching AND not both-MSSQL (at least one SCCM endpoint).
+    # 3. Hybrid connections cross between SQL and SCCM, in either direction.
+    con.execute(
+        f"CREATE OR REPLACE TABLE {schema}.graph_edges_hybrid AS "
+        f"SELECT {cols} FROM {schema}.graph_edges e "
+        f"WHERE NOT {start_ad} AND NOT {end_ad} "
+        f"  AND (({start_mssql} AND NOT {end_mssql}) "
+        f"    OR ({end_mssql} AND NOT {start_mssql}))"
+    )
+    # 4. SCCM relationships have no AD or SQL endpoint.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.graph_edges_sccm AS "
         f"SELECT {cols} FROM {schema}.graph_edges e "
         f"WHERE NOT {start_ad} AND NOT {end_ad} "
-        f"  AND NOT ({start_mssql} AND {end_mssql})"
+        f"  AND NOT {start_mssql} AND NOT {end_mssql}"
     )
     ad_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_ad")
     mssql_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_mssql")
+    hybrid_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_hybrid")
     sccm_cnt = _scalar(con, f"SELECT count(*) FROM {schema}.graph_edges_sccm")
     logger.info(
-        "graph_edges split: %d AD-touching, %d MSSQL-only, %d SCCM-only",
-        ad_cnt, mssql_cnt, sccm_cnt,
+        "graph_edges split: %d AD-touching, %d MSSQL-only, %d SQL-to-SCCM, %d SCCM-only",
+        ad_cnt, mssql_cnt, hybrid_cnt, sccm_cnt,
     )
 
 
@@ -5913,6 +5960,8 @@ def transforms(con: duckdb.DuckDBPyConnection, schema: str = "sccm") -> None:
     _device_by_resourceid(con, schema)
     _collection_by_name(con, schema)
     _role_by_name(con, schema)
+    build_role_assignments(con, schema, _root_code(con, schema) or "")
+    build_collection_coverage(con, schema)
     # Relationship-list enrichment: add denormalised list columns to node_* tables.
     # These run after all _node_* builders and lookup tables but before edge builders,
     # so edge builders see the fully-enriched node tables.

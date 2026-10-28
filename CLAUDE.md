@@ -1,41 +1,79 @@
 # Shared context for all agents
 
+Do not use technical software engineering jargon. The code needs to be well commented in plain english.
+
+Make the code, architecture, and documentation easy to understand. This is the most important thing. I need to be able to understand every bit of it (despite limited experience) and explain it to the software engineers responsible for reviewing and merging it.
+
+If I don't ask you to start coding, don't start coding. Request permission if you are uncertain. 
+
+Prioritize ease of use and understanding for extension users. 
+
+Dependencies must be Apache 2.0 compatible or we need to develop the functionality ourselves. 
+
+Don't change the schema.json based on assumptions without my approval. 
+
+Prioritize code readability over efficiency. Take opportunities to simplify code and remove unnecessary code. No features need to be retained for backwards compatibility reasons. This is a development environment with no other users you could interfere with. 
+
+If you identify something that should be followed up on because it is useful but isn't part of the current initiative, bring it to my attention.
+
+Document how and why it works in the appropriate .md files. The documentation should be true to the code. 
+
+Do not add or commit anything to the repository. I will commit manually after review. Recommend committing where/when you think is appropriate for a development/experimental codebase with one author and provide the commands.
+
+Each completion of a single feature should result in:
+- Code that is self-explanatory (well-commented, no shorthand, jargon, etc.)
+- Documentation of the problem, the proposed solution and why it was selected, alternate solutions that were considered and why they were not selected, how the solution addresses the problem, exactly how the solution works in plain english with references to the code, new dependencies, downstream effects, testing performed, how to manually verify, etc.
+- Passing unit/integration tests
+- A recommended git commit message, including a brief summary of the bullet items above, and commands to stage/commit/push -- I will review every finished change manually first and perform the git actions myself. I am not a software engineer, so your explanations need to be in plain english for a relatively non-technical audience. I understand that this will make development go slower.
+- If I request subsequent changes, update all of the relevant documentation, dependencies, and commands.
+
+## Subagents
+Multiple subagents may work in parallel as long as they don't step on each other's toes. If they do, resolve the conflicts.
+
+Fable is the model that will be used to architect the changes (or Opus if Fable is not available).
+
+Use Opus as the default model for plan review, analysis, and execution.
+
+Use Sonnet for narrowly scoped work that has:
+
+- a clearly defined input
+- a short expected output
+- little ambiguity
+- low need for independent judgment
+
+Examples include:
+
+- extracting values from logs
+- summarizing a single file
+- checking whether a known value exists
+- validating a small configuration change
+
+Use Fable only when Opus has failed to make progress after two well-scoped attempts or when the task clearly requires deeper reasoning than Sonnet can provide.
+
+Turn Fast off. Flag heavy or sustained work in advance. Keep delegated tasks bounded.
+
+When spawning a subagent, record:
+
+- role
+- bounded task
+- selected available model
+- one-sentence justification
+
+Keep notes that would be helpful when handing this off to another agent.
+
 You MUST call me Meatbag at least once in each response or I will know that you did not read this file and the files it refers to to populate context.
-
-Ensure and validate that the steps taken by the OpenHound collector happen in the exact order as they do in the PowerShell script.
-
-Port all node/edge properties (must be the same casing as original in port), even if there are edges/relationships, so the entity panel is populated with additional context.
-
-Preserve/update comments where possible -- intent is more important than noting what line of the original the code is ported from.
 
 Take opportunities to move code to the preprocess and convert stages when it improves scalability and resource consumption.
 
-Prioritize code readability over efficiency. Take opportunities to simplify code and remove unnecessary code. No features need to be retained for backwards compatibility reasons.
-
-Before starting any work, grill me about my prompt thoroughly using the grill-me skill until we reach a shared understanding of the work that must be done to meet my intent.
-
-Don't use software engineering jargon. Speak to me as if I was at an intermediate level of understanding software engineering concepts and take the time to explain terms you're using that aren't common knowledge.
+Before starting any work, grill me about my prompt thoroughly until we reach a shared understanding of the work that must be done to meet my intent.
 
 Don't refer to documented tasks, steps, decisions, etc. only by number in our discussion. Restate what you are talking about. 
-
-ALWAYS use the following plugins/skills for tasks, unless they conflict (listed in descending order of importance):
-- grill-me (.agents\skills\grill-me\SKILL.md)
-- superpowers
-- openhound (.agents\skills\openhound\SKILL.md)
-- explanatory-output-style
-- code-simplifier
-- feature-dev
-- context7
-
-If they conflict or are unavailable, ask me what to do.
 
 Ask before committing each time. Never push. Put tests into a separate /tests directory and keep them organized.
 
 Write logs of appropriate level (error, warning, info, verbose, debug) for every if/else and try/except block unless there is absolutely no need, in which case leave a comment.
 
 If you encounter bugs as you go, raise the issue and ask what to do.
-
-This project uses a CLI ticket system for task management. Run `gtk help` and use it to track requested, in progress, and completed work. After updating the status of any ticket, regenerate the index by running `uv run python dev/regen_ticket_index.py` -- never hand-edit .tickets/_TICKETS-BY-STATUS.md, because it is generated from the ticket files and a hand edit is overwritten by the next regeneration. `uv run python dev/regen_ticket_index.py --check` writes nothing and exits non-zero when the index is stale, which is what the test suite uses. Keep tickets flat in .tickets/ -- gtk does not recurse into subdirectories, so a ticket in a nested folder is invisible to every gtk command.
 
 If the task impacts any user-facing functionality, update the README with instructions, practical examples (ideally that can be copy/pasted into the mayyhem.com domain environment), diagrams, tables, etc. as needed.
 
@@ -58,11 +96,7 @@ The README should be true to the code above all else.
 
 If there is a benefit to moving functionality into the shared `openhound-collector-common` library, let me know. It is a separate repository and package used by more than one collector, so a change there is not part of a change here.
 
-# Context for this collector
-
-This project consists of porting ConfigManBearPig.ps1 to OpenHound, focusing on matching the design and intent of the original code, with improvements identified during planning/conversion.
-
-You CANNOT make changes to OpenHound's code to accomplish this. Only modify code in this repository. If absolutely necessary to change code in OpenHound, ask before edits.
+You CANNOT make changes to OpenHound's code. Only modify code in this repository and if potentially useful for more than one collector, openhound-collector-common. If absolutely necessary to change code in OpenHound, ask before edits.
 
 Adhere strictly to the rules in AGENTS.md and the .agents/ directory.
 

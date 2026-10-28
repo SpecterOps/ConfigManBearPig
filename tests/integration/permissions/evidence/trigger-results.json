@@ -1,0 +1,2123 @@
+{
+  "lab": "mayyhem.com / PS1",
+  "siteVersion": "5.00.9128.1000",
+  "date": "2026-10-27",
+  "method": "Original successful execution, then restricted-account modification and triggers; administrator observes only until experiment ends.",
+  "cases": {
+    "app-installed-notify": {
+      "workload": "Application",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:23:35.4089218Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778234
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:23:36.0030833Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778235
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:24:09.3945888Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778236
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:24:09.6914626Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778237
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:24:41.8028666Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778238
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:24:41.9434983Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778239
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:25:14.2445911Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778240
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:25:14.4008480Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778241
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:25:46.8726349Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778242
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:25:47.0445091Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778243
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "resourceID": 16777230,
+      "collectionID": "PS100070",
+      "objectType": 31,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cprc78a0e260001",
+      "item": {
+        "ID": 16777662,
+        "Name": "CMBP-PERM-c78a0e26 trigger ef4f5001",
+        "BaselineID": "",
+        "Workload": "Application",
+        "AssignmentID": 16777236
+      },
+      "original": {
+        "marker": {
+          "nonce": "ef4f500123454c91bd41d6191f69d324",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T20:23:29.1112381Z",
+        "state": {
+          "installState": "Installed",
+          "evaluationState": 1,
+          "lastInstallTime": "20261027132326.000000+000",
+          "lastEvalTime": "20261027132327.000000+000",
+          "revision": "2"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T20:23:29.1424844Z",
+      "modifiedUTC": "2026-10-27T20:23:34.6116341Z",
+      "observationSeconds": 151.16,
+      "finalState": {
+        "installState": "Installed",
+        "evaluationState": 1,
+        "lastInstallTime": "20261027132426.000000+000",
+        "lastEvalTime": "20261027132554.000000+000",
+        "revision": "3"
+      },
+      "cleanupComplete": true
+    },
+    "app-detection-notify": {
+      "workload": "Application",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "DetectionScript",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "8415203b48f54b84a246112a91229567",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:30:15.1649204Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778247
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:30:15.3212029Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778248
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:30:45.9153353Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778249
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:30:46.0559611Z",
+          "action": 13,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778250
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "resourceID": 16777230,
+      "collectionID": "PS100073",
+      "objectType": 31,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr62df04cb0001",
+      "item": {
+        "ID": 16777688,
+        "Name": "CMBP-PERM-62df04cb trigger 7ce72bf6",
+        "BaselineID": "",
+        "Workload": "Application",
+        "AssignmentID": 16777239
+      },
+      "original": {
+        "marker": {
+          "nonce": "7ce72bf6c88748cca2f67174a602e494",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T20:30:09.3992856Z",
+        "state": {
+          "installState": "Installed",
+          "evaluationState": 1,
+          "lastInstallTime": "20261027133007.000000+000",
+          "lastEvalTime": "20261027133007.000000+000",
+          "revision": "2"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T20:30:09.4149135Z",
+      "modifiedUTC": "2026-10-27T20:30:14.6805287Z",
+      "observationSeconds": 43.42,
+      "finalState": {
+        "installState": "Installed",
+        "evaluationState": 1,
+        "lastInstallTime": "20261027133052.000000+000",
+        "lastEvalTime": "20261027133055.000000+000",
+        "revision": "3"
+      },
+      "cleanupComplete": true
+    },
+    "app-read-notify-control": {
+      "workload": "Application",
+      "profile": "ReadNotify",
+      "mechanism": "Notify",
+      "applicationChange": "DetectionScript",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": false,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "recurringDeployment": false,
+      "requestedMarker": {
+        "nonce": "d1c956536a0e4fec8b87965ed5f6e20c",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\d1c956536a0e4fec8b87965ed5f6e20c.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100083",
+      "objectType": 31,
+      "objectMask": 1,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cprca1933f00001",
+      "item": {
+        "ID": 16777707,
+        "Name": "CMBP-PERM-ca1933f0 trigger 60552baa",
+        "BaselineID": "",
+        "Workload": "Application",
+        "AssignmentID": 16777242
+      },
+      "original": {
+        "marker": {
+          "nonce": "60552baa076246b9b8d1bf623fb48389",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T21:19:44.5722485Z",
+        "state": {
+          "installState": "Installed",
+          "evaluationState": 1,
+          "lastInstallTime": "20261027141942.000000+000",
+          "lastEvalTime": "20261027141942.000000+000",
+          "revision": "2"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:19:44.5722485Z",
+      "actionError": {
+        "message": "Could not retrieve lock details for object 'SMS_ApplicationLatest.ModelName=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_85fdf379-9dda-4c81-aee3-92d17b83db64\"'. Object may not be lockable.",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "cleanupComplete": true
+    },
+    "ci-completed-notify": {
+      "workload": "ConfigurationItem",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:34:03.6226399Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778251
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:34:03.7632976Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778252
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:34:34.1070164Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778253
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:34:34.2476400Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778254
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:35:04.5944697Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778255
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:35:04.7350984Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778256
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:35:35.1726026Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778257
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:35:35.3132302Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778258
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:36:05.6418901Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778259
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:36:05.7825158Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778260
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:36:36.0637350Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778261
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:36:36.2043598Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778262
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:37:06.5648262Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778263
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:37:06.7054199Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778264
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:37:37.1749766Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778265
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:37:37.3155939Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778266
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:38:07.6437278Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778267
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:38:07.7687284Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778268
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:38:38.0664394Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778269
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:38:38.2070329Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778270
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "resourceID": 16777230,
+      "collectionID": "PS100074",
+      "objectType": 11,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr20f05b980001",
+      "item": {
+        "ID": 16777699,
+        "Name": "CMBP-PERM-20f05b98 trigger 91815867",
+        "BaselineID": 16777701,
+        "Workload": "ConfigurationItem",
+        "AssignmentID": 16777240
+      },
+      "original": {
+        "marker": {
+          "nonce": "91815867e92a452a882a74d1b78f4e68",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T20:34:00.1851405Z",
+        "state": {
+          "status": 0,
+          "compliance": 1,
+          "version": "2",
+          "lastEvalTime": "20261027203358.763000+000"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T20:34:00.2007690Z",
+      "modifiedUTC": "2026-10-27T20:34:03.1226432Z",
+      "observationSeconds": 302.15,
+      "finalState": {
+        "status": 0,
+        "compliance": 1,
+        "version": "2",
+        "lastEvalTime": "20261027203358.763000+000"
+      },
+      "cleanupComplete": true
+    },
+    "ci-baseline-revision-notify": {
+      "workload": "ConfigurationItem",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "40df76c1a42443b4a8dc2067bea12ee9",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:41:34.6012277Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778271
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:41:34.7574771Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778272
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:42:05.3835450Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778273
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:42:05.5241692Z",
+          "action": 125,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778274
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": true,
+      "requestedMarker": {
+        "nonce": "40df76c1a42443b4a8dc2067bea12ee9",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\40df76c1a42443b4a8dc2067bea12ee9.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100075",
+      "objectType": 11,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cprdf33fa7e0001",
+      "item": {
+        "ID": 16777703,
+        "Name": "CMBP-PERM-df33fa7e trigger bc11bf9e",
+        "BaselineID": 16777705,
+        "Workload": "ConfigurationItem",
+        "AssignmentID": 16777241
+      },
+      "original": {
+        "marker": {
+          "nonce": "bc11bf9e1ad94d8b8ce8bdc50b220de5",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T20:41:28.0539083Z",
+        "state": {
+          "status": 0,
+          "compliance": 1,
+          "version": "2",
+          "lastEvalTime": "20261027204126.944000+000"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T20:41:28.0695398Z",
+      "modifiedUTC": "2026-10-27T20:41:30.5851625Z",
+      "baselineRevised": true,
+      "observationSeconds": 43.52,
+      "finalState": {
+        "status": 0,
+        "compliance": 1,
+        "version": "3",
+        "lastEvalTime": "20261027204215.227000+000"
+      },
+      "cleanupComplete": true
+    },
+    "package-completed-notify-confirmed": {
+      "workload": "Package",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:50:21.4768723Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778275
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:50:52.0086244Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778276
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T20:51:22.3523457Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778277
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "7a68bda17c2d47809869e81961f3ee5a",
+        "path": "C:\\Windows\\Temp\\cmbp-7a68bda17c2d4780.txt"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100077",
+      "objectType": 2,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr6cf76cec0001",
+      "item": {
+        "ID": "PS100026",
+        "Name": "CMBP-PERM-6cf76cec trigger bb07051a",
+        "BaselineID": "",
+        "Workload": "Package",
+        "AssignmentID": "PS120014"
+      },
+      "original": {
+        "marker": {
+          "nonce": "bb07051afbcd47feb057d8e9f67c4516",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV",
+          "identity": "nt authority\\system"
+        },
+        "completedUTC": "2026-10-27T20:50:20.6174805Z",
+        "state": {
+          "completionEvent": "<![LOG[Raised Program Success Event for Ad:PS120014, Package:PS100026, Program: Completed marker]LOG]!><time=\"13:50:18.883+420\" date=\"10-27-2026\" component=\"execmgr\" context=\"\" type=\"1\" thread=\"13036\" file=\"executioncontext.cpp:483\">",
+          "lastRunStatus": "Success",
+          "lastExitCode": 0,
+          "completionSource": "execmgr.log"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T20:50:20.6331105Z",
+      "modifiedUTC": "2026-10-27T20:50:21.0393879Z",
+      "observationSeconds": 91.39,
+      "finalState": {
+        "completionEvent": "<![LOG[Raised Program Success Event for Ad:PS120014, Package:PS100026, Program: Completed marker]LOG]!><time=\"13:50:18.883+420\" date=\"10-27-2026\" component=\"execmgr\" context=\"\" type=\"1\" thread=\"13036\" file=\"executioncontext.cpp:483\">",
+        "lastRunStatus": "Success",
+        "lastExitCode": 0,
+        "completionSource": "execmgr.log"
+      },
+      "cleanupComplete": true
+    },
+    "package-reschedule-no-deploy-history": {
+      "workload": "Package",
+      "profile": "ModifyNotify",
+      "mechanism": "Reschedule",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "2accbbc3f1e7421a8a792236b3359b2d",
+        "path": "C:\\Windows\\Temp\\cmbp-2accbbc3f1e7421a.txt"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100079",
+      "objectType": 2,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr0dd8dc160001",
+      "item": {
+        "ID": "PS100028",
+        "Name": "CMBP-PERM-0dd8dc16 trigger 8c2d8d11",
+        "BaselineID": "",
+        "Workload": "Package",
+        "AssignmentID": "PS120016"
+      },
+      "original": {
+        "marker": {
+          "nonce": "8c2d8d11ee574cbe9646a88944c4ed49",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV",
+          "identity": "nt authority\\system"
+        },
+        "completedUTC": "2026-10-27T21:01:08.0083297Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "86c05f0b-d249-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:01:06",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:01:08.0239528Z",
+      "modifiedUTC": "2026-10-27T21:01:08.3833294Z",
+      "actionError": {
+        "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "cleanupComplete": true
+    },
+    "package-reschedule-deploy-notify": {
+      "workload": "Package",
+      "profile": "ModifyDeployNotify",
+      "mechanism": "Reschedule",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:02:14.9926992Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778278
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:02:45.3691251Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778279
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:03:15.6820353Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778280
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:03:46.1204266Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778281
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:04:16.3704356Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778282
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:04:46.6673384Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778283
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "122fb60379974de29acc33962eca5c6b",
+        "path": "C:\\Windows\\Temp\\cmbp-122fb60379974de2.txt"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS10007A",
+      "objectType": 2,
+      "objectMask": 3,
+      "collectionMask": 536891393,
+      "actor": "MAYYHEM\\cpr4d53ad510001",
+      "item": {
+        "ID": "PS100029",
+        "Name": "CMBP-PERM-4d53ad51 trigger ba6b1aaa",
+        "BaselineID": "",
+        "Workload": "Package",
+        "AssignmentID": "PS120017"
+      },
+      "original": {
+        "marker": {
+          "nonce": "ba6b1aaae58e4ca7acb88718d50e25d0",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV",
+          "identity": "nt authority\\system"
+        },
+        "completedUTC": "2026-10-27T21:02:08.7427045Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "aa8acc0f-d249-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:02:06",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:02:08.7427045Z",
+      "modifiedUTC": "2026-10-27T21:02:09.1333258Z",
+      "rescheduled": true,
+      "observationSeconds": 182.02,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "aa8acc0f-d249-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:02:06",
+        "completionSource": "SCCM execution history"
+      },
+      "cleanupComplete": true
+    },
+    "package-reschedule-future-deploy": {
+      "workload": "Package",
+      "profile": "ModifyDeployNotify",
+      "mechanism": "Reschedule",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "72f4dd26f6f74c31a547014ad17effb0",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV",
+        "identity": "nt authority\\system"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:11:37.5716463Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778287
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:12:08.0105688Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778288
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:12:38.2301430Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778289
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "72f4dd26f6f74c31a547014ad17effb0",
+        "path": "C:\\Windows\\Temp\\cmbp-72f4dd26f6f74c31.txt"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS10007E",
+      "objectType": 2,
+      "objectMask": 3,
+      "collectionMask": 536891393,
+      "actor": "MAYYHEM\\cprafe64bb30001",
+      "item": {
+        "ID": "PS10002D",
+        "Name": "CMBP-PERM-afe64bb3 trigger 29be07b6",
+        "BaselineID": "",
+        "Workload": "Package",
+        "AssignmentID": "PS12001B"
+      },
+      "original": {
+        "marker": {
+          "nonce": "29be07b692b3452cb564f65ec16e1ed4",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV",
+          "identity": "nt authority\\system"
+        },
+        "completedUTC": "2026-10-27T21:11:31.9622090Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "fad57a1e-d24a-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:11:31",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:11:31.9778361Z",
+      "modifiedUTC": "2026-10-27T21:11:32.3841575Z",
+      "rescheduled": true,
+      "observationSeconds": 84.95,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "fad57a1e-d24a-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:13:00",
+        "completionSource": "SCCM execution history"
+      },
+      "clientDeployment": [
+        {
+          "PKG_PackageID": "PS10002D",
+          "ADV_AdvertisementID": "PS12001B",
+          "ADV_RepeatRunBehavior": "RerunAlways",
+          "PRG_ProgramID": "Completed marker",
+          "PRG_CommandLine": "cmd.exe /c \"(echo 72f4dd26f6f74c31a547014ad17effb0&whoami /user /fo csv /nh)>C:\\Windows\\Temp\\cmbp-72f4dd26f6f74c31.txt\""
+        }
+      ],
+      "cleanupComplete": true
+    },
+    "ts-completed-notify": {
+      "workload": "TaskSequence",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:06:07.4329634Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778284
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:06:37.9173056Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778285
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:07:08.3704322Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778286
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "c131599f27254d7384e687f6f43c7213",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\c131599f27254d7384e687f6f43c7213.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS10007B",
+      "objectType": 20,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cprc2fa37050001",
+      "item": {
+        "ID": "PS10002A",
+        "Name": "CMBP-PERM-c2fa3705 trigger b21c29f9",
+        "BaselineID": "",
+        "Workload": "TaskSequence",
+        "AssignmentID": "PS120018"
+      },
+      "original": {
+        "marker": {
+          "nonce": "b21c29f9d56844589b874efbd294b4a0",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T21:06:04.6829347Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "36c5e628-d24a-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:06:02",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:06:04.6829347Z",
+      "modifiedUTC": "2026-10-27T21:06:07.0423379Z",
+      "observationSeconds": 91.44,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "36c5e628-d24a-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:06:02",
+        "completionSource": "SCCM execution history"
+      },
+      "cleanupComplete": true
+    },
+    "ts-reschedule-package-id-no-deploy": {
+      "workload": "TaskSequence",
+      "profile": "ModifyNotify",
+      "mechanism": "Reschedule",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": null,
+      "verified": false,
+      "notifications": [],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "requestedMarker": {
+        "nonce": "2dec96f755ea440e9e1b0c13b90cd70f",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\2dec96f755ea440e9e1b0c13b90cd70f.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100081",
+      "objectType": 20,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr8a73934d0001",
+      "item": {
+        "ID": "PS100030",
+        "Name": "CMBP-PERM-8a73934d trigger 357fc344",
+        "BaselineID": "",
+        "Workload": "TaskSequence",
+        "AssignmentID": "PS12001E"
+      },
+      "original": {
+        "marker": {
+          "nonce": "357fc3440e8e46ed9c9a2202d15a95be",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T21:15:57.9249128Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "98e4f49d-d24b-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:15:56",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:15:57.9405730Z",
+      "modifiedUTC": "2026-10-27T21:16:00.3311623Z",
+      "actionError": {
+        "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "cleanupComplete": true
+    },
+    "ts-reschedule-package-id-deploy": {
+      "workload": "TaskSequence",
+      "profile": "ModifyDeployNotify",
+      "mechanism": "Reschedule",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "d4227bc9b73c40998219b3762f22da90",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:16:43.8780668Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778290
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:17:14.2374469Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778291
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:17:44.8957978Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778292
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "recurringDeployment": false,
+      "requestedMarker": {
+        "nonce": "d4227bc9b73c40998219b3762f22da90",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\d4227bc9b73c40998219b3762f22da90.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100082",
+      "objectType": 20,
+      "objectMask": 3,
+      "collectionMask": 545263617,
+      "actor": "MAYYHEM\\cpra461c8090001",
+      "item": {
+        "ID": "PS100031",
+        "Name": "CMBP-PERM-a461c809 trigger f070da0d",
+        "BaselineID": "",
+        "Workload": "TaskSequence",
+        "AssignmentID": "PS12001F"
+      },
+      "original": {
+        "marker": {
+          "nonce": "f070da0d241344948173e60187e8f28b",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T21:16:38.4093197Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "b01a59ea-d24b-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:16:35",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:16:38.4093197Z",
+      "modifiedUTC": "2026-10-27T21:16:40.7530679Z",
+      "rescheduled": true,
+      "observedUTC": "2026-10-27T21:18:02.9899247Z",
+      "observationSeconds": 79.36,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "b01a59ea-d24b-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:18:01",
+        "completionSource": "SCCM execution history"
+      },
+      "clientDeployment": [
+        {
+          "PKG_PackageID": "PS100031",
+          "ADV_AdvertisementID": "PS12001F",
+          "ADV_RepeatRunBehavior": "RerunAlways",
+          "PRG_ProgramID": "*",
+          "PRG_CommandLine": ""
+        }
+      ],
+      "cleanupComplete": true
+    },
+    "package-existing-recurrence": {
+      "workload": "Package",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "bf1293bd98c542d58ca91c0e7ecb5208",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV",
+        "identity": "nt authority\\system"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:21:35.2627335Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778293
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:22:05.8252338Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778294
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:22:36.1533945Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778295
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:23:06.4051318Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778296
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:23:36.7343071Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778297
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "recurringDeployment": true,
+      "requestedMarker": {
+        "nonce": "bf1293bd98c542d58ca91c0e7ecb5208",
+        "path": "C:\\Windows\\Temp\\cmbp-bf1293bd98c542d5.txt"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100084",
+      "objectType": 2,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cpr361e2b050001",
+      "item": {
+        "ID": "PS100032",
+        "Name": "CMBP-PERM-361e2b05 trigger 796752e9",
+        "BaselineID": "",
+        "Workload": "Package",
+        "AssignmentID": "PS120020"
+      },
+      "original": {
+        "marker": {
+          "nonce": "796752e92ca0488caeb2dded8c3f3d56",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV",
+          "identity": "nt authority\\system"
+        },
+        "completedUTC": "2026-10-27T21:21:34.4189976Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "60f296e3-d24c-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:21:31",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:21:34.4189976Z",
+      "modifiedUTC": "2026-10-27T21:21:34.8096033Z",
+      "observedUTC": "2026-10-27T21:24:00.8593178Z",
+      "observationSeconds": 146.05,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "60f296e3-d24c-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:24:00",
+        "completionSource": "SCCM execution history"
+      },
+      "clientDeployment": [
+        {
+          "PKG_PackageID": "PS100032",
+          "ADV_AdvertisementID": "PS120020",
+          "ADV_RepeatRunBehavior": "RerunAlways",
+          "PRG_ProgramID": "Completed marker",
+          "PRG_CommandLine": "cmd.exe /c \"(echo bf1293bd98c542d58ca91c0e7ecb5208&whoami /user /fo csv /nh)>C:\\Windows\\Temp\\cmbp-bf1293bd98c542d5.txt\""
+        }
+      ],
+      "cleanupComplete": true
+    },
+    "ts-existing-recurrence": {
+      "workload": "TaskSequence",
+      "profile": "ModifyNotify",
+      "mechanism": "Notify",
+      "applicationChange": "InstallCommand",
+      "target": "PS1-DEV",
+      "initialSuccess": true,
+      "modified": true,
+      "secondMarker": {
+        "nonce": "847c63c1a5f64f2d82aee4e29f66d69e",
+        "sid": "S-1-5-18",
+        "computer": "PS1-DEV"
+      },
+      "verified": true,
+      "notifications": [
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:24:51.6900484Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778298
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:25:21.9556718Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778299
+          }
+        },
+        {
+          "accepted": true,
+          "utc": "2026-10-27T21:25:52.4727654Z",
+          "action": 8,
+          "response": {
+            "ReturnValue": 0,
+            "OperationID": 16778300
+          }
+        }
+      ],
+      "privilegedClientActionsAfterModification": 0,
+      "refreshBaselineDefinition": false,
+      "recurringDeployment": true,
+      "requestedMarker": {
+        "nonce": "847c63c1a5f64f2d82aee4e29f66d69e",
+        "path": "C:\\ProgramData\\CMBP-PermissionResearch\\847c63c1a5f64f2d82aee4e29f66d69e.json"
+      },
+      "resourceID": 16777230,
+      "collectionID": "PS100085",
+      "objectType": 20,
+      "objectMask": 3,
+      "collectionMask": 536875009,
+      "actor": "MAYYHEM\\cprd0edc6d70001",
+      "item": {
+        "ID": "PS100033",
+        "Name": "CMBP-PERM-d0edc6d7 trigger 64fade32",
+        "BaselineID": "",
+        "Workload": "TaskSequence",
+        "AssignmentID": "PS120021"
+      },
+      "original": {
+        "marker": {
+          "nonce": "64fade323f8c4e34b2eb8287b782d8df",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DEV"
+        },
+        "completedUTC": "2026-10-27T21:24:49.0806742Z",
+        "state": {
+          "lastRunStatus": "Success",
+          "lastExitCode": "0",
+          "historyKey": "d57f46e8-d24c-11f1-8890-f2e8e69e5cb5",
+          "lastRunTime": "2026/10/27 14:24:47",
+          "completionSource": "SCCM execution history"
+        }
+      },
+      "attackStartedUTC": "2026-10-27T21:24:49.0806742Z",
+      "modifiedUTC": "2026-10-27T21:24:51.2994555Z",
+      "observedUTC": "2026-10-27T21:26:01.5196332Z",
+      "observationSeconds": 70.19,
+      "finalState": {
+        "lastRunStatus": "Success",
+        "lastExitCode": "0",
+        "historyKey": "d57f46e8-d24c-11f1-8890-f2e8e69e5cb5",
+        "lastRunTime": "2026/10/27 14:26:01",
+        "completionSource": "SCCM execution history"
+      },
+      "clientDeployment": [
+        {
+          "PKG_PackageID": "PS100033",
+          "ADV_AdvertisementID": "PS120021",
+          "ADV_RepeatRunBehavior": "RerunAlways",
+          "PRG_ProgramID": "*",
+          "PRG_CommandLine": ""
+        }
+      ],
+      "cleanupComplete": true
+    }
+  },
+  "notifications": [
+    {
+      "profile": "Read control",
+      "action": 8,
+      "utc": "2026-10-27T20:26:54.8143293Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450001",
+      "collectionMask": 4097,
+      "accepted": false
+    },
+    {
+      "profile": "Read control",
+      "action": 13,
+      "utc": "2026-10-27T20:26:54.8924599Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450001",
+      "collectionMask": 4097,
+      "accepted": false
+    },
+    {
+      "profile": "Read control",
+      "action": 125,
+      "utc": "2026-10-27T20:26:54.9237058Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450001",
+      "collectionMask": 4097,
+      "accepted": false
+    },
+    {
+      "profile": "Notify Resource",
+      "action": 8,
+      "response": {
+        "ReturnValue": 0,
+        "OperationID": 16778244
+      },
+      "utc": "2026-10-27T20:26:56.1112077Z",
+      "actor": "MAYYHEM\\cpr0b3d44450002",
+      "collectionMask": 536875009,
+      "accepted": true
+    },
+    {
+      "profile": "Notify Resource",
+      "action": 13,
+      "response": {
+        "ReturnValue": 0,
+        "OperationID": 16778245
+      },
+      "utc": "2026-10-27T20:26:56.2518322Z",
+      "actor": "MAYYHEM\\cpr0b3d44450002",
+      "collectionMask": 536875009,
+      "accepted": true
+    },
+    {
+      "profile": "Notify Resource",
+      "action": 125,
+      "response": {
+        "ReturnValue": 0,
+        "OperationID": 16778246
+      },
+      "utc": "2026-10-27T20:26:56.4080779Z",
+      "actor": "MAYYHEM\\cpr0b3d44450002",
+      "collectionMask": 536875009,
+      "accepted": true
+    },
+    {
+      "profile": "Modify Resource",
+      "action": 8,
+      "utc": "2026-10-27T20:26:57.4080846Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450003",
+      "collectionMask": 4225,
+      "accepted": false
+    },
+    {
+      "profile": "Modify Resource",
+      "action": 13,
+      "utc": "2026-10-27T20:26:57.4393319Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450003",
+      "collectionMask": 4225,
+      "accepted": false
+    },
+    {
+      "profile": "Modify Resource",
+      "action": 125,
+      "utc": "2026-10-27T20:26:57.4862142Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450003",
+      "collectionMask": 4225,
+      "accepted": false
+    },
+    {
+      "profile": "Deploy Applications",
+      "action": 8,
+      "utc": "2026-10-27T20:26:58.5174570Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450004",
+      "collectionMask": 1052673,
+      "accepted": false
+    },
+    {
+      "profile": "Deploy Applications",
+      "action": 13,
+      "utc": "2026-10-27T20:26:58.5487082Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450004",
+      "collectionMask": 1052673,
+      "accepted": false
+    },
+    {
+      "profile": "Deploy Applications",
+      "action": 125,
+      "utc": "2026-10-27T20:26:58.5799541Z",
+      "error": {
+        "providerErrorCode": 1112017920,
+        "message": "Generic failure ",
+        "code": "Failed",
+        "providerDescription": "CSspClientOperation: no permission to initiate the operation.",
+        "type": "System.Management.ManagementException"
+      },
+      "actor": "MAYYHEM\\cpr0b3d44450004",
+      "collectionMask": 1052673,
+      "accepted": false
+    }
+  ],
+  "passive": {
+    "target": "PS1-DP",
+    "notifications": [],
+    "privilegedClientActionsAfterModification": 0,
+    "initialSuccess": true,
+    "experiments": [
+      {
+        "elapsedSinceModificationSeconds": 1573.36,
+        "initialMarker": {
+          "Nonce": "d61c64a6028443ac9a438a9575bc6833",
+          "Path": "C:\\ProgramData\\CMBP-PermissionResearch\\d61c64a6028443ac9a438a9575bc6833.json"
+        },
+        "changedMarker": {
+          "Nonce": "aee5504aba70432aafec3b4fd7f2327c",
+          "Path": "C:\\ProgramData\\CMBP-PermissionResearch\\aee5504aba70432aafec3b4fd7f2327c.json"
+        },
+        "secondMarker": {
+          "nonce": "aee5504aba70432aafec3b4fd7f2327c",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DP"
+        },
+        "original": {
+          "marker": {
+            "nonce": "d61c64a6028443ac9a438a9575bc6833",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DP"
+          },
+          "completedUTC": "2026-10-27T20:25:15.1195941Z",
+          "state": {
+            "installState": "Installed",
+            "evaluationState": 1,
+            "lastInstallTime": "20261027162509.000000+000",
+            "lastEvalTime": "20261027162510.000000+000",
+            "revision": "2"
+          }
+        },
+        "modifiedUTC": "2026-10-27T20:26:21.5932359Z",
+        "workload": "Application",
+        "observedUTC": "2026-10-27T20:52:34.9484338Z",
+        "verified": true,
+        "item": {
+          "ID": 16777673,
+          "Name": "CMBP-PERM-0920e7cc trigger d61c64a6",
+          "BaselineID": "",
+          "Workload": "Application",
+          "AssignmentID": 16777237
+        },
+        "latestState": {
+          "installState": "Installed",
+          "evaluationState": 1,
+          "lastInstallTime": "20261027162509.000000+000",
+          "lastEvalTime": "20261027164201.000000+000",
+          "revision": "2"
+        },
+        "reportedElapsedSinceModificationSeconds": 26773.36
+      },
+      {
+        "elapsedSinceModificationSeconds": 3158.51,
+        "initialMarker": {
+          "Nonce": "71bff312b8b4450caed2b46f43d62489",
+          "Path": "C:\\ProgramData\\CMBP-PermissionResearch\\71bff312b8b4450caed2b46f43d62489.json"
+        },
+        "changedMarker": {
+          "Nonce": "2add75eab7a44d6ead3ecb7b07c233db",
+          "Path": "C:\\ProgramData\\CMBP-PermissionResearch\\2add75eab7a44d6ead3ecb7b07c233db.json"
+        },
+        "secondMarker": {
+          "nonce": "2add75eab7a44d6ead3ecb7b07c233db",
+          "sid": "S-1-5-18",
+          "computer": "PS1-DP"
+        },
+        "original": {
+          "marker": {
+            "nonce": "71bff312b8b4450caed2b46f43d62489",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DP"
+          },
+          "completedUTC": "2026-10-27T20:26:08.9365797Z",
+          "state": {
+            "status": 0,
+            "compliance": 1,
+            "version": "2",
+            "lastEvalTime": "20261027202605.913000+000"
+          }
+        },
+        "modifiedUTC": "2026-10-27T20:26:24.9526049Z",
+        "workload": "ConfigurationItem",
+        "observedUTC": "2026-10-27T21:19:03.4611270Z",
+        "verified": true,
+        "item": {
+          "ID": 16777680,
+          "Name": "CMBP-PERM-0920e7cc trigger 71bff312",
+          "BaselineID": 16777682,
+          "Workload": "ConfigurationItem",
+          "AssignmentID": 16777238
+        },
+        "latestState": {
+          "status": 0,
+          "compliance": 1,
+          "version": "2",
+          "lastEvalTime": "20261027202605.913000+000"
+        },
+        "reportedElapsedSinceModificationSeconds": 28358.51
+      }
+    ],
+    "cleanupComplete": true,
+    "actor": "MAYYHEM\\cpr0920e7cc0001",
+    "collectionMask": 4097,
+    "lastPrivilegedClientActionBeforeModificationUTC": "2026-10-27T20:26:08.9522031Z",
+    "elapsedSeconds": 3158.5
+  },
+  "passiveTimingCorrection": "Original display counters added a seven-hour local offset. Corrected durations use recorded UTC timestamps; original counters are retained.",
+  "normalPolicySchedule": {
+    "UTC": "2026-10-27T20:30:13.2882205Z",
+    "TimeZone": "Eastern Standard Time",
+    "Schedule": [
+      "SimpleInterval;Minutes=60;MaxRandomDelayMinutes=60"
+    ],
+    "RecentScheduler": [
+      "<![LOG[Sending message for schedule 'Machine/{00000000-0000-0000-0000-000000000021}' (Target: 'direct:PolicyAgent_RequestAssignments', Name: '')]LOG]!><time=\"11:48:20.085+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"3792\" file=\"schedule.cpp:1184\">",
+      "<![LOG[Schedule 'Machine/{00000000-0000-0000-0000-000000000021}' with simple interval trigger (every 60 minutes) next fire will be after 65 minutes (with 5 random delay).]LOG]!><time=\"11:48:20.085+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"3792\" file=\"simpleintervaltrigger.cpp:268\">",
+      "<![LOG[Sending message for schedule 'Machine/{00000000-0000-0000-0000-000000000021}' (Target: 'direct:PolicyAgent_RequestAssignments', Name: '')]LOG]!><time=\"12:53:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"4348\" file=\"schedule.cpp:1184\">",
+      "<![LOG[Schedule 'Machine/{00000000-0000-0000-0000-000000000021}' with simple interval trigger (every 60 minutes) next fire will be after 72 minutes (with 12 random delay).]LOG]!><time=\"12:53:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"4348\" file=\"simpleintervaltrigger.cpp:268\">",
+      "<![LOG[Sending message for schedule 'Machine/{00000000-0000-0000-0000-000000000021}' (Target: 'direct:PolicyAgent_RequestAssignments', Name: '')]LOG]!><time=\"14:05:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"3352\" file=\"schedule.cpp:1184\">",
+      "<![LOG[Schedule 'Machine/{00000000-0000-0000-0000-000000000021}' with simple interval trigger (every 60 minutes) next fire will be after 80 minutes (with 20 random delay).]LOG]!><time=\"14:05:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"3352\" file=\"simpleintervaltrigger.cpp:268\">",
+      "<![LOG[Sending message for schedule 'Machine/{00000000-0000-0000-0000-000000000021}' (Target: 'direct:PolicyAgent_RequestAssignments', Name: '')]LOG]!><time=\"15:25:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"5008\" file=\"schedule.cpp:1184\">",
+      "<![LOG[Schedule 'Machine/{00000000-0000-0000-0000-000000000021}' with simple interval trigger (every 60 minutes) next fire will be after 87 minutes (with 27 random delay).]LOG]!><time=\"15:25:20.100+240\" date=\"10-27-2026\" component=\"Scheduler\" context=\"\" type=\"1\" thread=\"5008\" file=\"simpleintervaltrigger.cpp:268\">"
+    ],
+    "PSComputerName": "ps1-dp.mayyhem.com",
+    "RunspaceId": "55f4e4cd-d749-4145-9173-236776d276cb",
+    "PSShowComputerName": true
+  },
+  "excludedAttempts": [
+    {
+      "attempt": "package-completed-notify",
+      "reason": "Setup observer did not recognize successful hidden program; no actor modification.",
+      "record": {
+        "workload": "Package",
+        "profile": "ModifyNotify",
+        "mechanism": "Notify",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": false,
+        "modified": false,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "939b14b195df4f2fabe473f4f17e72af",
+          "path": "C:\\Windows\\Temp\\cmbp-939b14b195df4f2f.txt"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS100076",
+        "objectType": 2,
+        "objectMask": 3,
+        "collectionMask": 536875009,
+        "actor": "MAYYHEM\\cpr210cbdbb0001",
+        "item": {
+          "ID": "PS100025",
+          "Name": "CMBP-PERM-210cbdbb trigger 681dea51",
+          "BaselineID": "",
+          "Workload": "Package",
+          "AssignmentID": "PS120013"
+        },
+        "setupError": {
+          "message": "Initial deployment did not reach a confirmed successful/compliant state.",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "cleanupComplete": true
+      }
+    },
+    {
+      "attempt": "package-reschedule-no-deploy",
+      "reason": "Setup observer missed success after log rotation; no actor modification.",
+      "record": {
+        "workload": "Package",
+        "profile": "ModifyNotify",
+        "mechanism": "Reschedule",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": false,
+        "modified": false,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "8ce19ef9c0374f1d9db25abd71328dc1",
+          "path": "C:\\Windows\\Temp\\cmbp-8ce19ef9c0374f1d.txt"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS100078",
+        "objectType": 2,
+        "objectMask": 3,
+        "collectionMask": 536875009,
+        "actor": "MAYYHEM\\cprcd1bc5390001",
+        "item": {
+          "ID": "PS100027",
+          "Name": "CMBP-PERM-cd1bc539 trigger 8f2a5c02",
+          "BaselineID": "",
+          "Workload": "Package",
+          "AssignmentID": "PS120015"
+        },
+        "setupError": {
+          "message": "Initial deployment did not reach a confirmed successful/compliant state.",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "cleanupComplete": true
+      }
+    },
+    {
+      "attempt": "ts-reschedule-no-deploy",
+      "reason": "Native console required collection selector; not a permission result.",
+      "record": {
+        "workload": "TaskSequence",
+        "profile": "ModifyNotify",
+        "mechanism": "Reschedule",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": true,
+        "modified": true,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "e16c77af55cf4ddd984f73f7d970a206",
+          "path": "C:\\ProgramData\\CMBP-PermissionResearch\\e16c77af55cf4ddd984f73f7d970a206.json"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS10007C",
+        "objectType": 20,
+        "objectMask": 3,
+        "collectionMask": 536875009,
+        "actor": "MAYYHEM\\cpr089f84df0001",
+        "item": {
+          "ID": "PS10002B",
+          "Name": "CMBP-PERM-089f84df trigger 3fe2e508",
+          "BaselineID": "",
+          "Workload": "TaskSequence",
+          "AssignmentID": "PS120019"
+        },
+        "original": {
+          "marker": {
+            "nonce": "3fe2e508976848a7944fd74e2ec7a0d2",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "completedUTC": "2026-10-27T21:08:28.5756315Z",
+          "state": {
+            "lastRunStatus": "Success",
+            "lastExitCode": "0",
+            "historyKey": "8d252795-d24a-11f1-8890-f2e8e69e5cb5",
+            "lastRunTime": "2026/10/27 14:08:27",
+            "completionSource": "SCCM execution history"
+          }
+        },
+        "attackStartedUTC": "2026-10-27T21:08:28.5756315Z",
+        "modifiedUTC": "2026-10-27T21:08:31.3105806Z",
+        "actionError": {
+          "message": "Must use at least one of the following parameters: CollectionId, CollectionName, Collection",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "cleanupComplete": true
+      }
+    },
+    {
+      "attempt": "ts-reschedule-deploy-notify",
+      "reason": "Native console required collection selector; not a permission result.",
+      "record": {
+        "workload": "TaskSequence",
+        "profile": "ModifyDeployNotify",
+        "mechanism": "Reschedule",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": true,
+        "modified": true,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "a2bff07ccf714fa58edafc66a8b84e8b",
+          "path": "C:\\ProgramData\\CMBP-PermissionResearch\\a2bff07ccf714fa58edafc66a8b84e8b.json"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS10007D",
+        "objectType": 20,
+        "objectMask": 3,
+        "collectionMask": 545263617,
+        "actor": "MAYYHEM\\cpr312f3bc20001",
+        "item": {
+          "ID": "PS10002C",
+          "Name": "CMBP-PERM-312f3bc2 trigger 0447047f",
+          "BaselineID": "",
+          "Workload": "TaskSequence",
+          "AssignmentID": "PS12001A"
+        },
+        "original": {
+          "marker": {
+            "nonce": "0447047f9452499e878a711e2a763ac8",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "completedUTC": "2026-10-27T21:09:07.2340531Z",
+          "state": {
+            "lastRunStatus": "Success",
+            "lastExitCode": "0",
+            "historyKey": "a329b314-d24a-11f1-8890-f2e8e69e5cb5",
+            "lastRunTime": "2026/10/27 14:09:04",
+            "completionSource": "SCCM execution history"
+          }
+        },
+        "attackStartedUTC": "2026-10-27T21:09:07.2340531Z",
+        "modifiedUTC": "2026-10-27T21:09:09.6715425Z",
+        "actionError": {
+          "message": "Must use at least one of the following parameters: CollectionId, CollectionName, Collection",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "cleanupComplete": true
+      }
+    },
+    {
+      "attempt": "ts-reschedule-collection-no-deploy",
+      "reason": "Native console deployment-ID selector failed lookup; not a permission result.",
+      "record": {
+        "workload": "TaskSequence",
+        "profile": "ModifyNotify",
+        "mechanism": "Reschedule",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": true,
+        "modified": true,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "6c9c4503254646ed97d8265a6f6b6d45",
+          "path": "C:\\ProgramData\\CMBP-PermissionResearch\\6c9c4503254646ed97d8265a6f6b6d45.json"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS10007F",
+        "objectType": 20,
+        "objectMask": 3,
+        "collectionMask": 536875009,
+        "actor": "MAYYHEM\\cprdf382b2f0001",
+        "item": {
+          "ID": "PS10002E",
+          "Name": "CMBP-PERM-df382b2f trigger 9309216a",
+          "BaselineID": "",
+          "Workload": "TaskSequence",
+          "AssignmentID": "PS12001C"
+        },
+        "original": {
+          "marker": {
+            "nonce": "9309216aae674204b2fce025024dc8b7",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "completedUTC": "2026-10-27T21:13:49.9507532Z",
+          "state": {
+            "lastRunStatus": "Success",
+            "lastExitCode": "0",
+            "historyKey": "4bd56077-d24b-11f1-8890-f2e8e69e5cb5",
+            "lastRunTime": "2026/10/27 14:13:47",
+            "completionSource": "SCCM execution history"
+          }
+        },
+        "attackStartedUTC": "2026-10-27T21:13:49.9507532Z",
+        "modifiedUTC": "2026-10-27T21:13:52.4351369Z",
+        "actionError": {
+          "message": "No parameters correspond to the specified container object.\r\nParameter name: searches",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "cleanupComplete": true
+      }
+    },
+    {
+      "attempt": "ts-reschedule-future-deploy",
+      "reason": "Native console deployment-ID selector failed lookup; not a permission result.",
+      "record": {
+        "workload": "TaskSequence",
+        "profile": "ModifyDeployNotify",
+        "mechanism": "Reschedule",
+        "applicationChange": "InstallCommand",
+        "target": "PS1-DEV",
+        "initialSuccess": true,
+        "modified": true,
+        "secondMarker": null,
+        "verified": false,
+        "notifications": [],
+        "privilegedClientActionsAfterModification": 0,
+        "refreshBaselineDefinition": false,
+        "requestedMarker": {
+          "nonce": "d84aac99bd534b76a49829001019aa7c",
+          "path": "C:\\ProgramData\\CMBP-PermissionResearch\\d84aac99bd534b76a49829001019aa7c.json"
+        },
+        "resourceID": 16777230,
+        "collectionID": "PS100080",
+        "objectType": 20,
+        "objectMask": 3,
+        "collectionMask": 545263617,
+        "actor": "MAYYHEM\\cpr56bce5330001",
+        "item": {
+          "ID": "PS10002F",
+          "Name": "CMBP-PERM-56bce533 trigger 483369ef",
+          "BaselineID": "",
+          "Workload": "TaskSequence",
+          "AssignmentID": "PS12001D"
+        },
+        "original": {
+          "marker": {
+            "nonce": "483369ef63464d87b5b7c6412e0dbaa0",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "completedUTC": "2026-10-27T21:14:45.3437870Z",
+          "state": {
+            "lastRunStatus": "Success",
+            "lastExitCode": "0",
+            "historyKey": "6cd98600-d24b-11f1-8890-f2e8e69e5cb5",
+            "lastRunTime": "2026/10/27 14:14:42",
+            "completionSource": "SCCM execution history"
+          }
+        },
+        "attackStartedUTC": "2026-10-27T21:14:45.3437870Z",
+        "modifiedUTC": "2026-10-27T21:14:47.6562841Z",
+        "actionError": {
+          "message": "No parameters correspond to the specified container object.\r\nParameter name: searches",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "cleanupComplete": true
+      }
+    }
+  ],
+  "cleanup": {
+    "timestampUTC": "2026-10-27T21:28:16.3194825Z",
+    "removedDiscoveryRecords": [
+      {
+        "resourceID": 2063597662,
+        "name": "mayyhem\\cprd0edc6d70001"
+      }
+    ],
+    "remainingClientPolicies": 0,
+    "originalRoleNamesUnchanged": true,
+    "remainingObjects": {
+      "roles": 0,
+      "collections": 0,
+      "applications": 0,
+      "configurationItems": 0,
+      "packages": 0,
+      "advertisements": 0,
+      "applicationAssignments": 0,
+      "baselineAssignments": 0,
+      "administrators": 0,
+      "discoveredUsers": 0,
+      "domainAccounts": 0
+    },
+    "originalRoleCount": 15,
+    "originalRoleOperationsUnchanged": true,
+    "remainingOwnedAccounts": 0,
+    "ownershipTags": [
+      "CMBP-PERM-089f84df",
+      "CMBP-PERM-0920e7cc",
+      "CMBP-PERM-0b3d4445",
+      "CMBP-PERM-0dd8dc16",
+      "CMBP-PERM-20f05b98",
+      "CMBP-PERM-210cbdbb",
+      "CMBP-PERM-312f3bc2",
+      "CMBP-PERM-361e2b05",
+      "CMBP-PERM-4d53ad51",
+      "CMBP-PERM-56bce533",
+      "CMBP-PERM-62df04cb",
+      "CMBP-PERM-6cf76cec",
+      "CMBP-PERM-8a73934d",
+      "CMBP-PERM-a2956447",
+      "CMBP-PERM-a461c809",
+      "CMBP-PERM-afe64bb3",
+      "CMBP-PERM-c2fa3705",
+      "CMBP-PERM-c78a0e26",
+      "CMBP-PERM-ca1933f0",
+      "CMBP-PERM-cd1bc539",
+      "CMBP-PERM-d0edc6d7",
+      "CMBP-PERM-df33fa7e",
+      "CMBP-PERM-df382b2f"
+    ],
+    "clients": [
+      {
+        "computer": "PS1-DEV",
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "removedMarkerFiles": []
+      },
+      {
+        "computer": "PS1-DP",
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "removedMarkerFiles": [],
+        "PSComputerName": "ps1-dp.mayyhem.com",
+        "RunspaceId": "ca878137-ed7e-4fc7-9d63-d000297c727c",
+        "PSShowComputerName": true
+      }
+    ],
+    "remainingOwnedResources": 0,
+    "remainingMarkers": 0
+  }
+}

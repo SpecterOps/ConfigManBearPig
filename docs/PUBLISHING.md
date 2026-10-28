@@ -1,5 +1,11 @@
 # Publishing runbook
 
+Saved searches now live in `extension/saved_searches/`; upload them with
+`uv run openhound searches upload .\extension\saved_searches`. The older
+repository-split instructions below mention the predecessor's `cypher_queries/`
+directory as historical source material. The current collector keeps only the
+new saved-search location.
+
 How to get `configmanbearpig` and `openhound-collector-common` onto PyPI so a user can run:
 
 ```bash

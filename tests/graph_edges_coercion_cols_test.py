@@ -12,7 +12,7 @@ def _seed(con):
     # to this test; only SCCM_IsMappedTo populates sccm_infra -- see
     # edge_is_mapped_to_sccminfra_test.py -- and no builder here stamps assumed).
     con.execute(
-        "INSERT INTO sccm.graph_edges VALUES "
+        "INSERT INTO sccm.graph_edges (start_id, end_id, kind, collection_source, coercion_victim_and_relay_target_pairs, coercion_victim_hostnames, sccm_infra, assumed, assumption_basis) VALUES "
         "('MAYYHEM.COM-S-1-5-11','PS1','SCCM_CoerceAndRelayToAdminService',"
         " ['Post-processing'], ['Coerce A, relay to X'], NULL, NULL, NULL, NULL),"
         "('MAYYHEM.COM-S-1-5-11','PS1','SCCM_CoerceAndRelayToAdminService',"

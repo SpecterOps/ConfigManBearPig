@@ -1,0 +1,2391 @@
+[
+  {
+    "RoleID": "SMS0001R",
+    "RoleName": "Full Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 4294967039
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 805307397
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 813515799
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 9,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 11,
+        "GrantedOperations": 805708823
+      },
+      {
+        "ObjectTypeID": 14,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 16,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 17,
+        "GrantedOperations": 813835269
+      },
+      {
+        "ObjectTypeID": 18,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 19,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 20,
+        "GrantedOperations": 808592407
+      },
+      {
+        "ObjectTypeID": 21,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 22,
+        "GrantedOperations": 805307415
+      },
+      {
+        "ObjectTypeID": 23,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 24,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 25,
+        "GrantedOperations": 805446663
+      },
+      {
+        "ObjectTypeID": 26,
+        "GrantedOperations": 201326594
+      },
+      {
+        "ObjectTypeID": 27,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 28,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 29,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 805448727
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 33,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 34,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 805708807
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 40,
+        "GrantedOperations": 4195335
+      },
+      {
+        "ObjectTypeID": 41,
+        "GrantedOperations": 809501719
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 25
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1049631
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1049623
+      },
+      {
+        "ObjectTypeID": 47,
+        "GrantedOperations": 807666711
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 49,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 50,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 52,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 53,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 54,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 56,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 57,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 58,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 59,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 60,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 61,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 64,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 65,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 66,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 67,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 68,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 70,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 71,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1049623
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 268436503
+      },
+      {
+        "ObjectTypeID": 77,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 78,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 79,
+        "GrantedOperations": 269485063
+      },
+      {
+        "ObjectTypeID": 80,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 81,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 83,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 86,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 87,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 88,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 89,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 204,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 205,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 206,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 207,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 208,
+        "GrantedOperations": 3
+      },
+      {
+        "ObjectTypeID": 209,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 210,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 211,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 212,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 213,
+        "GrantedOperations": 402455
+      },
+      {
+        "ObjectTypeID": 214,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 215,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 216,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 217,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 218,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 219,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 220,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 222,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 223,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 142359
+      },
+      {
+        "ObjectTypeID": 225,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 227,
+        "GrantedOperations": 263191
+      },
+      {
+        "ObjectTypeID": 228,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1043
+      },
+      {
+        "ObjectTypeID": 231,
+        "GrantedOperations": 1031
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0002R",
+    "RoleName": "Read-only Analyst",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 38913
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 9,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 11,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 14,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 16,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 17,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 18,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 19,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 20,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 21,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 22,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 23,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 24,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 25,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 26,
+        "GrantedOperations": 134217728
+      },
+      {
+        "ObjectTypeID": 27,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 28,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 29,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 33,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 34,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 40,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 41,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 47,
+        "GrantedOperations": 268697601
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 49,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 50,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 52,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 54,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 56,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 57,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 58,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 59,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 60,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 61,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 64,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 65,
+        "GrantedOperations": 0
+      },
+      {
+        "ObjectTypeID": 68,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 70,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 71,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 77,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 78,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 80,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 81,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 83,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 86,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 87,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 88,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 89,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 204,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 205,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 206,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 208,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 209,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 210,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 211,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 212,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 214,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 215,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 216,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 217,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 218,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 219,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 220,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 222,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 223,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 225,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 227,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 228,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 231,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0003R",
+    "RoleName": "Remote Tools Operator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 16781345
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0004R",
+    "RoleName": "Asset Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 71681
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1064961
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 9,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 26,
+        "GrantedOperations": 201326594
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 805307395
+      },
+      {
+        "ObjectTypeID": 79,
+        "GrantedOperations": 269485063
+      },
+      {
+        "ObjectTypeID": 83,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 205,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 206,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 209,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 210,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 215,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0006R",
+    "RoleName": "Compliance Settings Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1212157953
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 3
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 11,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 49,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 52,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 58,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 59,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 60,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 61,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 64,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 65,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 70,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 71,
+        "GrantedOperations": 805306369
+      },
+      {
+        "ObjectTypeID": 77,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 81,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 86,
+        "GrantedOperations": 268436503
+      },
+      {
+        "ObjectTypeID": 87,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 88,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 89,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 204,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 223,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0007R",
+    "RoleName": "Application Deployment Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1074876417
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 33,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1048577
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 809500689
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 809500689
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0008R",
+    "RoleName": "Application Author",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1073745921
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 268577815
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 9
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 9
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 1048577
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 1048577
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 142359
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS0009R",
+    "RoleName": "Application Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1077116583
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 21,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 22,
+        "GrantedOperations": 805307415
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 805448727
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 33,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 25
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1049631
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 142359
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000AR",
+    "RoleName": "Operating System Deployment Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1084231809
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 4718593
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 14,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 16,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 17,
+        "GrantedOperations": 813835269
+      },
+      {
+        "ObjectTypeID": 18,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 19,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 20,
+        "GrantedOperations": 808592407
+      },
+      {
+        "ObjectTypeID": 23,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 24,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 25,
+        "GrantedOperations": 805446663
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 9
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1048585
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 71,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 207,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 219,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000BR",
+    "RoleName": "Infrastructure Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1073888903
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 805307397
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 276104215
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 40,
+        "GrantedOperations": 4195335
+      },
+      {
+        "ObjectTypeID": 41,
+        "GrantedOperations": 809501719
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 25
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1049631
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1049623
+      },
+      {
+        "ObjectTypeID": 54,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 79,
+        "GrantedOperations": 269485063
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 19
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000CR",
+    "RoleName": "Software Update Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 1140920321
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 24,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 34,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 805708807
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 9
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1048585
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 214,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 227,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 3
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000ER",
+    "RoleName": "Operations Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 4294967039
+      },
+      {
+        "ObjectTypeID": 2,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 805307397
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 813515799
+      },
+      {
+        "ObjectTypeID": 7,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 9,
+        "GrantedOperations": 805446679
+      },
+      {
+        "ObjectTypeID": 11,
+        "GrantedOperations": 805708823
+      },
+      {
+        "ObjectTypeID": 14,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 15,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 16,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 17,
+        "GrantedOperations": 813835269
+      },
+      {
+        "ObjectTypeID": 18,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 19,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 20,
+        "GrantedOperations": 808592407
+      },
+      {
+        "ObjectTypeID": 21,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 22,
+        "GrantedOperations": 805307415
+      },
+      {
+        "ObjectTypeID": 23,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 24,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 25,
+        "GrantedOperations": 805446663
+      },
+      {
+        "ObjectTypeID": 26,
+        "GrantedOperations": 201326594
+      },
+      {
+        "ObjectTypeID": 27,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 28,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 29,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 31,
+        "GrantedOperations": 805448727
+      },
+      {
+        "ObjectTypeID": 32,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 33,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 34,
+        "GrantedOperations": 140311
+      },
+      {
+        "ObjectTypeID": 36,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 37,
+        "GrantedOperations": 805708807
+      },
+      {
+        "ObjectTypeID": 38,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 40,
+        "GrantedOperations": 4195335
+      },
+      {
+        "ObjectTypeID": 41,
+        "GrantedOperations": 809501719
+      },
+      {
+        "ObjectTypeID": 42,
+        "GrantedOperations": 25
+      },
+      {
+        "ObjectTypeID": 43,
+        "GrantedOperations": 1049631
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 45,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 46,
+        "GrantedOperations": 1049623
+      },
+      {
+        "ObjectTypeID": 47,
+        "GrantedOperations": 807666711
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 49,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 50,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 52,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 53,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 54,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 55,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 56,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 57,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 58,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 59,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 60,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 61,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 62,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 63,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 64,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 65,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 66,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 67,
+        "GrantedOperations": 268435457
+      },
+      {
+        "ObjectTypeID": 68,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 69,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 70,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 71,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 73,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 74,
+        "GrantedOperations": 1049623
+      },
+      {
+        "ObjectTypeID": 75,
+        "GrantedOperations": 268436503
+      },
+      {
+        "ObjectTypeID": 77,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 78,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 79,
+        "GrantedOperations": 269485063
+      },
+      {
+        "ObjectTypeID": 80,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 81,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 82,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 83,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 84,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 85,
+        "GrantedOperations": 810550295
+      },
+      {
+        "ObjectTypeID": 86,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 87,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 88,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 89,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 203,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 204,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 205,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 206,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 207,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 208,
+        "GrantedOperations": 3
+      },
+      {
+        "ObjectTypeID": 209,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 210,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 211,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 212,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 213,
+        "GrantedOperations": 402455
+      },
+      {
+        "ObjectTypeID": 214,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 215,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 216,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 217,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 218,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 219,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 220,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 222,
+        "GrantedOperations": 806355975
+      },
+      {
+        "ObjectTypeID": 223,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 224,
+        "GrantedOperations": 142359
+      },
+      {
+        "ObjectTypeID": 225,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 227,
+        "GrantedOperations": 263191
+      },
+      {
+        "ObjectTypeID": 228,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1043
+      },
+      {
+        "ObjectTypeID": 231,
+        "GrantedOperations": 1031
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000FR",
+    "RoleName": "Security Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 2237511
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 27,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 28,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 29,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 213,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000GR",
+    "RoleName": "Endpoint Protection Manager",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 135041025
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 30,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 47,
+        "GrantedOperations": 807666711
+      },
+      {
+        "ObjectTypeID": 48,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 49,
+        "GrantedOperations": 269484033
+      },
+      {
+        "ObjectTypeID": 50,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 53,
+        "GrantedOperations": 0
+      },
+      {
+        "ObjectTypeID": 80,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 204,
+        "GrantedOperations": 1047
+      },
+      {
+        "ObjectTypeID": 207,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 211,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 212,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 218,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 221,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 225,
+        "GrantedOperations": 806354945
+      },
+      {
+        "ObjectTypeID": 226,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 228,
+        "GrantedOperations": 806355991
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  },
+  {
+    "RoleID": "SMS000IR",
+    "RoleName": "CMPivot Administrator",
+    "IsBuiltIn": true,
+    "Operations": [
+      {
+        "ObjectTypeID": 1,
+        "GrantedOperations": 2237511
+      },
+      {
+        "ObjectTypeID": 4,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 6,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 27,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 28,
+        "GrantedOperations": 805307399
+      },
+      {
+        "ObjectTypeID": 29,
+        "GrantedOperations": 1031
+      },
+      {
+        "ObjectTypeID": 44,
+        "GrantedOperations": 1
+      },
+      {
+        "ObjectTypeID": 229,
+        "GrantedOperations": 1027
+      },
+      {
+        "ObjectTypeID": 230,
+        "GrantedOperations": 1
+      }
+    ]
+  }
+]

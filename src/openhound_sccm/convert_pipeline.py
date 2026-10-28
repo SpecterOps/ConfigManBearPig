@@ -3,8 +3,8 @@
 DuckDB and emit them as OpenGraph nodes/edges.
 
 The framework's built-in convert reader only globs JSONL from the bucket, so a
-coalesced DuckDB table can't be iterated by it. We run our own dlt pipeline that reads
-DuckDB directly via the open lookup connection -> opengraph_file. See
+coalesced DuckDB table can't be iterated by it. We read DuckDB directly through
+the open lookup connection and use common's bounded graph writer. See
 docs/superpowers/specs/2026-06-16-sccm-preproc-convert-design.md §4.
 
 Stage 1+ replaces the Stage-0 spike shapers with typed models driven by node_specs
@@ -12,17 +12,60 @@ and edge_specs. Each spec is a (table_name, ModelClass) pair; for every row the 
 is instantiated, the lookup is injected, and as_node / edges produce the OpenGraph
 content.
 """
+
 import logging
 from dataclasses import asdict
 from pathlib import Path
 
-import dlt
-from openhound.destinations.opengraph.destination import opengraph_file
+from dlt.common import json
+from openhound_collector_common.graph.files import GraphFileWriter
 
+from .kinds import nodes as nk
 from .lookup import SCCMLookup
-from .opengraph_untagged import opengraph_file_untagged
+from .models.graph_edge import GraphEdge
 
 logger = logging.getLogger(__name__)
+
+
+def emit_hybrid_edges_from_duckdb(
+    lookup: SCCMLookup,
+    output_path: str | Path,
+) -> None:
+    """Write SQL-to-SCCM relationships to one untagged hybrid_edges.json file.
+
+    Use the existing edge model and property cleanup so moving a relationship
+    does not change its meaning. Write one edge at a time, without collecting
+    the whole graph in memory. Replace the previous file only after writing a
+    complete document, including an empty document when there are no matches.
+    """
+    output_file = Path(output_path) / "hybrid_edges.json"
+    temporary_file = output_file.with_suffix(".json.tmp")
+    edge_count = 0
+    try:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        with temporary_file.open("w", encoding="utf-8") as stream:
+            # No metadata.source_kind: these connections span two products.
+            stream.write('{"graph":{"nodes":[],"edges":[')
+            for row in lookup.table_rows("graph_edges_hybrid"):
+                model = GraphEdge(**row)
+                model._lookup = lookup
+                for edge in model.edges:
+                    if edge_count:
+                        # Commas only separate JSON entries; no operational decision.
+                        stream.write(",")
+                    stream.write(json.dumps(_normalize_properties(asdict(edge))))
+                    edge_count += 1
+            stream.write("]}}\n")
+        temporary_file.replace(output_file)
+    except Exception:
+        # A write/model failure must not look like a successful empty graph.
+        logger.exception("Failed to write %s; conversion is incomplete", output_file)
+        raise
+    logger.info(
+        "Wrote %s (%d SQL-to-SCCM relationships, no source label)",
+        output_file,
+        edge_count,
+    )
 
 
 # Array properties whose element order carries meaning and must be preserved.
@@ -107,26 +150,22 @@ def emit_graph_from_duckdb(
     each table, the model is instantiated with the row dict, given access to the lookup, and
     its as_node / edges properties are called to produce OpenGraph content.
 
-    source_kind controls the writer: a string routes through core's opengraph_file, which
-    stamps {"metadata": {"source_kind": ...}}; None routes through opengraph_file_untagged,
-    which writes no metadata block at all (the AD payload, merged natively by BloodHound).
+    source_kind supplies metadata.source_kind for custom output. None omits the
+    metadata block so AD records retain their native ownership. Common owns the
+    file mechanics; this collector still owns every graph and routing rule.
 
-    resource_prefix names the two dlt resources (<prefix>_nodes / <prefix>_edges), which
-    become the output file basenames, and the dlt pipeline — so two passes into the same
-    output directory never collide.
+    resource_prefix names the output file sets (<prefix>_nodes / <prefix>_edges)
+    so the three passes into the same directory stay separate.
 
     Passing empty lists for both specs produces an empty but valid OpenGraph output.
     """
     out = Path(output_path)
-    # The opengraph_file destination opens files without creating the dir, and this runs
-    # before the framework would create output_path — so make it ourselves.
     out.mkdir(parents=True, exist_ok=True)
 
     # Default to empty specs so the pipeline always runs cleanly.
     node_specs = node_specs or []
     edge_specs = edge_specs or []
 
-    @dlt.resource(name=f"{resource_prefix}_nodes")
     def nodes():
         for table, model in node_specs:
             for row in lookup.table_rows(table):
@@ -135,7 +174,20 @@ def emit_graph_from_duckdb(
                 node = obj.as_node
                 if node is not None:
                     content = _normalize_properties(asdict(node))
-                    yield {"graph": {"entity_type": "node", "content": content}}
+                    # Keep the specific kind first; the broad kind lets BloodHound
+                    # group nodes by service. Native AD nodes need no added kind.
+                    for environment_kind in (nk.SCCM, nk.MSSQL):
+                        if any(
+                            kind.startswith(f"{environment_kind}_")
+                            for kind in node.kinds
+                        ):
+                            content["kinds"].append(environment_kind)
+                            logger.debug(
+                                "Node %s: added kind %s", node.id, environment_kind
+                            )
+                            break
+                        # A different kind is routine; leave its properties alone.
+                    yield content
                 else:
                     # as_node returns None for rows that can't be keyed (no SID, etc.).
                     # The model logs a warning internally; nothing to emit here.
@@ -145,16 +197,14 @@ def emit_graph_from_duckdb(
                         table,
                     )
 
-    @dlt.resource(name=f"{resource_prefix}_edges")
     def edges():
         for table, model in edge_specs:
             for row in lookup.table_rows(table):
                 obj = model(**row)
                 obj._lookup = lookup
-                # Edge content is a LIST: the destination does edges.extend(content).
                 parts = [_normalize_properties(asdict(e)) for e in obj.edges]
                 if parts:
-                    yield {"graph": {"entity_type": "edge", "content": parts}}
+                    yield from parts
                 else:
                     logger.debug(
                         "emit_graph_from_duckdb: %s row produced no edges (table=%r)",
@@ -162,19 +212,15 @@ def emit_graph_from_duckdb(
                         table,
                     )
 
-    destination = (
-        opengraph_file_untagged(output_path=str(out))
-        if source_kind is None
-        else opengraph_file(output_path=str(out), source_kind=source_kind)
-    )
-    pipeline = dlt.pipeline(
-        pipeline_name=f"sccm_convert_graph_{resource_prefix}",
-        dataset_name="sccm",
-        destination=destination,
-    )
-    pipeline.run([nodes(), edges()])
+    with GraphFileWriter(out, {resource_prefix: source_kind}) as writer:
+        for content in nodes():
+            writer.write_node(resource_prefix, content)
+        for content in edges():
+            writer.write_edge(resource_prefix, content)
     kind_label = source_kind if source_kind is not None else "<untagged AD payload>"
     logger.info(
-        "Convert2-Read-DB convert pipeline wrote OpenGraph files (prefix=%r, source_kind=%s) to %s",
-        resource_prefix, kind_label, out,
+        "Convert2-Read-DB wrote OpenGraph files (prefix=%r, source_kind=%s) to %s",
+        resource_prefix,
+        kind_label,
+        out,
     )

@@ -40,6 +40,18 @@ jobs:
       - run: >
           uv run pytest tests/extension_metadata_test.py
           tests/integration_wiring_test.py tests/convert_pipeline_test.py
+          tests/convert_split_output_test.py tests/graph_edges_split_test.py
+          tests/edge_mssql_structural_test.py
           tests/integration_fixtures_test.py tests/integration_privilege_test.py
           tests/integration_cli_flags_test.py tests/collect_exit_code_test.py
+          tests/privilege_zone_rules_test.py
+          tests/role_assignments_test.py tests/privileged_permissions_test.py
+          tests/privileged_test.py tests/wmi_client_test.py
+          tests/edge_rbac_role_grants_test.py tests/edge_all_permissions_test.py
+          tests/node_security_role_test.py tests/sccm_security_role_test.py
+          tests/graph_edges_dedup_test.py tests/graph_edges_coercion_cols_test.py
+          tests/site_entity_panel_test.py
+          tests/admin_user_entity_panel_test.py
+          tests/security_role_entity_panel_test.py
+          tests/collection_entity_panel_test.py tests/client_device_entity_panel_test.py
           tests/ab_matrix_test.py tests/smb_sso_test.py tests/regen_ticket_index_test.py -q

@@ -63,9 +63,10 @@ SCCM_COERCE_AND_RELAY_TO_ADMIN_SERVICE = "SCCM_CoerceAndRelayToAdminService"
 MSSQL_COERCE_AND_RELAY_TO_MSSQL = "MSSQL_CoerceAndRelayToMSSQL"
 SCCM_COERCE_AND_RELAY_TO_SMB = "SCCM_CoerceAndRelayToSMB"
 
-# CMBP traversable allow-list (ConfigManBearPig.ps1:2216-2249, uncommented entries only).
-# Edges whose kind is in this set get properties.traversable = True. Includes future
-# (Stage 3-6) kinds so later stages reuse this one source of truth.
+# Edge kinds BloodHound can follow in attack paths. This started with the original
+# PowerShell list and now includes the schema's role and stored-account paths.
+# Traversal describes potential access; it does not prove every execution or
+# credential-recovery prerequisite is currently satisfied.
 TRAVERSABLE_EDGE_KINDS = frozenset({
     "AdminTo", "SCCM_LocalAdminRequired",
     # Base BloodHound kinds (Task 11/12, Tier A+): control of the System
@@ -85,4 +86,10 @@ TRAVERSABLE_EDGE_KINDS = frozenset({
     "SCCM_AssignAllPermissions", "SCCM_Contains", "SCCM_FullAdministrator",
     "SCCM_HasADLastLogonUser", "SCCM_HasClient", "SCCM_HasCurrentUser",
     "SCCM_HasPrimaryUser", "SCCM_IsMappedTo",
+    # Role-only lab tests confirmed these execution routes. Application Author
+    # still needs an editable deployed application; Security Administrator can
+    # first delegate a role that permits execution. Stored-account recovery
+    # depends on the account type and access to its credential storage.
+    "SCCM_ApplicationAuthor", "SCCM_ComplianceSettingsManager", "SCCM_OSDManager",
+    "SCCM_OperationsAdministrator", "SCCM_SecurityAdministrator", "SCCM_HasStoredAccount",
 })

@@ -23,6 +23,7 @@ Questions? Reach out on the [BloodHound Slack](http://ghst.ly/BHSlack) (@Mayyhem
 - [Automating the Upload](#automating-the-upload)
   - [Schemas — PUT /api/v2/extensions](#schemas--put-apiv2extensions)
   - [Saved queries — openhound searches upload](#saved-queries--openhound-searches-upload)
+  - [Privilege-zone rules — openhound rules upload](#privilege-zone-rules--openhound-rules-upload)
   - [Graph payloads](#graph-payloads)
 - [Graph Model](#graph-model)
 - [Node Reference](#node-reference)
@@ -150,14 +151,15 @@ That writes everything into `.\out`:
 |---|---|
 | `sccm\<table>\*.jsonl` | The raw collected tables, one directory per table |
 | `lookup.duckdb` | The DuckDB lookup database `convert` reads |
-| `graph\sccm_nodes-*.json`, `graph\sccm_edges-*.json` | **SCCM payload** — every `SCCM_*` node, and every edge with at least one SCCM endpoint (including SCCM↔MSSQL) |
+| `graph\sccm_nodes-*.json`, `graph\sccm_edges-*.json` | **SCCM payload** — every `SCCM_*` node and connections between SCCM objects |
 | `graph\mssql_nodes-*.json`, `graph\mssql_edges-*.json` | **MSSQL payload** — every `MSSQL_*` node, and every edge whose endpoints are **both** MSSQL nodes |
 | `graph\ad_nodes-*.json`, `graph\ad_edges-*.json` | **AD payload** — `Computer` / `User` / `Group` / `Container` nodes and every edge touching one (including AD↔MSSQL) |
+| `graph\hybrid_edges.json` | Connections between SQL and SCCM objects, such as a site database controlling its site; no product source label |
 | `graph\configmanbearpig_collection_<timestamp>.zip` | **Bundle** — every graph `.json` above, flat-zipped for one-shot upload (written by `--run-all` only) |
 | `collect_full_<timestamp>.log` | The complete DEBUG trace, grouped host-by-host and resource-by-resource |
 | `collect_issues_<timestamp>.log` | Warnings and errors with tracebacks — absent from a clean run |
 
-Upload **all three** payloads together; they are three parts of one graph — or upload the single
+Upload **all four** file sets together; they are parts of one graph — or upload the single
 `configmanbearpig_collection_<timestamp>.zip` bundle in their place, which contains the same files
 flat-zipped for one-shot upload. `--run-all` prints that bundle's full path as the **last line** of
 the run, so you can copy it straight out of the terminal:
@@ -199,21 +201,31 @@ nodes unstyled and missing from the search and pathfinding menus.
 uploading only the SCCM one leaves those unrenderable. Upload both under **Administration → OpenGraph
 Management → Upload File** ([docs](https://bloodhound.specterops.io/opengraph/schema)).
 
-Download them straight from this repository — [schema_SCCM.json](src/openhound_sccm/schema_SCCM.json) and
-[schema_MSSQL.json](src/openhound_sccm/schema_MSSQL.json) — or take them from the copy that shipped with
+Download them straight from this repository — [schema_SCCM.json](extension/schema_SCCM.json) and
+[schema_MSSQL.json](extension/schema_MSSQL.json) — or take them from the copy that shipped with
 your install, which is the one guaranteed to match the version you are running:
 
 ```powershell
-# From a checkout: the files are in src\openhound_sccm\
+# From a checkout: ready-to-upload copies are in extension\
 # From an installed copy: ask the interpreter that has the package where it lives
 uv run python -c "import openhound_sccm, pathlib; print(pathlib.Path(openhound_sccm.__file__).parent)"
 ```
 
-**2. Ingest the graph.** Drag the contents of `.\out\graph` into **File Ingest** (or zip it first — it
-accepts `.zip` as well as loose `.json`). Upload **both** payloads together: the `sccm_*` files carry the
-SCCM and MSSQL kinds, and the `ad_*` files carry the AD nodes those attach to.
+The packaged originals remain in `src/openhound_sccm/`. After editing either
+original, refresh its copy in `extension/` so the download matches the collector.
 
-**3. Load the saved queries.** [cypher_queries/](cypher_queries/) holds 24 ready-made queries for this
+The SCCM schema supplies readable names and descriptions for five node types and
+descriptions for 23 relationship types. To apply updated wording to an existing
+graph, upload the updated `schema_SCCM.json`; collecting or converting the graph
+again is not required. These type names do not rename individual objects such as
+`PS1`. See the [schema display text change notes](docs/sccm-schema-display-text.md)
+for verification instructions.
+
+**2. Ingest the graph.** Drag the contents of `.\out\graph` into **File Ingest** (or zip it first — it
+accepts `.zip` as well as loose `.json`). Upload the `sccm_*`, `mssql_*`, and `ad_*` files
+and `hybrid_edges.json` together. They describe the objects and connections in one graph.
+
+**3. Load the saved queries.** [extension/saved_searches/](extension/saved_searches/) holds 24 ready-made queries for this
 graph — the `TAKEOVER`/`CRED`/`ELEVATE` attack chains, SCCM admin and infrastructure inventories, and the
 site-database-service-account path. Drag the JSON files (or a zip of them) onto **Saved Queries**;
 BloodHound validates each one and reports any it rejects.
@@ -456,7 +468,7 @@ zero domain credentials presented anywhere in the run.
 - **The synthetic Authenticated Users node carries no membership.** It is seeded so the coerce-and-relay edges have a traversable start, but no `MemberOf` edges point into it — enumerating a domain's principals is an AD collection's job. Paths *from* Authenticated Users onward work standalone; paths *into* it from an arbitrary user require a SharpHound collection ingested alongside. `Everyone` and `Domain Computers` are deliberately not seeded at all. See [Seed principals](#seed-principals-what-this-collector-creates-vs-what-it-expects-from-ad-collection).
 - **MSSQL logins, database users, and roles are inferred from SCCM topology, not enumerated from SQL.** The `MSSQL_Login` and `MSSQL_DatabaseUser` nodes (and the `sysadmin` / `db_owner` role nodes) are built from SCCM's knowledge of which computers are Primary Site Servers or SMS Providers for a given site — the same inference CMBP makes. No live SQL connection is opened during `preprocess` or `convert`; the collector's MSSQL phase only probes EPA. This means logins/users/roles are only created for SCCM-linked SQL servers, and only for the machine accounts SCCM architecturally grants `sysadmin` access.
 - **Non-SCCM SQL servers appear as bare `MSSQL_Server` nodes.** SQL servers discovered by the EPA scan or RemoteRegistry that are not referenced by any SCCM site produce an `MSSQL_Server` node (with `MSSQL_HostFor` / `MSSQL_ExecuteOnHost` edges) but no `MSSQL_Database`, `MSSQL_Login`, or role nodes — CMBP likewise skips these and the collector follows suit.
-- **MSSQL nodes and MSSQL-only edges get their own `source_kind`.** The six MSSQL node kinds are written to `mssql_nodes-*.json` / `mssql_edges-*.json` (tagged `source_kind = "MSSQL"`, matching `schema_MSSQL.json`), together with every edge whose endpoints are **both** MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). Edges that touch an AD node — `MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, `MSSQL_GetAdminTGS`, and `MSSQL_CoerceAndRelayToMSSQL` — stay in `ad_edges-*.json`; the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) stays in `sccm_edges-*.json`. Upload all three file sets together.
+- **MSSQL nodes and MSSQL-only edges get their own `source_kind`.** The six MSSQL node kinds are written to `mssql_nodes-*.json` / `mssql_edges-*.json` (tagged `source_kind = "MSSQL"`, matching `schema_MSSQL.json`), together with every edge whose endpoints are **both** MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). Edges that touch an AD node — `MSSQL_HostFor`, `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`, `MSSQL_GetAdminTGS`, and `MSSQL_CoerceAndRelayToMSSQL` — stay in `ad_edges-*.json`; the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) goes to untagged `hybrid_edges.json`. Upload that file together with the SCCM, SQL, and AD file sets.
 - **Some node properties are deferred to later collectors or stages.** The following properties appear in ConfigManBearPig but are not yet emitted because the required collector does not exist or the data is coupled to a later pipeline stage:
   - **DHCP/PXE fields on `Computer`** (`pxe_vendor_class`, `pxe_next_server`, `pxe_boot_file`, `tftp_reachable`, `is_dhcp_server`) — blocked on a DHCP/PXE collector (gtk tickets `Ope-o6bh` / `Ope-gqwo`). The collector can detect *whether* a host is PXE-enabled (SMB `REMINST` share → `SCCMIsPXESupportEnabled`) but not the DHCP/PXE configuration parameters.
   - **NAA flag on `User`** (`is_sccm_network_access_account`) — requires NAA secret decryption (`--enable-bad-opsec`) and a dedicated NAA collector, neither of which is implemented yet.
@@ -512,7 +524,14 @@ The **WMI fallback** ([clients/wmi.py](src/openhound_sccm/clients/wmi.py)) reuse
 
 The **SMB-based phases** — RemoteRegistry ([collectors/registry.py](src/openhound_sccm/collectors/registry.py)) and SMB ([collectors/smb.py](src/openhound_sccm/collectors/smb.py)) — authenticate through the shared `connect_smb` ([clients/smb_sso.py](src/openhound_sccm/clients/smb_sso.py)), which honors the same credential set over SMB: **pass-the-ticket** (`kerberosLogin` with the supplied TGT), **pass-the-hash** (`--nt-hash`), explicit **password** NTLM, current-user **SSPI** Negotiate, then an anonymous **null session**. SMB's signing-required check is unauthenticated (negotiate-only) and so works regardless of the credential method.
 
-The **LDAP discovery phase** ([clients/ad.py](src/openhound_sccm/clients/ad.py)) honors the same credential set over `ldap3` through the shared lockout-safe waterfall: **pass-the-ticket** (GSSAPI bind via a private ccache) → **pass-the-hash** (`--nt-hash`, ldap3 `LM:NT` NTLM bind) → explicit **password** NTLM → integrated **Kerberos** / current-user **SSPI** → anonymous, each auto-detecting the transport (LDAPS:636 → StartTLS:389 → LDAP:389 sign-and-seal). Only genuine bad-credential result-49 subcodes halt the waterfall, so transport fallbacks never increment `badPwdCount`.
+The **LDAP discovery phase** ([clients/ad.py](src/openhound_sccm/clients/ad.py)) honors the same credential set over `ldap3` through the shared lockout-safe waterfall: **pass-the-ticket** (connection-local Kerberos through the shared client) → **pass-the-hash** (`--nt-hash`, ldap3 `LM:NT` NTLM bind) → explicit **password** NTLM → integrated **Kerberos** / current-user **SSPI** → anonymous, each auto-detecting the transport (LDAPS:636 → StartTLS:389 → LDAP:389 sign-and-seal). Only genuine bad-credential result-49 subcodes halt the waterfall, so transport fallbacks never increment `badPwdCount`.
+
+Supplied LDAP tickets are used directly on their connection, without changing
+`KRB5CCNAME` or an OS ticket cache. Use a registered DC hostname, such as
+`--dc dc.mayyhem.com`, when pass-the-ticket collection cannot reverse-resolve
+a DC supplied by IP. SCCM does not add cache/keytab file flags in this change.
+The [owned-WMI recommendation](docs/proposals/2026-10-26-owned-wmi-worker.md)
+requires separate review; the current SCCM WMI default remains in-process.
 
 ```bash
 # Passwordless, as the current domain user (domain-joined collector):
@@ -599,6 +618,11 @@ you want to diff a fresh collection against. Without the flag, `collect` still w
 package count and the oldest package's date) rather than staying silent — but it does not stop or clean
 up anything for you. If `--clean` can't remove something (e.g. `lookup.duckdb` open in another tool), it
 aborts rather than collecting onto stale data.
+
+The shared cleanup helper checks every resolved artifact path before removing
+anything. A junction or link that redirects a listed artifact outside the named
+output directory is rejected. SCCM still supplies the same three artifact names
+and retains its existing warning and cleanup-failure behavior.
 
 ```powershell
 # Discard whatever was in .\out before this run
@@ -878,11 +902,11 @@ your version: https://bloodhound.specterops.io/opengraph/schema
 
 ## Saved queries — `openhound searches upload`
 
-The files in [cypher_queries/](cypher_queries/) are already in BloodHound's saved-query format, so the
+The files in [extension/saved_searches/](extension/saved_searches/) are already in BloodHound's saved-query format, so the
 `openhound` CLI uploads the whole directory:
 
 ```powershell
-uv run openhound searches upload .\cypher_queries
+uv run openhound searches upload .\extension\saved_searches
 ```
 
 It reads the target instance from your dlt secrets, `~/.dlt/secrets.toml`:
@@ -897,6 +921,49 @@ A query whose name already exists is **skipped** by default; pass `--strategy ov
 That default is what makes the command safe to re-run — it will not duplicate the library on a second
 invocation.
 
+The **SCCM Site Database Service Account to Client Device** search is an example.
+Before running it, replace `'PS1-DEV'` in its query with the computer name you want
+to investigate. The filter matches names containing that text. The query starts
+at user accounts and follows selected SQL/SCCM relationships; review the returned
+path to determine which account and permissions provide the access.
+
+## Privilege-zone rules — `openhound rules upload`
+
+[extension/privilege_zone_rules/](extension/privilege_zone_rules/) contains one
+Tier Zero policy in the same JSON format used by openhound-github. Three rules
+are enabled by default: all CAS/primary sites, their control infrastructure,
+and matching SCCM client/AD computer representations when either is already T0.
+Hierarchy protection does not require a known Tier Zero client. A fourth rule
+selects only SCCM administrator records with a supported built-in device-control
+role and All Systems; it is **disabled by default** so administrator access can
+remain a finding source. It neither classifies mapped AD identities nor inherits
+their Tier Zero labels. Custom roles remain outside this policy.
+Each query includes plain-English `//` comments explaining its checks and role
+IDs. See [reading the query comments](extension/README.md#reading-the-query-comments)
+to display the JSON query as readable lines before uploading it.
+
+The current OpenHound uploader ignores the JSON `enabled` flag. Until the
+[proposed OpenHound fix](docs/openhound-disabled-rules-proposal.md) is approved
+and implemented, upload only the three enabled files:
+
+```powershell
+Set-Location C:\Users\domainadmin\ConfigManBearPig
+$enabledRules = Join-Path $env:TEMP ('cmbp-pz-enabled-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $enabledRules | Out-Null
+Get-ChildItem .\extension\privilege_zone_rules\*.json |
+    Where-Object { (Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json).enabled } |
+    Copy-Item -Destination $enabledRules
+uv run openhound rules upload $enabledRules --strategy overwrite
+```
+
+Use the same BloodHound secrets configured above. This uploads selectors; apply
+them through BloodHound analysis. The rules are separate repository assets and
+are not automatically installed by running the collector. See
+[extension/README.md](extension/README.md) for the file list, removal of previously
+installed selectors, previews, assumptions, and verification instructions. The
+[sample validation report](docs/privilege-zone-sample-validation.md) distinguishes
+the earlier seven-rule live results from checks of this revised four-rule policy.
+
 ## Graph payloads
 
 The payloads themselves go through BloodHound's file-upload job API — create a job, upload each file to
@@ -908,6 +975,25 @@ Remember to send both the `sccm_*` and `ad_*` files.
 ---
 
 # Graph Model
+
+**Environment scope.** In the ingest files, each SCCM node keeps its specific kind
+first and adds `SCCM` (for example, `["SCCM_Site", "SCCM"]`). Its `environmentid`
+continues to identify the hierarchy's root `SCCM_Site`, such as `CAS`, rather than
+its individual site. MSSQL nodes add `MSSQL` after their specific kind and use the
+SQL host's AD domain SID as `environmentid`. The MSSQL schema selects `MSSQL_Server` as
+its `environment_kind`. This schema setting does not change the domain SID stored
+on nodes; server-based grouping is not established by this change alone. Native AD
+nodes are unchanged. `environment_kind` belongs to the schema, not node properties.
+
+For example, this BloodHound query finds SQL nodes in a domain (replace the SID
+with the actual domain SID):
+
+```cypher
+MATCH (n:MSSQL {environmentid: 'S-1-5-21-111-222-333'}) RETURN n
+```
+
+See [the environment-scope change record](docs/changes/2026-10-22-environment-scope.md)
+for the design, checks, and manual verification instructions.
 
 The collector follows OpenHound's standard three-phase pipeline:
 
@@ -929,15 +1015,28 @@ The synthetic *Authenticated Users* node added by graph-pipeline Stage 6 — the
 
 **Convert-time enrichment.** Nodes are built from coalesced DuckDB tables (`node_computer`, `node_user`, `node_group`, `node_site`) computed by `preprocess`. Each table unions multiple raw collected sources (AdminService, WMI, LDAP, RemoteRegistry, SMB, HTTP) into one row per identity, so a node's richness grows as more collection phases come online, without changing the model.
 
-**Three output payloads.** `convert` writes the graph as **three file sets** into the same output directory:
+**Four output file sets.** `convert` writes the following into the same output directory:
 
 | Files | `metadata.source_kind` | Contents |
 |---|---|---|
-| `sccm_nodes-*.json`, `sccm_edges-*.json` | `"SCCM"` | SCCM-specific nodes (`SCCM_Site`, `SCCM_Collection`, `SCCM_AdminUser`, `SCCM_SecurityRole`, `SCCM_ClientDevice`) and edges where **at least one** endpoint is an SCCM node. |
+| `sccm_nodes-*.json`, `sccm_edges-*.json` | `"SCCM"` | SCCM-specific nodes (`SCCM_Site`, `SCCM_Collection`, `SCCM_AdminUser`, `SCCM_SecurityRole`, `SCCM_ClientDevice`) and connections between SCCM objects. |
 | `mssql_nodes-*.json`, `mssql_edges-*.json` | `"MSSQL"` | MSSQL nodes (`MSSQL_Server`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`) and edges where **both** endpoints are MSSQL nodes (`MSSQL_Contains`, `MSSQL_ControlServer`, `MSSQL_ControlDB`, `MSSQL_MemberOf`, `MSSQL_IsMappedTo`). |
 | `ad_nodes-*.json`, `ad_edges-*.json` | *(none — no `metadata` block)* | AD-native nodes (`Computer`, `User`, `Group`, `Container`, and backfill stubs) and every edge where **either** endpoint is an AD node (AD↔AD, AD↔SCCM, and AD↔MSSQL). |
+| `hybrid_edges.json` | *(none — no `metadata` block)* | Connections between SQL and SCCM objects, in either direction. For example, `SCCM_AssignAllPermissions` from a site database to its SCCM site. Contains no nodes. |
 
-The AD payload deliberately carries **no `source_kind`** so BloodHound merges those nodes into its **native AD graph** by SID — augmenting existing SharpHound data rather than registering a separate SCCM-owned copy. The MSSQL payload carries its own `source_kind="MSSQL"` so re-ingesting or deleting the SCCM source never touches SQL topology, even though this collector emits it — the separate MSSQL OpenGraph schema (`schema_MSSQL.json`) owns it. An AD↔SCCM or AD↔MSSQL edge lives in the AD payload but references an `SCCM_*` or `MSSQL_*` node defined in a different payload; BloodHound resolves the reference by id across all ingested files, so **upload all three** file sets (the whole output directory) to File Ingest.
+The AD payload deliberately carries **no `source_kind`** so BloodHound merges those nodes into its **native AD graph** by SID — augmenting existing SharpHound data rather than registering a separate SCCM-owned copy. The MSSQL payload carries its own `source_kind="MSSQL"` so re-ingesting or deleting the SCCM source never touches SQL topology, even though this collector emits it — the separate MSSQL OpenGraph schema (`schema_MSSQL.json`) owns it. Connections spanning SQL and SCCM use the separate untagged `hybrid_edges.json`. BloodHound resolves references by id across the ingested files, so **upload all four** file sets to File Ingest.
+
+The numbered file sets use the shared library's local graph writer. It writes
+bounded batches, preserves the labels and evidence above, and stages complete
+files before publishing them. It no longer starts another DLT pipeline during
+conversion. Collection and graph rules remain in this collector.
+
+`hybrid_edges.json` is always written, even when its relationship list is empty.
+Running conversion again replaces that file rather than adding numbered copies.
+`--run-all` includes it in the collection ZIP. For an older saved collection,
+rerun **both preprocessing and conversion** to produce the new separation; the
+original collection does not need to run again. Use a fresh graph output directory
+so older `sccm_edges-*.json` files are not uploaded alongside the revised files.
 
 ### Pipeline
 
@@ -966,9 +1065,11 @@ flowchart LR
     V --> O1["sccm_nodes/edges-*.json<br/>source_kind = SCCM"]
     V --> O3["mssql_nodes/edges-*.json<br/>source_kind = MSSQL"]
     V --> O2["ad_nodes/edges-*.json<br/>untagged — merges into AD graph"]
+    V --> O4["hybrid_edges.json<br/>SQL-to-SCCM connections, untagged"]
     O1 --> BH["BloodHound File Ingest"]
     O3 --> BH
     O2 --> BH
+    O4 --> BH
 ```
 
 ### Graph model — clustered overview
@@ -1095,6 +1196,18 @@ flowchart LR
 All AD-native nodes (`Computer`, `User`, `Group`) use the **AD SID** as the node id and the **AD domain SID** (`S-1-5-21-X-Y-Z`) as `environmentid`. Builtin or well-known SIDs that have no domain part are qualified with a co-occurring domain SID where available; nodes that cannot be placed in a domain environment are dropped and logged. `Container` is also AD-native but is keyed by `objectGUID` rather than a SID (it has none) — see its own section below. Property keys use ConfigManBearPig's original casing (camelCase/PascalCase), not snake_case — see [graph.py](src/openhound_sccm/graph.py).
 
 The icon under each heading is the glyph BloodHound renders that kind with. For the `SCCM_*` and `MSSQL_*` kinds it comes from this collector's hand-maintained [schema_SCCM.json](src/openhound_sccm/schema_SCCM.json) / [schema_MSSQL.json](src/openhound_sccm/schema_MSSQL.json) — change an `icon` or `color` there and update the image here in the same commit. The four AD-native kinds use BloodHound's own built-in base-kind icons, which this collector does not define.
+
+The SCCM schema defines the following type display names and descriptions. These
+are separate from each individual node's `name`, `displayname`, or `displayName`
+properties and from the kind names used in saved queries.
+
+| Kind | Type display name | Description |
+|---|---|---|
+| `SCCM_AdminUser` | SCCM Administrative User | An SCCM administrative record for an Active Directory user or group. Its assigned security roles and collections determine what it can manage. |
+| `SCCM_ClientDevice` | SCCM Client Device | A device confirmed or inferred to be managed by SCCM, with its site, collection memberships, and associated users. |
+| `SCCM_Collection` | SCCM Collection | A group of devices or users used to organize SCCM management, target deployments, and define administrative access. |
+| `SCCM_SecurityRole` | SCCM Security Role | A built-in or custom set of SCCM administrative permissions. Assigned roles define which actions an administrative user can perform against assigned collections and security scopes. |
+| `SCCM_Site` | SCCM Site | A central administration, primary, or secondary site within an SCCM hierarchy, with its associated servers, database, and management configuration. |
 
 ## AD node naming
 
@@ -1298,7 +1411,42 @@ An SCCM RBAC administrator — an AD user or group that has been granted SCCM ad
 - **Node id:** `<UPPER_LOGON_NAME>@<root_site_code>` (e.g. `MAYYHEM\SCCMADMIN@PS1`).
 - **`environmentid`:** the hierarchy root site code.
 - **Kinds:** `["SCCM_AdminUser"]`.
-- **`name` / `displayname`:** the logon name / display name from the SCCM admin record.
+- **`name` / `displayName`:** the logon name / display name from the SCCM admin record. This node emits only the camelCase `displayName` key; the lowercase `displayname` key is omitted.
+
+**Administrator entity panel.** Register the current
+[SCCM schema](extension/schema_SCCM.json) through **Administration > OpenGraph
+Management > Upload File**, then reopen the administrator in Explore. After the
+built-in Object Information, the panel has these four accordions:
+
+| Section | Link and result |
+|---|---|
+| Security Roles | One link per saved role node ID in `memberOf` (Member Of), selecting that `SCCM_SecurityRole`. |
+| Collections | One link per saved collection node ID in `collectionIds` (Collection IDs), selecting that `SCCM_Collection`. |
+| Inbound Object Control | **Show incoming control paths** displays one-hop traversable paths ending at this administrator. |
+| Outbound Object Control | **Show outgoing control paths** displays one-hop traversable paths starting at this administrator. |
+
+Security Roles and Collections use their existing arrays, with one plain link
+per saved ID. The full ID is the link label, including its hierarchy suffix.
+Duplicates and blank entries are omitted, and links are sorted by ID. These
+sections do not query assignment relationships or use the raw `roleIDs` property.
+Role and collection names appear on the selected objects after a click; those
+names are not stored in the administrator's arrays. Control sections retain one
+plain query link each. There are no tables or repeated inner headings.
+
+No new properties, labels, identifiers, graph ingestion, or collection are
+required. There is no Related Objects section. Object Information retains the
+saved SID, source site, creator, modifier, and dates as ordinary properties.
+Empty or missing arrays leave their section blank. An ID whose target is absent
+from the graph still produces a link, with an empty result when clicked. BloodHound's
+accordion padding and paragraph margins remain a documented display limitation.
+
+For the existing mayyhem.com graph, select `MAYYHEM\DOMAINADMIN@CAS`. Under
+Security Roles, `SMS0001R@CAS` links to Full Administrator. Under Collections,
+`SMS00001@CAS` links to All Systems and `SMS00004@CAS` links to All Users and
+User Groups. The control
+links include the administrator, its direct neighbor, and their relationship;
+they do not follow longer paths. See the
+[administrator panel design and verification notes](docs/sccm-admin-user-entity-panel.md).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1317,7 +1465,7 @@ An SCCM RBAC administrator — an AD user or group that has been granted SCCM ad
 | `lastModifiedDate` | string | Timestamp of the last modification to this admin entry. |
 | `collectionIds` | list\<string\> | Collection node IDs (`COLLECTION_ID@SITE`) this admin is assigned to (resolved via collection name). |
 | `roleIDs` | list\<string\> | Raw security role IDs assigned to this admin (e.g. `SMS0001R`). |
-| `memberOf` | list\<string\> | Node IDs of the collections this admin is scoped to (derived from `SCCM_IsAssigned` edges). |
+| `memberOf` | list\<string\> | Resolved security-role node IDs from the saved assignments. Collection node IDs are stored in `collectionIds`. |
 | `SCCMInfra` | bool | Always `true` for an admin-user. |
 
 ## SCCM_ClientDevice
@@ -1330,6 +1478,29 @@ An SCCM-managed client device, sourced from the AdminService or WMI `SMS_R_Syste
 - **`environmentid`:** the hierarchy root site code.
 - **Kinds:** `["SCCM_ClientDevice"]`.
 - **`name` / `displayname`:** the device name qualified with site code (e.g. `WORKSTATION1@PS1`).
+
+**Client Device entity panel.** After uploading the current
+[SCCM schema](extension/schema_SCCM.json), reopen a client in Explore. Object
+Information is followed by these sections:
+
+| Section | Contents |
+|---|---|
+| Member of Collections | A one-column table without an inner heading, with individual links from the client's `collectionIds` array. |
+| Inbound Object Control | One plain link showing one-hop control paths ending at this client. |
+| Outbound Object Control | One plain link showing one-hop control paths starting at this client. |
+
+Collection links use the full saved ID as their label and select the exact
+`SCCM_Collection` object. `collectionNames` is an independently sorted list, so
+its positions cannot safely be paired with the IDs. Duplicate and blank entries
+are omitted. Empty arrays leave the section blank. Control results include
+the client, each direct neighbor, and their relationship; longer paths are excluded.
+
+For `PS1-MP@PS1` in the retained mayyhem.com graph, Member of Collections lists
+`SMS00001@CAS` (All Systems) and `SMSDM003@CAS` (All Desktop and Server Clients).
+The existing Azure, computer, site, user, and management-point properties stay
+under Object Information as ordinary values. There is no Related Objects section
+or graph-data change. See the
+[Collection and Client Device panel notes](docs/sccm-collection-client-panels.md).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1357,7 +1528,7 @@ An SCCM-managed client device, sourced from the AdminService or WMI `SMS_R_Syste
 | `currentLogonUserSID` | string | AD SID of the currently logged-on user (resolved from `currentLogonUser`). |
 | `ADLastLogonUserSID` | string | AD SID of the last AD-authenticated user (resolved from `user_name`). |
 | `lastReportedMPServerSID` | string | AD SID of the management point host last reported by this client (resolved from `last_mp_server_name`). |
-| `collectionIds` | list\<string\> | Raw collection IDs this device belongs to (e.g. `SMS00001`). |
+| `collectionIds` | list\<string\> | Full collection node IDs this device belongs to (e.g. `SMS00001@CAS`). |
 | `collectionNames` | list\<string\> | Display names of the collections this device belongs to. |
 | `lastActiveTime` | string | Timestamp of the device's last active check-in (`LastActiveTime`). |
 | `lastOnlineTime` | string | Timestamp the device was last seen online (`CNLastOnlineTime`). |
@@ -1388,7 +1559,36 @@ An SCCM collection — a named set of devices or users used to scope deployments
 - **Node id:** `<COLLECTION_ID>@<root_site_code>` (e.g. `SMS00001@PS1`).
 - **`environmentid`:** the hierarchy root site code.
 - **Kinds:** `["SCCM_Collection"]`.
-- **`name` / `displayname`:** the collection name qualified with root site code.
+- **`name` / `displayname`:** the collection name / collection name qualified with root site code.
+
+**Collection entity panel.** Upload the current
+[SCCM schema](extension/schema_SCCM.json), then reopen a collection in Explore.
+Object Information is followed by these sections:
+
+| Section | Contents |
+|---|---|
+| Members | A one-column table without an inner heading, with a link per saved `ResourceID@SiteCode` key in `members`. |
+| Collection Assignments | A two-column table with Explore links to assigned SCCM administrators and their AD identities. |
+
+A member link matches a client's `resourceID`, or a User/Group's existing
+`SCCMResourceIDs` array. These are resource keys rather than object IDs. Every
+matching object is returned; unresolved saved keys remain visible with an empty
+result when clicked. Blank and duplicate keys are omitted.
+
+The collection's `members` array lists devices/users, not administrators assigned
+to manage it. Collections do not store an administrator list. Collection
+Assignments therefore
+contains one query-link row: **Show assigned administrators** finds SCCM
+administrators whose `collectionIds` contains this collection's full object ID;
+**Show AD identities** selects their existing `Base` objects by `adminSid`.
+Individual administrator names appear in Explore after a click.
+
+For `SMSDM003@CAS` in the retained graph, member `16777224@PS1` selects the
+`PS1-MP@PS1` client. On All Systems (`SMS00001@CAS`), the assignment links select
+`MAYYHEM\DOMAINADMIN@CAS` and its AD identity. Empty arrays leave their section
+blank; BloodHound still shows the accordion. Site and limiting-collection values
+remain ordinary Object Information properties. No graph upload or collection is
+needed. See the [design and verification notes](docs/sccm-collection-client-panels.md).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1417,7 +1617,37 @@ An SCCM RBAC security role — defines the set of operations an admin is permitt
 - **Node id:** `<UPPER_ROLE_ID>@<root_site_code>` (e.g. `SMS000AR@PS1`).
 - **`environmentid`:** the hierarchy root site code.
 - **Kinds:** `["SCCM_SecurityRole"]`.
-- **`name` / `displayname`:** the role name qualified with root site code.
+- **`name` / `displayname`:** the role name / role name qualified with root site code.
+
+**Security Role entity panel.** Upload the current
+[SCCM schema](extension/schema_SCCM.json) through **Administration > OpenGraph
+Management > Upload File**, then reopen a role in Explore. Object Information
+keeps its ordinary property table. One additional accordion follows:
+
+| Section | Contents |
+|---|---|
+| Role Assignments | A two-column table: **SCCM Administrator** and **AD Identity**, with one row per ID in the existing `members` array. |
+
+The administrator's full saved ID is the first link's label. **AD identity**
+looks up that administrator's `adminSid` and selects the matching `Base` object,
+which can be a User or Group. The SID lookup runs only when clicked, so the role
+does not need new properties. Blank and duplicate members are omitted, and the
+remaining rows are sorted by their saved IDs. A missing target or SID gives an
+empty result; the template cannot check whether the target exists before a click.
+
+Empty or missing member arrays leave the section blank, without an orphan table
+header. BloodHound still shows the accordion. The saved `roleDescription` remains
+under Object Information; the redundant Description accordion is removed.
+Existing accordion spacing remains a display limitation. There is no
+Related Objects section, and Object Information's site and audit fields remain
+ordinary properties. No graph data, object labels, or identifiers change.
+
+For the retained mayyhem.com graph, select Full Administrator (`SMS0001R@CAS`).
+Object Information shows its saved permission summary. Role Assignments lists
+`MAYYHEM\DOMAINADMIN@CAS`; its first link selects the SCCM administrative record,
+and **AD identity** selects `DOMAINADMIN@MAYYHEM.COM`. Uploading the schema is
+sufficient; no collection, conversion, or graph ingestion is needed. See the
+[Security Role panel design and verification notes](docs/sccm-security-role-entity-panel.md).
 
 | Property | Type | Description |
 |---|---|---|
@@ -1429,14 +1659,14 @@ An SCCM RBAC security role — defines the set of operations an admin is permitt
 | `isSecAdminRole` | bool | `true` if this role grants Security Administrator privileges. |
 | `copiedFromID` | string | Role ID this was cloned from (custom roles only). |
 | `numberOfAdmins` | int | Number of admins assigned to this role. |
-| `operations` | list\<string\> | List of SCCM operation strings granted by this role. |
+| `operations` | list\<string\> | Original role-action records stored as JSON strings. Each contains SCCM's `ObjectTypeID` and `GrantedOperations` values. These define the role's actions; the administrator's collections and scopes live on their assignment edge. |
 | `rootSiteCode` | string | Hierarchy root site code for this role's site hierarchy. |
 | `siteCode` | string | Site code of the site that owns this role (from `SMS_Role.SourceSite`). |
 | `createdBy` | string | Logon name of the account that created this role. |
 | `createdDate` | string | Timestamp when this role was created. |
 | `lastModifiedBy` | string | Logon name of the account that last modified this role. |
 | `lastModifiedDate` | string | Timestamp of the last modification to this role. |
-| `members` | list\<string\> | Node IDs of the admin users assigned to this role (derived from `SCCM_IsMappedTo` edges). |
+| `members` | list\<string\> | Full administrator node IDs from the collected role assignments, such as `MAYYHEM\DOMAINADMIN@CAS`. |
 | `SCCMInfra` | bool | Always `true` for a security role. |
 
 ## SCCM_Site
@@ -1449,6 +1679,47 @@ A Configuration Manager **site**, coalesced from AdminService/WMI site tables, s
 - **`environmentid`:** the hierarchy root site code (e.g. `CAS`); falls back to the site's own code for standalone deployments with no CAS.
 - **Kinds:** `["SCCM_Site"]`.
 - **`name` / `displayname`:** the human-readable site name, or the site code when no name is available.
+
+**Site entity panel.** After registering the current SCCM schema, selecting a site
+in Explore shows the built-in **Object Information** followed by these sections:
+
+| Section | Contents |
+|---|---|
+| Administrative Users | One linked account per entry in the Site's existing `adminUsers` array. |
+| Site System Roles | One linked computer per hostname in the Site's existing `siteSystemRoles` array. `SMS Site System` and `SMS Component Server` alone do not qualify a computer. |
+| Inbound Object Control | A plain link to one-hop control paths ending at this site. |
+| Outbound Object Control | A plain link to one-hop control paths starting at this site. |
+
+Administrative Users and Site System Roles contain individual object links,
+one per line, without inner headings or table borders. Links are sorted by the
+labels from the saved arrays.
+Templates emit no blank lines before the first link. BloodHound still adds its
+own accordion padding and paragraph margins; the schema cannot remove that
+visible gap while keeping these plain links.
+Administrator labels show the saved account name; system labels show the saved
+hostname. Repeated administrator IDs and repeated qualifying roles on the same
+computer produce one link. Clicking a link queries that administrator's exact node
+ID or that computer's hostname and shows the corresponding object in Explore.
+
+Inbound and Outbound Object Control contain only a plain link, with no table.
+Their queries return the Site, the neighboring object, and the relationship
+connecting them. They stop at one hop and retain different relationships between
+the same objects. Inferred relationships are included when their kind belongs
+to the collector's traversable set. No new node properties are required.
+
+Upload [extension/schema_SCCM.json](extension/schema_SCCM.json) through
+**Administration → OpenGraph Management → Upload File**, then reopen the Site
+panel. Existing graph data works without collecting, preprocessing, converting,
+or ingesting it again. Empty administrator or role arrays leave their section
+empty; secondary Sites have an empty `siteSystemRoles` array in existing output.
+Control links remain available even when their queries have no matching paths.
+Object Information already lists the Site properties, so Site Details is absent.
+
+For the mayyhem.com graph, select `PS1`, expand **Inbound Object Control**, and
+click **Show incoming control paths**. The results should include collected SMS
+Provider computers and `CM_PS1`, with their relationships to `PS1` visible. See the
+[Site panel implementation and verification notes](docs/sccm-site-entity-panel.md)
+for matching rules, the template limitation, and checks.
 
 | Property | Type | Description |
 |---|---|---|
@@ -1642,11 +1913,21 @@ The fixed `sysadmin` server role on an SCCM-linked SQL Server. One node per SCCM
 
 Edges are emitted from the `graph_edges` preproc table by the generic [`GraphEdge`](src/openhound_sccm/models/graph_edge.py) model. Every edge carries these standard properties:
 
-- **`traversable`** — set from the CMBP traversable allow-list (`TRAVERSABLE_EDGE_KINDS` in [kinds/edges.py](src/openhound_sccm/kinds/edges.py), transcribed from CMBP `ps1:2216-2249`). Only traversable edges are followed by BloodHound's attack-path engine.
+- **`traversable`** — set from `TRAVERSABLE_EDGE_KINDS` in [kinds/edges.py](src/openhound_sccm/kinds/edges.py). The list includes all seven built-in role paths and site-stored account paths, matching the SCCM schema. Only traversable edges are followed by BloodHound's attack-path engine.
 - **`collectionSource`** — a list of strings identifying which collectors contributed the data behind this edge (e.g. `["AdminService-SMS_Admin"]`, `["SCCM_Invoke-PostProcessing"]`). Matches the `collectionSource` provenance tags used by ConfigManBearPig.
 - **`assumed`** / **`assumptionBasis`** — present only on *assumed* (templated/inferred) edges, `null`/omitted on confirmed ones. See [Assumed vs. confirmed graph content](#assumed-vs-confirmed-graph-content) for the full catalog of which families these appear on and why.
 
 ## Entity-panel help properties
+
+**Formatted edge panels.** Upload both current schemas from [extension/](extension/)
+through **Administration > OpenGraph Management > Upload File**, then reopen an
+edge in Explore. All 23 SCCM and 12 MSSQL custom edge kinds emitted by this
+collector have Markdown help sections: **General**, **Windows Abuse**,
+**Linux Abuse**, **Operational Security**, and **References**, wherever authored
+content exists. Paragraphs are separated, standalone commands use code blocks,
+and references are clickable lists. Existing graphs need no new collection or
+conversion. The same 12 MSSQL panels are also supplied by `openhound-mssql`.
+See [formatting and verification notes](docs/edge-panel-markdown.md).
 
 Edges that describe an SCCM-specific attack path carry documentation in their
 property bag so BloodHound's entity panel explains the edge when you click it.
@@ -1738,7 +2019,7 @@ Represents the SCCM site replication topology — which sites replicate administ
 
 ## SCCM_AllPermissions
 
-Links an `SCCM_AdminUser` to every non-secondary `SCCM_Site` in the hierarchy when they hold the Full Administrator role (`SMS0001R`) **and** are assigned to both `SMS00001` (All Systems) and `SMS00004` (All Users and User Groups). Indicates unrestricted, hierarchy-wide access (CMBP `ps1:1730-1837`).
+Links an `SCCM_AdminUser` to every non-secondary `SCCM_Site` in the hierarchy when their Full Administrator assignment (`SMS0001R`) includes both `SMS00001` (All Systems) and `SMS00004` (All Users and User Groups). Both collections must belong to that exact role assignment. This retains the collector's existing hierarchy-wide classification rule (CMBP `ps1:1730-1837`).
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_Site`
@@ -1760,8 +2041,8 @@ Links an `SCCM_AdminUser` to `SCCM_ClientDevice` nodes reachable through their a
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_ClientDevice`
-- **Traversable:** no
-- **Abuse note:** Can create and modify applications; combined with a deploying role can achieve code execution.
+- **Traversable:** yes
+- **Abuse note:** Can modify an application it can edit that is already deployed to the target. Changing the installation command and detection rule can cause execution through that deployment. This is a potential path even before a suitable application is deployed; the collector does not check that prerequisite.
 
 ## SCCM_AssignAllPermissions
 
@@ -1826,7 +2107,7 @@ Links an `SCCM_AdminUser` to `SCCM_ClientDevice` nodes reachable through their a
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_ClientDevice`
-- **Traversable:** no
+- **Traversable:** yes
 - **Abuse note:** Can author and deploy compliance baselines and configuration items; may enable script execution on clients.
 
 ## SCCM_Contains
@@ -1879,9 +2160,11 @@ Links an SCCM site to any AD user or group stored as a reserved/NAA-style creden
 
 - **Start:** `SCCM_Site`
 - **End:** `User` or `Group`
-- **Traversable:** no
+- **Traversable:** yes
 
-> **Deferred:** `SCCM_HasNetworkAccessAccount` (NAA secret decryption) requires the `--enable-bad-opsec` flag and the NAA-secret collector, neither of which is implemented yet.
+This is a potential credential-recovery path. It covers accounts returned by `SMS_SCI_Reserved` when they resolve to AD identities; it does not inspect arbitrary task-sequence secrets or collection-variable contents.
+
+> **Deferred:** `SCCM_HasNetworkAccessAccount` is the separate client-computer-to-cached-NAA relationship. Its Local collection path is not implemented and it is not registered in the shipped schema; see [ope-e10b](.tickets/ope-e10b.md). Making site-stored accounts traversable does not implement client secret recovery. See [the traversal change notes](docs/role-account-traversability.md) for validation and a command to regenerate an existing graph with the new flags.
 
 ## SCCM_IsAssigned
 
@@ -1890,6 +2173,61 @@ Links an `SCCM_AdminUser` to each scope it is assigned — either a collection (
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_Collection` or `SCCM_SecurityRole`
 - **Traversable:** no
+
+On an **administrator-to-role** edge, these properties preserve that person's
+assignment for that exact role:
+
+| Property | Meaning |
+|---|---|
+| `collectionIds` | Native SCCM collection IDs assigned to this administrator for this role, such as `SMS00001`. These IDs do not include the graph's `@CAS` suffix. |
+| `securityScopeIds` | Native security-scope IDs assigned to this administrator for this role. Scopes govern access to objects such as applications and scripts. |
+
+For example, Alice can have Full Administrator over Servers and Operations
+Administrator over Workstations. The two assignment edges keep different
+`collectionIds`. Alice's overall collection list remains an overview; it does
+not grant both roles over both collections. Two administrators sharing a role
+also keep separate assignments. The shared role node stores its actions in
+`operations`.
+
+An empty assignment list means the individual read retrieved no entries of that
+type. Missing properties mean assignment details were unavailable. The collector
+logs missing or invalid details and withholds access calculations from that read.
+It never reconstructs pairings from separate role and collection lists.
+
+The seven supported administrator-to-device role edges also carry `collectionIds`.
+There, the list contains the original assigned collections that support that
+particular access edge. Access through a collection limited by an assigned
+collection retains the original assigned collection ID as evidence. Security
+scopes are preserved separately and do not filter device membership. Existing
+conditions for particular attack routes still apply; custom-role permission
+evaluation remains outside the supported device-access calculations.
+
+An unsupported-role warning means the collector does not calculate device-access
+edges for that role. It can refer to a newer built-in role, such as CMPivot
+Administrator, or to a custom role. The warning does not classify the role as custom.
+
+Inspect the assignment for the lab administrator in BloodHound:
+
+```cypher
+MATCH (admin:SCCM_AdminUser)-[assignment:SCCM_IsAssigned]->(role:SCCM_SecurityRole)
+WHERE toUpper(admin.logonName) ENDS WITH 'DOMAINADMIN'
+RETURN admin, role, assignment.collectionIds, assignment.securityScopeIds
+```
+
+**Recollect older data.** A normal SCCM query omits the detailed `Permissions`
+and `Operations` fields. Collection now reads each administrator and role
+individually and saves the original embedded entries, including their native
+field names. Reprocessing an older collection cannot recreate information that
+was never saved. In a fresh PowerShell window on the mayyhem.com lab workstation:
+
+```powershell
+openhound collect sccm .\out-role-assignments --run-all
+```
+
+Choose a new output directory. Old graph uploads retain stale edges; evaluate the
+replacement output in a fresh test graph or remove the older collection before
+comparing access. Update the optional administrator Tier Zero rule if you use it.
+See [the design, tests, and review commands](docs/changes/2026-10-26-role-assignments.md).
 
 ## SCCM_IsMappedTo
 
@@ -1922,7 +2260,7 @@ Links an `SCCM_AdminUser` to `SCCM_ClientDevice` nodes reachable through their a
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_ClientDevice`
-- **Traversable:** no
+- **Traversable:** yes
 - **Abuse note:** Broad operational access including software deployments and remote tools; can achieve code execution on managed clients.
 
 ## SCCM_OSDManager
@@ -1931,8 +2269,8 @@ Links an `SCCM_AdminUser` to `SCCM_ClientDevice` nodes reachable through their a
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_ClientDevice`
-- **Traversable:** no
-- **Abuse note:** Can author task sequences and boot images; a malicious task sequence delivers full OS-level code execution during deployment.
+- **Traversable:** yes
+- **Abuse note:** Can create and deploy a custom task sequence that executes commands. OS installation or boot media is not required for that route.
 
 ## SCCM_SameHostAs
 
@@ -1949,8 +2287,8 @@ Links an `SCCM_AdminUser` to `SCCM_ClientDevice` nodes reachable through their a
 
 - **Start:** `SCCM_AdminUser`
 - **End:** `SCCM_ClientDevice`
-- **Traversable:** no
-- **Abuse note:** Can modify other admins' role assignments and collection scopes — an indirect path to escalating privileges within SCCM.
+- **Traversable:** yes
+- **Abuse note:** Can delegate roles, including assigning Full Administrator to itself within its assigned collection and scope. The resulting permissions provide an indirect route to client execution.
 
 ---
 
@@ -2137,8 +2475,8 @@ RETURN p LIMIT 25
 Step-by-step:
 
 1. `MAYYHEM\SCCMADMIN` (a `User` node, keyed by AD SID) is linked to its SCCM admin record via `SCCM_IsMappedTo`.
-2. The `SCCM_AdminUser` node carries `roleIDs = ["SMS0001R"]` (Full Administrator) and `collectionIds` listing the device collections in scope (e.g. `SMS00001` — All Systems).
-3. `SCCM_FullAdministrator` edges are drawn to every `SCCM_ClientDevice` that belongs to any of those device collections, as built by the `_edge_rbac_role_grants` transform.
+2. The administrator's `SCCM_IsAssigned` edge to Full Administrator (`SMS0001R`) carries the collections assigned for that exact role, such as `SMS00001` (All Systems). Its overall role and collection lists are summaries.
+3. `SCCM_FullAdministrator` edges reach devices covered by that Full Administrator assignment, including limiting-collection descendants. Their `collectionIds` record the original assigned collections supporting the access. This is calculated during preprocessing by `_edge_rbac_role_grants`.
 4. Each `SCCM_ClientDevice` node carries `collectionIds`, `collectionNames`, and the resolved `primaryUserSID` / `currentLogonUserSID` — useful for identifying which user account to target on the compromised host.
 
 To see the scope of an admin's reach without filtering by user:
@@ -2157,7 +2495,7 @@ ConfigManBearPig/
 ├── pyproject.toml                # Deps, Python version, entry point, dev tools
 ├── README.md                     # This file
 ├── ARCHITECTURE.md               # How and why this collector diverges from a stock OpenHound one
-├── cypher_queries/               # Saved BloodHound Cypher queries for the SCCM graph
+├── extension/saved_searches/     # Saved BloodHound Cypher queries for the SCCM graph
 ├── dev/                          # Debug harnesses and pipeline tour drivers (see below)
 ├── powershell_deprecated/        # The archived ConfigManBearPig.ps1 predecessor
 ├── tests/                        # The test suite (see Testing Changes)
@@ -2169,7 +2507,6 @@ ConfigManBearPig/
     ├── per_host_phases.py        # The ordered per-host phases and the tables each writes
     ├── graph.py                  # SCCMNode, SCCMEdgeProperties, and one *Properties dataclass per node kind
     ├── convert_pipeline.py       # Reads the DuckDB lookup database and emits the OpenGraph nodes + edges
-    ├── opengraph_untagged.py     # Destination for the untagged AD payload (ad_nodes-* / ad_edges-*)
     ├── edge_help.py              # Entity-panel help text (description, abuse, opsec, references) per edge kind
     ├── cve_table.py              # SCCM version → CVE lookup
     ├── log_context.py            # [target][phase] log tagging, VERBOSE level, node/edge trace helpers
@@ -2201,7 +2538,7 @@ separate published package, shared with the sibling **MSSQL collector**, declare
 [pyproject.toml](pyproject.toml):
 
 ```toml
-"openhound-collector-common>=0.1.3,<0.2.0",
+"openhound-collector-common>=0.1.4,<0.2.0",
 ```
 
 It resolves from PyPI like any other dependency — there is deliberately no path redirect, and one must
@@ -2214,6 +2551,7 @@ breaking `0.2` land silently in someone's install. To develop against a live lib
 |---|---|---|
 | `clients.auth` · `clients.ad` · `clients.wmi` · `clients.mssql` | The Windows authentication ladders and token minters — Kerberos, NTLM, SSPI, pass-the-hash, pass-the-ticket — plus the lockout-safe LDAP/AD client and the TDS Extended Protection probe | [clients/ad.py](src/openhound_sccm/clients/ad.py)'s `ADClient(AdClient)` adds the SCCM attribute maps; [clients/wmi.py](src/openhound_sccm/clients/wmi.py) and [clients/mssql_epa.py](src/openhound_sccm/clients/mssql_epa.py) wrap the shared backends |
 | `dlt.source_bridge` | `StreamBridge` and the bounded-queue primitives that let a **pushing** worker pool feed dlt's **pulling** extractor | [phased_pipeline/streams.py](src/openhound_sccm/phased_pipeline/streams.py) re-exports them; [source.py](src/openhound_sccm/source.py) plants the bridge per run |
+| `dlt.progress` | The existing default-off and optional tracker choices, now shared with the MSSQL collector | [main.py](src/openhound_sccm/main.py)'s `_resolve_progress` supplies the SCCM logger; choices and messages stay the same. This pending extraction requires the reviewed new common release before ordinary installation. |
 | `logging.log_context` | `[target][phase]` log tagging, the `VERBOSE` level, and the ordered-log machinery behind the two on-disk logs | [log_context.py](src/openhound_sccm/log_context.py) re-exports it and binds the collector-specific helpers |
 | `discovery.dns` | `make_resolver`, behind domain-controller and management-point SRV lookups | [context.py](src/openhound_sccm/context.py) and [collectors/dns.py](src/openhound_sccm/collectors/dns.py) keep the SCCM-specific query shapes |
 | `proxy` | The process-wide `socket` interception behind `-x`/`--proxy` | [main.py](src/openhound_sccm/main.py) parses and validates the flag, then installs the shared patch |
@@ -2221,6 +2559,15 @@ breaking `0.2` land silently in someone's install. To develop against a live lib
 | `dlt.duckdb_safe` | `safe_execute` / `ensure_columns` / `arr_sql` — the guards that stop `preprocess` SQL from breaking when dlt omits a column it never saw data for | Used directly throughout [transforms.py](src/openhound_sccm/transforms.py) |
 | `integration_testing` | The assert-and-diff engine behind `--run-integration-tests` and `--compare-to-zip` | [integration/](src/openhound_sccm/integration/) supplies the `mayyhem.com` fixtures |
 | `graph.graph_edge` | The `GraphEdge` base model every edge is emitted through | [models/graph_edge.py](src/openhound_sccm/models/graph_edge.py) subclasses it |
+| `graph.evidence` | Shared `collectionSource`, `assumed`, and `assumptionBasis` fields for the edge and SQL-node property classes that already use all three | [graph.py](src/openhound_sccm/graph.py) inherits these fields; SCCM evidence rules remain local. Source tags stay ordered and unique; an inference must explain its basis. Requires the pending reviewed common release. |
+
+Full/issues log handlers and their run lifecycle now also use common's
+`logging.files`. SCCM keeps its current file layout, warning/error totals,
+completion ordering, console choices, and diagnostics through chained stages.
+Unfinished groups go to private spool files instead of growing lists of messages
+and traceback objects in memory. Cleanup restores handlers and levels after
+failure as well as success. Write failures retain unpublished redacted spools and
+fail the command. This extraction requires the pending reviewed common release.
 
 **Why it exists, and which way the code flowed.** This collector and the MSSQL one both have to
 authenticate over the same Windows protocols, bridge the same push/pull mismatch, and tag logs the same
@@ -2250,6 +2597,14 @@ This extension follows the rules in [AGENTS.md](AGENTS.md) and the [`.agents/`](
 ---
 
 # Testing Changes
+
+The [SCCM permission experiments](docs/research/sccm-execution-permissions.md)
+record which individual permissions allowed harmless code execution and access
+grants in the mayyhem.com lab. Their manual test scripts live in
+[`tests/integration/permissions/`](tests/integration/permissions/). These findings
+do not add custom-role evaluation or new relationships to the collector. The
+[execution-trigger follow-up](docs/research/sccm-execution-triggers.md) checks what
+makes changed code run after the original deployment has already succeeded.
 
 ## Set up a development environment
 

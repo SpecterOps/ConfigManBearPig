@@ -45,7 +45,7 @@ def test_untagged_emit_writes_no_metadata_and_ad_prefix(tmp_path):
 
 
 def test_tagged_emit_still_writes_source_kind(tmp_path):
-    """A real source_kind still routes through core's writer and stamps metadata."""
+    """A real source_kind is preserved by the shared local writer."""
     client = duckdb.connect(_db_with_computer(tmp_path), read_only=True)
     lookup = SCCMLookup(client)
     out = tmp_path / "graph"

@@ -1,0 +1,8 @@
+{
+  "name": "SCCM: Tier Zero Computer Representations",
+  "description": "Keep the SCCM client and mapped AD computer in Tier Zero when either representation already has Tag_Tier_Zero. Requires SCCM_SameHostAs; it does not mark every client in a Tier Zero hierarchy.",
+  "cypher": "// Keep the SCCM client and AD computer in T0 when either is already T0.\nMATCH (device:SCCM_ClientDevice)-[:SCCM_SameHostAs]->(computer:Computer)\nWHERE computer:Tag_Tier_Zero OR device:Tag_Tier_Zero\n// Return only the two matching representations.\nMATCH (n)-[:SCCM_SameHostAs*0..1]->(computer)\nWHERE n = computer OR n = device\nRETURN DISTINCT n",
+  "enabled": true,
+  "zone": "Tier Zero",
+  "allow_disable": true
+}

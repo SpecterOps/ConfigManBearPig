@@ -1,0 +1,8 @@
+{
+  "name": "SCCM: Tier Zero Hierarchy Control - Sites",
+  "description": "CAS and primary sites are SCCM control boundaries and qualify without a known Tier Zero client. Secondary sites and sites of unknown type are excluded.",
+  "cypher": "// Protect all CAS and primary sites, even without a known T0 client.\nMATCH (site:SCCM_Site)\nWHERE site.siteType IN ['Central Administration Site', 'Primary Site']\nWITH site AS n\nRETURN DISTINCT n",
+  "enabled": true,
+  "zone": "Tier Zero",
+  "allow_disable": true
+}

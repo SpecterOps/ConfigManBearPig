@@ -179,25 +179,29 @@ EDGE_HELP: dict[str, EdgeHelp] = {
     ),
     ek.SCCM_IS_ASSIGNED: EdgeHelp(
         general=(
-            "This indicates that the SCCM administrative user is assigned a security role "
-            "or collection. Administrative users are granted permissions (e.g., \"Run "
-            "Scripts\") via their security role assignments and can use those permissions to "
-            "interact with client devices and users within the collections they are assigned."
+            "The SCCM administrative user is assigned the destination role or collection. On an "
+            "administrator-to-role edge, collectionIds and securityScopeIds contain the native "
+            "SCCM IDs assigned to this administrator for this exact role. The role node stores "
+            "the actions the role permits. Collections determine user and device coverage; "
+            "security scopes govern access to objects such as applications and scripts. An "
+            "empty list means no assignments of that type were retrieved; missing properties "
+            "mean detailed assignments were unavailable. Administrator-to-collection edges "
+            "provide an overview and do not assign every role to that collection."
         ),
         windowsAbuse=(
-            "There is no specific abuse for this edge. SCCM administrators who are assigned a "
-            "collection can perform actions on client devices and users within the collection "
-            "that are permitted by their assigned security roles."
+            "This assignment edge is informational. Use the calculated administrator-to-device "
+            "access edges to follow supported role paths. Their collectionIds identify the "
+            "original assigned collections supporting that access."
         ),
         linuxAbuse=(
-            "There is no specific abuse for this edge. SCCM administrators who are assigned a "
-            "collection can perform actions on client devices and users within the collection "
-            "that are permitted by their assigned security roles."
+            "This assignment edge is informational. Use the calculated administrator-to-device "
+            "access edges to follow supported role paths. Their collectionIds identify the "
+            "original assigned collections supporting that access."
         ),
         opsec="There are no OPSEC considerations related to this edge.",
         references=[
             "https://learn.microsoft.com/en-us/intune/configmgr/core/understand/fundamentals-of-role-based-administration",
-            "https://learn.microsoft.com/en-us/intune/configmgr/core/clients/manage/collections/introduction-to-collections",
+            "https://learn.microsoft.com/en-us/intune/configmgr/develop/reference/core/servers/configure/sms_apermission-server-wmi-class",
         ],
     ),
     ek.SCCM_ASSIGN_ALL_PERMISSIONS: EdgeHelp(
@@ -1199,7 +1203,7 @@ EDGE_HELP: dict[str, EdgeHelp] = {
             "role passwords, which will break applications using those roles and cause an "
             "outage.\n"
             "When the target database is the SCCM site database, this permission is a "
-            "consequence of SCCM's mandatory default schema (db_owner over CM_<SiteCode>) "
+            "consequence of SCCM's mandatory default schema (db_owner over `CM_<SiteCode>`) "
             "rather than a value read from the database's own permission tables. That "
             "inference is only as strong as the site-database identification behind it: "
             "solid when RemoteRegistry, AdminService, or WMI confirmed the database "

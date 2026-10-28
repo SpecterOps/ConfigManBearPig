@@ -1,4 +1,3 @@
-import copy
 import datetime
 import importlib.metadata
 import duckdb
@@ -11,7 +10,6 @@ import socket
 import sys
 import threading
 import time
-import traceback as _traceback
 import types
 from enum import Enum
 import typer
@@ -31,9 +29,19 @@ from openhound.core.collect import CollectContext, Collector
 from openhound.core.convert import ConvertContext, Converter, Method
 from openhound.core.preproc import PreProcContext
 from openhound.core.progress import Progress
+from openhound_collector_common.dlt.progress import ProgressOption, resolve_progress
+from openhound_collector_common.logging.files import DiagnosticFileHandler as _DiagnosticFileHandler, GroupedFileHandler as _OrderedLogFileHandler  # noqa: F401 - handler re-exports used by the existing consumer checks
+from openhound_collector_common.logging.files import RunFileLogs
+from openhound_collector_common.logging.console import is_secret_field
+from openhound_collector_common.orchestration.artifacts import (
+    OutputCleanupError,
+    clean_previous_collection as _shared_clean_previous_collection,
+    prior_load_packages as _shared_prior_load_packages,
+)
+from openhound_collector_common.orchestration.commands import cli_path_arg as _cli_path_arg
 from dlt.common.pipeline import LoadInfo
 import dlt
-from .convert_pipeline import emit_graph_from_duckdb
+from .convert_pipeline import emit_graph_from_duckdb, emit_hybrid_edges_from_duckdb
 from .lookup import SCCMLookup
 from .log_context import get_logger
 from .models.computer import ComputerNode
@@ -102,35 +110,9 @@ class IntegrationPrivilege(str, Enum):
 _PRIVILEGED_TABLE_PREFIXES = ("adminservice_", "wmi_")
 
 
-class ProgressOption(str, Enum):
-    off = "off"
-    tqdm = "tqdm"
-    log = "log"
-    alive_progress = "alive_progress"
-
-
-class _SilentProgress:
-    """Progress stand-in that disables dlt's progress output entirely.
-
-    Collector reads only `.value` and hands it to `dlt.pipeline(progress=...)`;
-    `None` resolves to dlt's NULL_COLLECTOR (no bars, no periodic log dumps).
-    """
-
-    value = None
-
-
 def _resolve_progress(choice: ProgressOption):
-    """Translate a `--progress` choice into what core's Collector expects.
-
-    'off' -> silent stand-in (dlt NULL_COLLECTOR); anything else -> the matching
-    core Progress enum member (tqdm / log / alive_progress).
-    """
-    if choice is ProgressOption.off:
-        logger.debug("Progress output disabled (--progress off); using dlt NULL_COLLECTOR")
-        return _SilentProgress()
-    # A real backend was explicitly requested; hand core the matching enum member.
-    logger.debug("Progress backend selected: %s", choice.value)
-    return Progress(choice.value)
+    """Use the shared choices while retaining SCCM's existing diagnostic logger."""
+    return resolve_progress(choice, logger=logger)
 
 
 # ---------------------------------------------------------------------------
@@ -814,197 +796,7 @@ class _ImpacketNoiseFilter(logging.Filter):
         return True  # always keep the record; only its level changes
 
 
-class _DiagnosticFileHandler(logging.FileHandler):
-    """Writes WARNING+ records with full traceback to a per-run diagnostics file.
 
-    Attached to the root logger for the lifetime of ``collect_sccm``. Uses
-    ``delay=True`` so the file is only created when at least one record is
-    emitted. Injects ``sys.exc_info()`` for its own formatting when the record
-    has no traceback attached, then restores both ``record.exc_info`` and
-    ``record.exc_text`` (the formatter's cached string) so the console handler
-    is never affected.
-    """
-
-    def __init__(self, path: pathlib.Path) -> None:
-        super().__init__(str(path), mode="w", encoding="utf-8", delay=True)
-        self.setLevel(logging.DEBUG)
-        self.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        ))
-        self.warning_count = 0
-        self.error_count = 0
-
-    def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno == logging.DEBUG:
-            # Only capture companion debug lines emitted from inside an except block.
-            # The purpose is to preserve contextual data (e.g. the raw entry that failed)
-            # alongside the WARNING/ERROR that precedes it in the file.
-            if sys.exc_info()[0] is None:
-                return
-            super().emit(record)
-            return
-
-        if record.levelno < logging.WARNING:
-            return  # drop INFO / VERBOSE / etc.
-
-        if record.levelno >= logging.ERROR:
-            self.error_count += 1
-        else:
-            self.warning_count += 1
-
-        injected = False
-        if not record.exc_info:
-            exc = sys.exc_info()
-            if exc[0] is not None:
-                record.exc_info = exc
-                injected = True
-
-        super().emit(record)
-
-        if injected:
-            # None, not False: both are falsy so formatters skip the traceback either way,
-            # but None is the sentinel LogRecord.exc_info is actually declared to hold.
-            record.exc_info = None
-            record.exc_text = None  # clear cached formatted traceback so console sees nothing
-
-
-# ---------------------------------------------------------------------------
-# Ordered-log file handler
-# ---------------------------------------------------------------------------
-# Buffers every log record in a per-resource dict keyed by the active
-# _current_resource contextvar value.  When a resource generator exhausts
-# (signalled by the completion callback registered in gen_wrapper), the whole
-# batch for that resource is appended to the file as a labelled section —
-# giving human-readable, resource-sequential output regardless of how dlt
-# interleaves the generators at runtime.
-#
-# Records that arrive outside any resource context (CLI setup, summary lines,
-# etc.) are collected under the "__root__" key and flushed by flush_all().
-# ---------------------------------------------------------------------------
-
-_ORDERED_LEVEL_LABEL: dict[int, str] = {
-    logging.DEBUG:    "DEBUG   ",
-    logging.INFO:     "INFO    ",
-    logging.WARNING:  "WARNING ",
-    logging.ERROR:    "ERROR   ",
-    logging.CRITICAL: "CRITICAL",
-}
-_ORDERED_TS_FMT = "%Y-%m-%d %H:%M:%S"
-
-
-class _OrderedLogFileHandler(logging.Handler):
-    """Buffers log records per resource; flushes each resource's batch to a
-    file in completion order when notified via flush_resource().
-
-    Register flush_resource as a resource-complete callback::
-
-        register_resource_complete_callback(_handler.flush_resource)
-
-    Call close() (which calls flush_all()) before removing the handler to
-    drain any in-flight buffers (e.g. resources that errored before exhausting).
-    """
-
-    def __init__(self, path: pathlib.Path, level: int = logging.NOTSET) -> None:
-        super().__init__(level=level)
-        self._path = path.resolve()  # absolute so CWD changes don't affect later writes
-        self._buffers: dict[str, list] = {}
-        self._lock = threading.Lock()
-        self._write_lock = threading.Lock()  # serialize block writes across worker threads
-        # Import once at construction time so the relative import never runs
-        # inside emit() (which fires on every log record).
-        from .log_context import get_current_resource, get_current_target
-        self._get_current_resource = get_current_resource
-        self._get_current_target = get_current_target
-
-    def _bucket_key(self) -> str:
-        """Key the current record's block by resource if one is active (discovery
-        / DLT resources), else by per-host target (worker-pool records), else the
-        catch-all root bucket."""
-        resource = self._get_current_resource()
-        if resource:
-            return resource
-        return self._get_current_target() or "__root__"
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            key = self._bucket_key()
-            # Freeze the message string now so args (possibly mutable) are no
-            # longer needed when we format at flush time.
-            rec = copy.copy(record)
-            try:
-                rec.msg = record.getMessage()
-            except Exception:
-                rec.msg = str(record.msg)
-            rec.args = None
-            with self._lock:
-                self._buffers.setdefault(key, []).append(rec)
-        except Exception:
-            self.handleError(record)  # writes traceback to sys.stderr
-
-    def flush_resource(self, resource_name: str) -> None:
-        """Write *resource_name*'s buffered records to the file and clear the buffer.
-
-        Records are only removed from the buffer on a successful write so that
-        flush_all() can retry them if the output directory didn't exist yet
-        (dlt creates it lazily during the load phase, after extraction).
-        """
-        with self._lock:
-            records = list(self._buffers.get(resource_name, []))
-        if records and self._write_section(resource_name, records):
-            with self._lock:
-                self._buffers.pop(resource_name, None)
-
-    def flush_host(self, hostname: str) -> None:
-        """Flush a host's buffered records as one labelled block.
-
-        Registered as a host-completion callback; fires (possibly from several
-        worker threads at once) when a target finishes its full phase sequence.
-        Block writes are serialized by ``_write_section`` so concurrent host
-        flushes never interleave in the file.
-        """
-        self.flush_resource(hostname)
-
-    def flush_all(self) -> None:
-        """Flush every remaining buffer — called at handler close time."""
-        with self._lock:
-            remaining = list(self._buffers.items())
-            self._buffers.clear()
-        for resource_name, records in remaining:
-            if records:
-                self._write_section(resource_name, records)
-
-    def _write_section(self, resource_name: str, records: list) -> bool:
-        """Write records to file. Returns True on success, False on failure."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            lines: list[str] = [f"\n{'=' * 72}\n# {resource_name}\n{'=' * 72}\n"]
-            for rec in records:
-                # Fall back to the registered level name (padded) for any level not
-                # in the table above — notably VERBOSE (15), which the full log now
-                # captures — so it renders "VERBOSE" rather than a bare "L15".
-                label = _ORDERED_LEVEL_LABEL.get(rec.levelno) or f"{logging.getLevelName(rec.levelno):<8}"
-                ts = datetime.datetime.fromtimestamp(rec.created).strftime(_ORDERED_TS_FMT)
-                lines.append(f"{label} time={ts}, msg={rec.msg}\n")
-                if rec.exc_info and rec.exc_info[0] is not None:
-                    lines.append(
-                        "".join(_traceback.format_exception(*rec.exc_info))
-                    )
-            with self._write_lock:
-                with open(self._path, "a", encoding="utf-8") as fh:
-                    fh.writelines(lines)
-            return True
-        except Exception:
-            return False
-
-    def close(self) -> None:
-        self.flush_all()
-        super().close()
-
-
-# ---------------------------------------------------------------------------
-# Per-host stage helpers (Stage 2 of collect_sccm)
-# ---------------------------------------------------------------------------
 
 def _cli_seed_targets(computers: Optional[str], computer_file) -> list[str]:
     """Hostnames given on the command line, to seed onto the work queue."""
@@ -1293,255 +1085,229 @@ def collect_sccm(
 
     _ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    log_path = output_path / f"collect_issues_{_ts}.log"
-    _diag = _DiagnosticFileHandler(log_path)
-
-    # Full log — the complete ordered record, written host-by-host (Stage 2) and
-    # resource-by-resource (Stage 1) in completion order rather than dlt's
-    # interleaved round-robin order. Always at DEBUG: the collector's own namespaces
-    # are pinned to DEBUG below, so a finished run always has the full trace on disk
-    # regardless of the console level (dlt / ldap3 internals still require --debug).
-    _ordered_log_path = output_path / f"collect_full_{_ts}.log"
-    _ordered = _OrderedLogFileHandler(_ordered_log_path, level=logging.DEBUG)
-
-    from .log_context import (
-        register_host_complete_callback,
-        register_resource_complete_callback,
-        unregister_host_complete_callback,
-        unregister_resource_complete_callback,
-    )
-    logging.root.addHandler(_diag)
-    logging.root.addHandler(_ordered)
-    register_resource_complete_callback(_ordered.flush_resource)
-    register_host_complete_callback(_ordered.flush_host)
-    # Pin the collector's own namespaces (this extension + its shared library) to
-    # DEBUG so their DEBUG/VERBOSE records propagate to the file handlers regardless
-    # of the console level. The full log (level=DEBUG) captures them all; the console
-    # handlers keep their own level (set by _apply_log_level) so nothing extra prints;
-    # the issues handler's emit() guard still keeps only WARNING+ (plus companion
-    # DEBUG lines emitted inside an active exception). dlt / ldap3 stay at the root
-    # level, so their internals reach the full log only under --debug.
-    _debug_loggers = [
-        logging.getLogger("openhound_sccm"),
-        logging.getLogger("openhound_collector_common"),
-    ]
-    _debug_logger_levels = [(lg, lg.level) for lg in _debug_loggers]
-    for lg in _debug_loggers:
-        lg.setLevel(logging.DEBUG)
-
-    # Quiet impacket's one benign CRITICAL (see _ImpacketNoiseFilter). Installed
-    # here, with the other per-run logging setup, and removed in the finally below
-    # so a long-lived process that calls collect_sccm twice does not stack filters.
-    _impacket_logger = logging.getLogger("impacket")
-    _impacket_noise_filter = _ImpacketNoiseFilter()
-    _impacket_logger.addFilter(_impacket_noise_filter)
-
-    # Deliberately OUTSIDE the try below: if --clean cannot remove a locked artifact we
-    # must abort, not fall through into the collection error handling and quietly collect
-    # onto stale data.
+    # Reject stale-output cleanup failure before opening new run-owned logs.
     _clean_previous_collection(output_path, clean)
+    _parameters = locals().copy()
+    _log_secrets = tuple(value for name, value in _parameters.items() if is_secret_field(name) and isinstance(value, str) and value)
+    _log_secrets += tuple(value for name, value in os.environ.items() if name.startswith("SOURCES__SCCM__") and is_secret_field(name) and value)
+    with RunFileLogs(output_path, run_id=_ts, namespaces=("openhound_sccm", "openhound_collector_common"), secrets=_log_secrets) as _file_logs:
+        log_path = _file_logs.issues_path
+        _ordered_log_path = _file_logs.full_path
+        _diag = _file_logs.issues
 
-    try:
-        _warn_for_suspicious_cli_arguments()
-        flag_kwargs = locals()
-        # The Typer param is `ticket`; the env map keys it as `kerberos_ticket`.
-        flag_kwargs["kerberos_ticket"] = flag_kwargs.pop("ticket", None)
-        _apply_env_overrides(flag_kwargs)
-        _drop_empty_dlt_env_values()
-        # Parse + validate the proxy BEFORE connection-context auto-detect, so
-        # the --dc/--dns check sees the user's flags (not an auto-filled DC) and
-        # so DC discovery itself runs inside the tunnel.
-        proxy_cfg = _parse_proxy_or_exit(
-            flag_kwargs.get("socks_proxy") or os.environ.get("SOURCES__SCCM__SOCKS_PROXY")
-        )
-        http_proxy_raw = flag_kwargs.get("http_proxy") or os.environ.get("SOURCES__SCCM__HTTP_PROXY_CONFIG")
-        http_proxy_cfg = _parse_http_proxy_or_exit(http_proxy_raw)
-        if http_proxy_cfg and proxy_cfg:
-            logger.error("--http-proxy and --proxy cannot be used together")
-            raise typer.Exit(2)
-        _require_dc_or_dns_for_proxy(flag_kwargs, proxy_cfg)
+        # Quiet impacket's one benign CRITICAL (see _ImpacketNoiseFilter). Installed
+        # here, with the other per-run logging setup, and removed in the finally below
+        # so a long-lived process that calls collect_sccm twice does not stack filters.
+        _impacket_logger = logging.getLogger("impacket")
+        _impacket_noise_filter = _ImpacketNoiseFilter()
+        _impacket_logger.addFilter(_impacket_noise_filter)
 
-        # Route ALL collection traffic through the SOCKS5 proxy for the whole
-        # window — including DC discovery (SRV over TCP) — no-op when proxy_cfg is None.
-        from openhound_collector_common.proxy import socks_proxy_installed
-        with socks_proxy_installed(proxy_cfg):
-            _apply_connection_context(flag_kwargs)
-            _require_domain_or_explain(flag_kwargs)
-
-            from .per_host_phases import PER_HOST_PHASES
-            from .phased_pipeline import WorkQueue
-            from .source import (
-                DISCOVERY_RESOURCE_NAMES,
-                get_last_ctx,
-                set_shared_ad_cache,
-                set_shared_discovered_domains,
-                set_shared_queue,
+        try:
+            _warn_for_suspicious_cli_arguments()
+            flag_kwargs = locals()
+            # The Typer param is `ticket`; the env map keys it as `kerberos_ticket`.
+            flag_kwargs["kerberos_ticket"] = flag_kwargs.pop("ticket", None)
+            _apply_env_overrides(flag_kwargs)
+            _drop_empty_dlt_env_values()
+            # Parse + validate the proxy BEFORE connection-context auto-detect, so
+            # the --dc/--dns check sees the user's flags (not an auto-filled DC) and
+            # so DC discovery itself runs inside the tunnel.
+            proxy_cfg = _parse_proxy_or_exit(
+                flag_kwargs.get("socks_proxy") or os.environ.get("SOURCES__SCCM__SOCKS_PROXY")
             )
-            from .source import source as sccm_source
+            http_proxy_raw = flag_kwargs.get("http_proxy") or os.environ.get("SOURCES__SCCM__HTTP_PROXY_CONFIG")
+            http_proxy_cfg = _parse_http_proxy_or_exit(http_proxy_raw)
+            if http_proxy_cfg and proxy_cfg:
+                logger.error("--http-proxy and --proxy cannot be used together")
+                raise typer.Exit(2)
+            _require_dc_or_dns_for_proxy(flag_kwargs, proxy_cfg)
 
-            work_queue = WorkQueue()
-            set_shared_queue(work_queue)
-            set_shared_ad_cache({})
-            set_shared_discovered_domains(set())
+            # Route ALL collection traffic through the SOCKS5 proxy for the whole
+            # window — including DC discovery (SRV over TCP) — no-op when proxy_cfg is None.
+            from openhound_collector_common.proxy import socks_proxy_installed
+            with socks_proxy_installed(proxy_cfg):
+                _apply_connection_context(flag_kwargs)
+                _require_domain_or_explain(flag_kwargs)
 
-            # --silent also mutes the progress tracker (it renders straight to the
-            # console, bypassing logging), so force it off regardless of --progress.
-            collector = Collector(name=app.name, output_path=output_path, resources=resources, progress=_resolve_progress(ProgressOption.off if silent else progress))
-            ctx = CollectContext(pipeline=collector)
-
-            src = sccm_source(http_proxy=http_proxy_raw)
-            if not src:
-                set_shared_queue(None)
-                set_shared_ad_cache(None)
-                set_shared_discovered_domains(None)
-                return None
-
-            # Reuse the exact context discovery built, so the per-host stage shares
-            # its target accumulator, allow-list, caches, and work queue.
-            per_host_ctx = get_last_ctx()
-
-            if dc_only:
-                logger.info(
-                    "DC-only mode: collecting LDAP + DNS from the domain controller; "
-                    "per-host collection skipped."
+                from .per_host_phases import PER_HOST_PHASES
+                from .phased_pipeline import WorkQueue
+                from .source import (
+                    DISCOVERY_RESOURCE_NAMES,
+                    get_last_ctx,
+                    set_shared_ad_cache,
+                    set_shared_discovered_domains,
+                    set_shared_queue,
                 )
+                from .source import source as sccm_source
 
-            # Stage 1 — discovery (once-phases): run only the discovery resources.
-            # They seed the work queue via register_target (allow-list applied).
-            load_info = collector.run(src.with_resources(*DISCOVERY_RESOURCE_NAMES))
-            # Capture discovery row counts from the pipeline that just ran (held via
-            # LoadInfo.pipeline) before the per-host pass replaces the trace.
-            discovery_counts = _normalize_row_counts(load_info.pipeline) if load_info else {}
+                work_queue = WorkQueue()
+                set_shared_queue(work_queue)
+                set_shared_ad_cache({})
+                set_shared_discovered_domains(set())
 
-            # Seed CLI-specified targets through the same register_target path, so
-            # the allow-list / resolution / dedup is identical for them.
-            if per_host_ctx is not None:
-                for host in _cli_seed_targets(computers, computer_file):
-                    per_host_ctx.register_target(host, source="CLI")
+                # --silent also mutes the progress tracker (it renders straight to the
+                # console, bypassing logging), so force it off regardless of --progress.
+                collector = Collector(name=app.name, output_path=output_path, resources=resources, progress=_resolve_progress(ProgressOption.off if silent else progress))
+                ctx = CollectContext(pipeline=collector)
 
-            # Stage 2 — per-host collection: a worker pool runs each target's phases
-            # in order while emit resources stream the tables to disk, looping
-            # recursively until the work queue drains.
-            per_host_counts: dict[str, int] = {}
-            per_host_expected = _should_run_per_host(per_host_ctx, PER_HOST_PHASES, dc_only)
-            if per_host_expected:
-                per_host_counts = _run_per_host_stage(collector.pipeline, work_queue, per_host_ctx, threads)
-            elif per_host_ctx is not None:
-                # --dc-only: the per-host stage (which normally flushes resolved
-                # principals) is skipped, but discovery already resolved principals
-                # whose AD attributes enrich Computer/User/Group nodes. Flush them so a
-                # recon graph carries the same AD props a full run would (decision 4).
-                logger.info(
-                    "DC-only mode: persisting %d discovery-resolved principals for AD node properties.",
-                    len(per_host_ctx.resolved_principals),
+                src = sccm_source(http_proxy=http_proxy_raw)
+                if not src:
+                    set_shared_queue(None)
+                    set_shared_ad_cache(None)
+                    set_shared_discovered_domains(None)
+                    return None
+
+                # Reuse the exact context discovery built, so the per-host stage shares
+                # its target accumulator, allow-list, caches, and work queue.
+                per_host_ctx = get_last_ctx()
+
+                if dc_only:
+                    logger.info(
+                        "DC-only mode: collecting LDAP + DNS from the domain controller; "
+                        "per-host collection skipped."
+                    )
+
+                # Stage 1 — discovery (once-phases): run only the discovery resources.
+                # They seed the work queue via register_target (allow-list applied).
+                load_info = collector.run(src.with_resources(*DISCOVERY_RESOURCE_NAMES))
+                # Capture discovery row counts from the pipeline that just ran (held via
+                # LoadInfo.pipeline) before the per-host pass replaces the trace.
+                discovery_counts = _normalize_row_counts(load_info.pipeline) if load_info else {}
+
+                # Seed CLI-specified targets through the same register_target path, so
+                # the allow-list / resolution / dedup is identical for them.
+                if per_host_ctx is not None:
+                    for host in _cli_seed_targets(computers, computer_file):
+                        per_host_ctx.register_target(host, source="CLI")
+
+                # Stage 2 — per-host collection: a worker pool runs each target's phases
+                # in order while emit resources stream the tables to disk, looping
+                # recursively until the work queue drains.
+                per_host_counts: dict[str, int] = {}
+                per_host_expected = _should_run_per_host(per_host_ctx, PER_HOST_PHASES, dc_only)
+                if per_host_expected:
+                    per_host_counts = _run_per_host_stage(collector.pipeline, work_queue, per_host_ctx, threads)
+                elif per_host_ctx is not None:
+                    # --dc-only: the per-host stage (which normally flushes resolved
+                    # principals) is skipped, but discovery already resolved principals
+                    # whose AD attributes enrich Computer/User/Group nodes. Flush them so a
+                    # recon graph carries the same AD props a full run would (decision 4).
+                    logger.info(
+                        "DC-only mode: persisting %d discovery-resolved principals for AD node properties.",
+                        len(per_host_ctx.resolved_principals),
+                    )
+                    _emit_resolved_principals(collector.pipeline, per_host_ctx)
+
+            set_shared_queue(None)
+            set_shared_ad_cache(None)
+            set_shared_discovered_domains(None)
+
+            # Clear the [target][phase] log context so the summary block reads as a
+            # global section rather than inheriting whatever phase ran last.
+            from .log_context import phase_context, target_context
+            with target_context(None), phase_context(None):
+                _log_collect_summary(
+                    discovery_counts, per_host_counts, per_host_expected, output_path, run_all=run_all
                 )
-                _emit_resolved_principals(collector.pipeline, per_host_ctx)
+            # Keep the merged counts for --integration-privilege auto below; the summary
+            # above merges the same two dicts for display, this keeps them for a decision.
+            collect_counts = _merge_row_counts(discovery_counts, per_host_counts)
+        except typer.Exit:
+            raise  # Preserve intentional command statuses.
+        except Exception as error:
+            logger.exception("Collection failed: %s", error)
+            raise typer.Exit(code=1) from error
+        finally:
+            _impacket_logger.removeFilter(_impacket_noise_filter)
+            _file_logs.finish_collection()
+            # NOTE: _diag is deliberately NOT removed here -- see the run_all block below.
+            # It stays attached across preprocess/convert so their WARNING/ERROR records
+            # reach collect_issues_*.log (con-2ca2). The grouped full log finishes: its job
+            # is the collect phase's host/resource bucketing, which has no meaning here.
+            if _ordered_log_path.exists():
+                logger.info("Full log: %s", _ordered_log_path)
+            if _diag.warning_count or _diag.error_count:
+                w, e = _diag.warning_count, _diag.error_count
+                parts = []
+                if w:
+                    parts.append(f"{w} WARNING{'s' if w != 1 else ''}")
+                if e:
+                    parts.append(f"{e} ERROR{'s' if e != 1 else ''}")
+                detail = ", ".join(parts)
+                if log_path.exists():
+                    logger.warning(
+                        "%s detected. Traceback details available in: %s",
+                        detail, log_path,
+                    )
+                else:
+                    logger.warning(
+                        "%s detected. Run with --debug to display traceback details after WARNING/ERROR logs.",
+                        detail,
+                    )
 
-        set_shared_queue(None)
-        set_shared_ad_cache(None)
-        set_shared_discovered_domains(None)
-
-        # Clear the [target][phase] log context so the summary block reads as a
-        # global section rather than inheriting whatever phase ran last.
-        from .log_context import phase_context, target_context
-        with target_context(None), phase_context(None):
-            _log_collect_summary(
-                discovery_counts, per_host_counts, per_host_expected, output_path, run_all=run_all
-            )
-        # Keep the merged counts for --integration-privilege auto below; the summary
-        # above merges the same two dicts for display, this keeps them for a decision.
-        collect_counts = _merge_row_counts(discovery_counts, per_host_counts)
-    finally:
-        for lg, lvl in _debug_logger_levels:
-            lg.setLevel(lvl)
-        _impacket_logger.removeFilter(_impacket_noise_filter)
-        unregister_resource_complete_callback(_ordered.flush_resource)
-        unregister_host_complete_callback(_ordered.flush_host)
-        _ordered.close()  # flushes any in-flight buffers before removal
-        logging.root.removeHandler(_ordered)
-        # NOTE: _diag is deliberately NOT removed here -- see the run_all block below.
-        # It stays attached across preprocess/convert so their WARNING/ERROR records
-        # reach collect_issues_*.log (con-2ca2). _ordered does come off: its whole job
-        # is the collect phase's host/resource bucketing, which has no meaning here.
-        if _ordered_log_path.exists():
-            logger.info("Full log: %s", _ordered_log_path)
-        if _diag.warning_count or _diag.error_count:
-            w, e = _diag.warning_count, _diag.error_count
-            parts = []
-            if w:
-                parts.append(f"{w} WARNING{'s' if w != 1 else ''}")
-            if e:
-                parts.append(f"{e} ERROR{'s' if e != 1 else ''}")
-            detail = ", ".join(parts)
-            if log_path.exists():
-                logger.warning(
-                    "%s detected. Traceback details available in: %s",
-                    detail, log_path,
+        # Collection succeeded here — an exception in the try above would have
+        # propagated past the finally and never reached this point. Chain the
+        # remaining phases only when the operator asked for it.
+        #
+        # con-2ca2: the whole chain runs inside its own try/finally so `_diag` -- the
+        # WARNING+ handler behind collect_issues_*.log -- survives into preprocess and
+        # convert. It used to be detached with the collect-phase handlers above, which
+        # meant every preproc failure went unrecorded: a transform that `_safe` skipped
+        # (or that failed outright) produced no line in ANY on-disk log, so grepping for
+        # the transform's own label returned nothing and there was no trail to follow.
+        # The finally is required rather than a trailing call because the integration
+        # suite below exits via `typer.Exit`.
+        try:
+            if run_all:
+                # _ts is the same run timestamp the collect logs carry, so every artifact
+                # from this invocation shares one suffix. The name only needs to go one
+                # way now: the chain writes the archive and reports it back on
+                # StagePaths.graph_zip, which the summary reads.
+                _paths = _run_e2e_after_collect(
+                    output_path, progress,
+                    graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
                 )
+                # Re-surface every artifact's location in one block at the very end, so the
+                # operator doesn't have to scroll back through the collect/preproc/convert
+                # logs to find where each output landed.
+                _log_all_output_locations(
+                    output_path, _paths, _ordered_log_path, log_path,
+                    _diag.warning_count + _diag.error_count,
+                )
+                # --compare-to-zip and --run-integration-tests both need the graph convert
+                # just produced. _ts is the same run timestamp used for the collect logs
+                # above, so every artifact from this invocation shares one suffix.
+                graph_dir = _paths.graph_out
+                # Both testing flags run to completion before either decides the exit
+                # code, so an operator who passed both always gets both reports rather
+                # than having the first failure hide the second's findings.
+                rc_compare = 0
+                if compare_to_zip is not None:
+                    from openhound_sccm.integration import compare_to_zip as _compare_to_zip
+                    rc_compare = _compare_to_zip(
+                        graph_dir, compare_to_zip,
+                        out_path=output_path / f"compare-{_ts}.json", log=logger.info,
+                    )
+                rc_suite = 0
+                if run_integration_tests:
+                    rc_suite = _run_integration_suite(
+                        graph_dir,
+                        output_path / f"integration_results-{_ts}.json",
+                        privileged=_resolve_integration_privileged(
+                            integration_privilege, collect_counts),
+                    )
+                if compare_to_zip is not None or run_integration_tests:
+                    raise typer.Exit(code=_combined_testing_exit_code(rc_compare, rc_suite))
             else:
-                logger.warning(
-                    "%s detected. Run with --debug to display traceback details after WARNING/ERROR logs.",
-                    detail,
-                )
-
-    # Collection succeeded here — an exception in the try above would have
-    # propagated past the finally and never reached this point. Chain the
-    # remaining phases only when the operator asked for it.
-    #
-    # con-2ca2: the whole chain runs inside its own try/finally so `_diag` -- the
-    # WARNING+ handler behind collect_issues_*.log -- survives into preprocess and
-    # convert. It used to be detached with the collect-phase handlers above, which
-    # meant every preproc failure went unrecorded: a transform that `_safe` skipped
-    # (or that failed outright) produced no line in ANY on-disk log, so grepping for
-    # the transform's own label returned nothing and there was no trail to follow.
-    # The finally is required rather than a trailing call because the integration
-    # suite below exits via `typer.Exit`.
-    try:
-        if run_all:
-            # _ts is the same run timestamp the collect logs carry, so every artifact
-            # from this invocation shares one suffix. The name only needs to go one
-            # way now: the chain writes the archive and reports it back on
-            # StagePaths.graph_zip, which the summary reads.
-            _paths = _run_e2e_after_collect(
-                output_path, progress,
-                graph_zip_name=f"configmanbearpig_collection_{_ts}.zip",
-            )
-            # Re-surface every artifact's location in one block at the very end, so the
-            # operator doesn't have to scroll back through the collect/preproc/convert
-            # logs to find where each output landed.
-            _log_all_output_locations(
-                output_path, _paths, _ordered_log_path, log_path,
-                _diag.warning_count + _diag.error_count,
-            )
-            # --compare-to-zip and --run-integration-tests both need the graph convert
-            # just produced. _ts is the same run timestamp used for the collect logs
-            # above, so every artifact from this invocation shares one suffix.
-            graph_dir = _paths.graph_out
-            # Both testing flags run to completion before either decides the exit
-            # code, so an operator who passed both always gets both reports rather
-            # than having the first failure hide the second's findings.
-            rc_compare = 0
-            if compare_to_zip is not None:
-                from openhound_sccm.integration import compare_to_zip as _compare_to_zip
-                rc_compare = _compare_to_zip(
-                    graph_dir, compare_to_zip,
-                    out_path=output_path / f"compare-{_ts}.json", log=logger.info,
-                )
-            rc_suite = 0
-            if run_integration_tests:
-                rc_suite = _run_integration_suite(
-                    graph_dir,
-                    output_path / f"integration_results-{_ts}.json",
-                    privileged=_resolve_integration_privileged(
-                        integration_privilege, collect_counts),
-                )
-            if compare_to_zip is not None or run_integration_tests:
-                raise typer.Exit(code=_combined_testing_exit_code(rc_compare, rc_suite))
-        else:
-            logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
-    finally:
-        logging.root.removeHandler(_diag)
-    return load_info
+                logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
+        except typer.Exit:
+            raise  # Preserve the combined comparison/integration status.
+        except Exception as error:
+            logger.exception("A stage after collection failed: %s", error)
+            raise typer.Exit(code=1) from error
+        finally:
+            _file_logs.close()
+        return load_info
 
 def _merge_row_counts(discovery: dict[str, int], per_host: dict[str, int]) -> dict[str, int]:
     """Combine the two collection stages' per-table row counts.
@@ -1659,18 +1425,6 @@ def _normalize_row_counts(pipeline) -> dict[str, int]:
         logger.warning("Could not read dlt row counts for the collection summary: %s", ex)
         return {}
 
-def _cli_path_arg(path: pathlib.Path) -> str:
-    """Render *path* as one shell argument for the copy-pasteable "next steps" hint.
-
-    Wraps the path in double quotes only when it contains whitespace, so a normal
-    path prints bare (``.\\out``) while one with spaces stays a single argument
-    (``"C:\\Program Files\\out"``). Double quotes are honored by both cmd.exe and
-    PowerShell, the shells an operator is most likely pasting into on Windows.
-    """
-    text = str(path)
-    # Pure string formatting for a log line — a no-whitespace path needs no
-    # quoting, so leave it bare for readability; nothing here warrants a log.
-    return f'"{text}"' if any(ch.isspace() for ch in text) else text
 
 def _log_collect_summary(
     discovery_counts: dict[str, int],
@@ -1779,72 +1533,21 @@ _REUSABLE_ARTIFACTS = ("sccm", "graph", "lookup.duckdb")
 
 
 def _prior_load_packages(output_path: pathlib.Path) -> tuple[int, Optional[str]]:
-    """Return (load-package count, oldest package's date) for the dataset dir.
-
-    Returns ``(0, None)`` when there is no bucket. NOTE: one collection writes SEVERAL
-    load packages (dlt emits one per pipeline run, and the phased pipeline runs more than
-    once), so the count is NOT a count of previous collections -- measured on a live run:
-    3 packages for a single collect. The oldest package's date is the actionable signal,
-    because it is what tells an operator the directory holds data from another day.
-    """
-    loads = output_path / "sccm" / "_dlt_loads"
-    if not loads.is_dir():
-        return 0, None
-    files = [p for p in loads.iterdir() if p.is_file()]
-    if not files:
-        return 0, None
-    oldest = min(f.stat().st_mtime for f in files)
-    return len(files), datetime.datetime.fromtimestamp(oldest).strftime("%Y-%m-%d %H:%M")
+    """Count SCCM's load records through the shared output inspector."""
+    return _shared_prior_load_packages(output_path, "sccm")
 
 
 def _clean_previous_collection(output_path: pathlib.Path, clean: bool) -> None:
-    """Discard (``--clean``) or warn about a previous collection in *output_path*.
-
-    Why this exists: re-running into a used directory does NOT overwrite the raw data.
-    dlt appends a new load package beside the old ones and preprocess reads every
-    ``.jsonl.gz`` in each table dir, so the previous run's rows are UNIONed into this
-    run's graph. Worse, a table the new run finds empty keeps only the OLD rows, silently
-    resurrecting infrastructure that no longer exists. Both are invisible: the exit code
-    is 0 and ``graph/`` timestamps are fresh either way.
-    """
-    prior, oldest = _prior_load_packages(output_path)
-    present = [n for n in _REUSABLE_ARTIFACTS if (output_path / n).exists()]
-
-    if not clean:
-        if prior or present:
-            logger.warning(
-                "%s already contains a previous collection (%d dlt load package(s), oldest "
-                "written %s; %s). Those rows WILL be merged into this run's graph, and any "
-                "table this run finds empty will keep the OLD rows entirely. Pass --clean to "
-                "discard them first.",
-                output_path, prior, oldest or "unknown",
-                ", ".join(present) or "no dataset dir",
-            )
-        else:
-            logger.debug("%s holds no previous collection; nothing to clean", output_path)
-        return
-
-    if not present:
-        logger.info("--clean: %s holds no previous collection artifacts; nothing to remove", output_path)
-        return
-
-    for name in present:
-        target = output_path / name
-        try:
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
-            logger.info("--clean: removed %s", target)
-        except OSError as ex:
-            # A locked lookup.duckdb (BloodHound/DBeaver holding it open) is the likely
-            # cause. Fail loudly rather than proceeding onto stale data.
-            raise typer.BadParameter(
-                f"--clean could not remove {target}: {ex}. Close anything holding it open, "
-                f"or delete it manually, then re-run."
-            ) from ex
-    logger.info("--clean: discarded %d prior load package(s) (oldest %s) from %s",
-                prior, oldest or "unknown", output_path)
+    """Keep SCCM's artifact list and argument-error policy around common cleanup."""
+    try:
+        _shared_clean_previous_collection(
+            output_path, clean, dataset_name="sccm",
+            artifact_names=_REUSABLE_ARTIFACTS, logger=logger,
+        )
+    except OutputCleanupError as error:
+        # Preserve the collector's established clean-failure command behavior.
+        logger.error("Could not prepare SCCM output for collection: %s", error)
+        raise typer.BadParameter(str(error)) from error
 
 
 def _run_e2e_after_collect(
@@ -2087,13 +1790,14 @@ def _noop_convert_source():
     return _empty
 
 
-# Registry of (table_name, ModelClass) pairs the convert pipeline iterates, split into three
-# OpenGraph payloads (ARCHITECTURE.md §11f):
+# Registry of (table_name, ModelClass) pairs for the three existing file sets.
+# SQL-to-SCCM connections use the separate hybrid writer (ARCHITECTURE.md §11f).
 #   - SCCM payload  -> source_kind="SCCM"   (custom SCCM_* kinds only)
 #   - MSSQL payload -> source_kind="MSSQL"  (MSSQL_* kinds; the separate MSSQL OpenGraph
 #                                            schema, schema_MSSQL.json, owns these)
 #   - AD payload    -> NO source_kind       (native Computer/User/Group/Container + backfill
 #                                            stubs; BloodHound merges these into its AD graph)
+#   - Hybrid file   -> NO source_kind       (SQL-to-SCCM connections only)
 
 # MSSQL nodes/edges belong to the separately maintained MSSQL schema (schema_MSSQL.json,
 # name/namespace "MSSQL"), even though this SCCM collector emits them. Their own source_kind
@@ -2129,21 +1833,22 @@ AD_NODE_SPECS: list[tuple[str, type]] = [
     ("node_backfill", StubNode),
 ]
 
-# graph_edges_{sccm,mssql,ad} are the partition built by transforms._graph_edges_split.
+# These tables and graph_edges_hybrid are built by transforms._graph_edges_split.
 SCCM_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_sccm", GraphEdge)]
 MSSQL_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_mssql", GraphEdge)]
 AD_EDGE_SPECS: list[tuple[str, type]] = [("graph_edges_ad", GraphEdge)]
 
 
 def _emit_split_graph(lookup: SCCMLookup, output_path) -> None:
-    """Emit the graph as three payloads into the same directory.
+    """Write the SCCM, SQL, AD, and hybrid files into the same directory.
 
-    SCCM payload (sccm_* files, source_kind="SCCM"): SCCM_* nodes + every edge with at
-    least one SCCM endpoint (including MSSQL<->SCCM edges). MSSQL payload (mssql_* files,
+    SCCM payload (sccm_* files, source_kind="SCCM"): SCCM_* nodes and SCCM-only edges.
+    MSSQL payload (mssql_* files,
     source_kind="MSSQL"): MSSQL_* nodes + every edge whose endpoints are BOTH MSSQL nodes.
     AD payload (ad_* files, no source_kind): native Computer/User/Group/Container/stub nodes
     + every edge touching one (including AD<->MSSQL), so BloodHound merges them into the
-    native AD graph. See ARCHITECTURE.md §11f.
+    native AD graph. SQL-to-SCCM edges go to hybrid_edges.json with no source_kind.
+    See ARCHITECTURE.md §11f.
     """
     emit_graph_from_duckdb(
         lookup, output_path, app.source_kind,
@@ -2157,11 +1862,11 @@ def _emit_split_graph(lookup: SCCMLookup, output_path) -> None:
         lookup, output_path, None,
         AD_NODE_SPECS, AD_EDGE_SPECS, resource_prefix="ad",
     )
+    emit_hybrid_edges_from_duckdb(lookup, output_path)
 
 
 def _sccm_convert_hook(ctx: ConvertContext):
-    """Emit the SCCM graph by reading the preproc DuckDB directly (Convert2-Read-DB), as three
-    payloads (SCCM-tagged + MSSQL-tagged + untagged AD), then hand the framework a no-op source."""
+    """Write SCCM, SQL, AD, and hybrid files from DuckDB, then return a no-op source."""
     _emit_split_graph(ctx.lookup, ctx.output_path)
     return _noop_convert_source(), {}
 

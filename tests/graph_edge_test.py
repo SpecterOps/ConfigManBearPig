@@ -1,4 +1,23 @@
+import pytest
+
 from openhound_sccm.models.graph_edge import GraphEdge
+
+
+@pytest.mark.parametrize("kind", [
+    "SCCM_ApplicationAuthor",
+    "SCCM_ComplianceSettingsManager",
+    "SCCM_OSDManager",
+    "SCCM_OperationsAdministrator",
+    "SCCM_SecurityAdministrator",
+    "SCCM_HasStoredAccount",
+])
+def test_role_and_stored_account_edges_are_emitted_as_traversable(kind):
+    """The emitted property must agree with the schema's potential attack paths."""
+    edge = next(GraphEdge(start_id="SOURCE", end_id="TARGET", kind=kind).edges)
+
+    assert edge.kind == kind
+    assert edge.start.value == "SOURCE" and edge.end.value == "TARGET"
+    assert edge.properties.traversable is True
 
 
 def test_graph_edge_sets_traversable_from_allowlist():

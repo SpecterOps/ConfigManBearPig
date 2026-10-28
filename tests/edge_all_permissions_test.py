@@ -1,3 +1,4 @@
+import json
 # tests/edge_all_permissions_test.py
 import duckdb
 from openhound_sccm.transforms import transforms
@@ -29,6 +30,8 @@ def test_all_permissions_requires_both_collections():
         "SELECT 'MAYYHEM\\adm' AS logon_name, 'S-1-5-21-1-2-3-1110' AS admin_sid, false AS is_group, "
         "'All Systems, All Users and User Groups' AS collection_names, 'SMS0001R' AS roles, NULL AS role_names"
     )
+    con.execute("ALTER TABLE sccm.adminservice_admins ADD COLUMN permissions JSON")
+    con.execute("UPDATE sccm.adminservice_admins SET permissions = ?", [json.dumps([{'RoleID': 'SMS0001R', 'CategoryID': 'SMS00001', 'CategoryTypeID': 1}, {'RoleID': 'SMS0001R', 'CategoryID': 'SMS00004', 'CategoryTypeID': 1}])])
     transforms(con)
     ends = sorted(r[0] for r in con.execute(
         "SELECT end_id FROM sccm.graph_edges WHERE kind='SCCM_AllPermissions' AND start_id='MAYYHEM\\ADM@CAS'"
@@ -46,6 +49,8 @@ def test_all_permissions_missing_all_systems_no_edge():
         "SELECT 'MAYYHEM\\adm' AS logon_name, 'S-1-5-21-1-2-3-1110' AS admin_sid, false AS is_group, "
         "'All Users and User Groups' AS collection_names, 'SMS0001R' AS roles, NULL AS role_names"
     )
+    con.execute("ALTER TABLE sccm.adminservice_admins ADD COLUMN permissions JSON")
+    con.execute("UPDATE sccm.adminservice_admins SET permissions = ?", [json.dumps([{'RoleID': 'SMS0001R', 'CategoryID': 'SMS00004', 'CategoryTypeID': 1}])])
     transforms(con)
     rows = con.execute(
         "SELECT end_id FROM sccm.graph_edges WHERE kind='SCCM_AllPermissions' AND start_id='MAYYHEM\\ADM@CAS'"
@@ -63,6 +68,8 @@ def test_all_permissions_missing_all_users_no_edge():
         "SELECT 'MAYYHEM\\adm' AS logon_name, 'S-1-5-21-1-2-3-1110' AS admin_sid, false AS is_group, "
         "'All Systems' AS collection_names, 'SMS0001R' AS roles, NULL AS role_names"
     )
+    con.execute("ALTER TABLE sccm.adminservice_admins ADD COLUMN permissions JSON")
+    con.execute("UPDATE sccm.adminservice_admins SET permissions = ?", [json.dumps([{'RoleID': 'SMS0001R', 'CategoryID': 'SMS00001', 'CategoryTypeID': 1}])])
     transforms(con)
     rows = con.execute(
         "SELECT end_id FROM sccm.graph_edges WHERE kind='SCCM_AllPermissions' AND start_id='MAYYHEM\\ADM@CAS'"
@@ -79,6 +86,8 @@ def test_all_permissions_secondary_excluded():
         "SELECT 'MAYYHEM\\adm' AS logon_name, 'S-1-5-21-1-2-3-1110' AS admin_sid, false AS is_group, "
         "'All Systems, All Users and User Groups' AS collection_names, 'SMS0001R' AS roles, NULL AS role_names"
     )
+    con.execute("ALTER TABLE sccm.adminservice_admins ADD COLUMN permissions JSON")
+    con.execute("UPDATE sccm.adminservice_admins SET permissions = ?", [json.dumps([{'RoleID': 'SMS0001R', 'CategoryID': 'SMS00001', 'CategoryTypeID': 1}, {'RoleID': 'SMS0001R', 'CategoryID': 'SMS00004', 'CategoryTypeID': 1}])])
     transforms(con)
     rows = con.execute(
         "SELECT end_id FROM sccm.graph_edges WHERE kind='SCCM_AllPermissions' AND end_id='SEC'"

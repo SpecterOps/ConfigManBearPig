@@ -30,9 +30,12 @@ pulled off the WMI enumerator.
 from __future__ import annotations
 
 import base64
+import json
 from typing import Any, Iterator, Optional
 
-from openhound_collector_common.clients.wmi import _ImpacketBackend, _PyWin32Backend
+from openhound_collector_common.clients.wmi import (
+    _ImpacketBackend, _PyWin32Backend,
+)
 
 from ..log_context import get_logger
 from . import http_auth
@@ -175,6 +178,29 @@ class WmiClient:
         if raw is None:
             return  # ladder exhausted (logged in _open)
         yield from self._backend.stream(raw)
+
+    def read_instance(self, namespace: str, class_name: str, key_field: str,
+                      key: int | str) -> dict[str, Any] | None:
+        """Read one complete object, including fields omitted by WMI queries.
+
+        SCCM marks administrator assignments and role actions as lazy: even a
+        SELECT * leaves them empty. GetObject retrieves the complete instance.
+        Call query first so the normal credential selection has already run.
+        """
+        if self._backend is None:
+            logger.warning("WMI cannot read %s on %s before a successful query",
+                           class_name, self._target)
+            return None
+        object_path = f"{class_name}.{key_field}={json.dumps(key)}"
+        try:
+            # The shared method owns the host lease, namespace and cleanup for
+            # this entire object read, just as it does for streamed queries.
+            logger.debug("WMI reading complete object %s through the selected provider", object_path)
+            return self._backend.read_instance(namespace, object_path)
+        except Exception as error:  # One refused instance must not abort collection.
+            logger.warning("WMI complete read of %s on %s failed: %s; details are incomplete",
+                           object_path, self._target, error)
+            return None
 
     def _open(self, namespace: str, wql: str):
         """Return a WMI enumerator for (namespace, wql).

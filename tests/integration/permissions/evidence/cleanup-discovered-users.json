@@ -1,0 +1,56 @@
+{
+  "unmatched": [],
+  "removed": [
+    {
+      "resourceID": 2063597644,
+      "path": "SMS_R_User.ResourceId=2063597644",
+      "name": "cpr950a92310002"
+    },
+    {
+      "resourceID": 2063597645,
+      "path": "SMS_R_User.ResourceId=2063597645",
+      "name": "cpr6ccede4a0001"
+    },
+    {
+      "resourceID": 2063597646,
+      "path": "SMS_R_User.ResourceId=2063597646",
+      "name": "cpr0a03a4b90001"
+    },
+    {
+      "resourceID": 2063597647,
+      "path": "SMS_R_User.ResourceId=2063597647",
+      "name": "cpr0a03a4b90003"
+    },
+    {
+      "resourceID": 2063597648,
+      "path": "SMS_R_User.ResourceId=2063597648",
+      "name": "cprf154fe610001"
+    },
+    {
+      "resourceID": 2063597649,
+      "path": "SMS_R_User.ResourceId=2063597649",
+      "name": "cpr25959bfe0002"
+    },
+    {
+      "resourceID": 2063597650,
+      "path": "SMS_R_User.ResourceId=2063597650",
+      "name": "cpre0742e7d0001"
+    },
+    {
+      "resourceID": 2063597651,
+      "path": "SMS_R_User.ResourceId=2063597651",
+      "name": "cprdb00e38d0001"
+    },
+    {
+      "resourceID": 2063597652,
+      "path": "SMS_R_User.ResourceId=2063597652",
+      "name": "cpr96da99ce0004"
+    },
+    {
+      "resourceID": 2063597653,
+      "path": "SMS_R_User.ResourceId=2063597653",
+      "name": "cprb4e8eb1d0004"
+    }
+  ],
+  "reason": "SCCM automatically discovered temporary test accounts. Only exact account names belonging to the recorded experiment run tags were removed."
+}

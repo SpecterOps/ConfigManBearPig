@@ -65,10 +65,15 @@ def test_mssql_edges_route_to_correct_split_table():
         [srv],
     ).fetchone()[0]
     assert mssql >= 1
-    # SCCM_AssignAllPermissions (database -> site) is MSSQL<->SCCM -> SCCM payload.
+    # SCCM_AssignAllPermissions (database -> site) goes only to the hybrid output.
     db = srv + "\\CM_PS1"
+    hybrid = con.execute(
+        "SELECT count(*) FROM sccm.graph_edges_hybrid WHERE kind = 'SCCM_AssignAllPermissions' AND start_id = ?",
+        [db],
+    ).fetchone()[0]
+    assert hybrid == 1
     sccm = con.execute(
         "SELECT count(*) FROM sccm.graph_edges_sccm WHERE kind = 'SCCM_AssignAllPermissions' AND start_id = ?",
         [db],
     ).fetchone()[0]
-    assert sccm == 1
+    assert sccm == 0

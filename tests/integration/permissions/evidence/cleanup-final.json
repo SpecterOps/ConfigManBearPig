@@ -1,0 +1,25 @@
+{
+  "remainingObjects": {
+    "roles": 0,
+    "collections": 0,
+    "applications": 0,
+    "configurationItems": 0,
+    "packages": 0,
+    "advertisements": 0,
+    "applicationAssignments": 0,
+    "baselineAssignments": 0,
+    "scripts": 0,
+    "discoveredUsers": 0,
+    "statusRules": 0,
+    "administrators": 0,
+    "domainAccounts": 0
+  },
+  "timestampUTC": "2026-10-27T03:04:55.8384140Z",
+  "originalRolesUnchanged": true,
+  "remainingMarkerFiles": {
+    "PS1-DEV": 0,
+    "ps1-pss.mayyhem.com": 0,
+    "ps1-db.mayyhem.com": 0,
+    "ps1-sms.mayyhem.com": 0
+  }
+}

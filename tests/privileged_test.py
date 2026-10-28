@@ -175,6 +175,9 @@ class _FakeWmi:
     def close(self):
         self.closed = True
 
+    def read_instance(self, namespace, class_name, key_field, key):
+        return next((row for row in self.pages.get(class_name, []) if row.get(key_field) == key), None)
+
 
 def test_http_identify_and_paginate():
     rows = [{"n": i} for i in range(2500)]

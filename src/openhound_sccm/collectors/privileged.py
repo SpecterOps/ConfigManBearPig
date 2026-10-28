@@ -23,6 +23,7 @@ inline; node/edge construction is a deferred convert stage.
 import json
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Optional
+from urllib.parse import quote
 
 from ..clients.http import ErrorClass, HttpClient
 from ..clients.http_auth import AuthMode
@@ -61,12 +62,14 @@ class _Run:
         eq: The query dialect's equality operator (``"eq"`` OData / ``"="`` WQL).
         site_code: The identified SMS Provider site code (every row's source site).
         ctx: The shared per-host SourceContext (principal resolution, gating).
+        read_instance: Read a complete object by its key, including lazy fields.
     """
     fetch: Callable[..., Iterator[dict]]
     name: str
     eq: str
     site_code: str
     ctx: SourceContext
+    read_instance: Callable[[str, str, int | str], dict[str, Any] | None] | None = None
 
     def source(self, cls: str) -> str:
         """The ``source`` label for rows of *cls* (e.g. ``AdminService-SMS_Site``)."""
@@ -217,11 +220,66 @@ def _collection_members(run: _Run) -> Iterator[tuple[str, dict]]:
 
 
 def _security_roles(run: _Run) -> Iterator[tuple[str, dict]]:
-    return _simple(run, "SMS_Role", "security_roles", None, "security roles", keep=ROLE_COLUMNS)
+    return _complete_objects(run, "SMS_Role", "security_roles", "RoleID", "Operations", ROLE_COLUMNS)
 
 
 def _admins(run: _Run) -> Iterator[tuple[str, dict]]:
-    return _simple(run, "SMS_Admin", "admins", None, "admin users and groups", keep=ADMIN_COLUMNS)
+    return _complete_objects(run, "SMS_Admin", "admins", "AdminID", "Permissions", ADMIN_COLUMNS)
+
+
+def _complete_objects(run: _Run, class_name: str, suffix: str, key_field: str,
+                      detail_field: str, keep: tuple[str, ...]) -> Iterator[tuple[str, dict]]:
+    """Save each object's original assignments/actions after an individual read.
+
+    A failed detail read keeps the summary record, but marks its details incomplete.
+    Graph generation must never fill that gap by combining separate summary lists.
+    Embedded entries keep SCCM's original field names and values for later review.
+    """
+    count = 0
+    for summary in run.fetch(class_name):
+        obj = dict(summary)
+        key = summary.get(key_field)
+        if run.read_instance is not None and isinstance(key, (str, int)):
+            detail = run.read_instance(class_name, key_field, key)
+            if detail is not None and detail.get(key_field) == key:
+                obj.update(detail)
+                logger.debug("Read complete %s %s via %s", class_name, key, run.name)
+            else:
+                logger.warning("%s %s %s: complete read failed or returned another object; "
+                               "%s details are incomplete", run.name, class_name, key, detail_field)
+                obj[detail_field] = None
+        else:
+            # Canned callers may already provide details. A real transport always
+            # supplies read_instance; a missing key is reported by the check below.
+            logger.debug("%s %s: using supplied details (no individual read available)", run.name, key)
+        complete = isinstance(obj.get(detail_field), list)
+        if not complete:
+            logger.warning("%s %s %s: %s was not retrieved; related graph results are incomplete",
+                           run.name, class_name, key, detail_field)
+        else:
+            logger.debug("%s %s %s: retrieved %d %s entries", run.name, class_name, key,
+                         len(obj[detail_field]), detail_field)
+        row = _row(run.source(class_name), run.site_code, obj, keep=keep)
+        row[f"{detail_field.lower()}_complete"] = complete
+        yield run.table(suffix), row
+        count += 1
+    logger.info("Collected %d %s via %s", count, suffix.replace("_", " "), run.name)
+
+
+def _http_read_instance(client) -> Callable[[str, str, int | str], dict[str, Any] | None]:
+    """Read AdminService's single-instance endpoint to retrieve lazy fields."""
+    def read(class_name: str, key_field: str, key: int | str) -> dict[str, Any] | None:
+        # OData string keys escape apostrophes by doubling them; encode URL text
+        # afterward so a key cannot become a query or another path component.
+        literal = str(key) if isinstance(key, int) else "'" + quote(key.replace("'", "''"), safe="'") + "'"
+        path = f"/AdminService/wmi/{class_name}({literal})"
+        value = _http_get_value(client, path)
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict):
+            logger.debug("AdminService read complete %s by %s", class_name, key_field)
+            return value[0]
+        logger.warning("AdminService GET %s did not return exactly one object; details are incomplete", path)
+        return None
+    return read
 
 
 def _site_systems(run: _Run) -> Iterator[tuple[str, dict]]:
@@ -409,7 +467,8 @@ def collect_adminservice(target: str, ctx: SourceContext) -> Iterable[tuple[str,
         if site_code is None:
             logger.info("%s is not a reachable AdminService provider; skipping", target)
             return
-        yield from _collect(_Run(_http_fetch(client), "AdminService", "eq", site_code, ctx), target)
+        yield from _collect(_Run(_http_fetch(client), "AdminService", "eq", site_code, ctx,
+                                 _http_read_instance(client)), target)
     except Exception as ex:  # noqa: BLE001 - never crash the per-host worker
         logger.error("AdminService collection failed for %s: %s", target, ex)
     finally:
@@ -430,7 +489,8 @@ def collect_wmi(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str
             logger.info("%s is not a reachable SMS Provider over WMI; skipping", target)
             return
         namespace = f"root\\SMS\\site_{site_code}"
-        yield from _collect(_Run(_wmi_fetch(client, namespace), "WMI", "=", site_code, ctx), target)
+        yield from _collect(_Run(_wmi_fetch(client, namespace), "WMI", "=", site_code, ctx,
+                                 lambda cls, field, key: client.read_instance(namespace, cls, field, key)), target)
     except Exception as ex:  # noqa: BLE001 - never crash the per-host worker
         logger.error("WMI collection failed for %s: %s", target, ex)
     finally:

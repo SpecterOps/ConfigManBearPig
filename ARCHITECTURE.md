@@ -67,6 +67,7 @@ Every section follows the same spine:
   - [11j. AD-object attribute capture via the per-host resolution cache](#11j-ad-object-attribute-capture-via-the-per-host-resolution-cache)
   - [11k. Tier A+ low-priv additions: the System Management container, nested `MemberOf`, and the `MSSQLSvc` SPN service account](#11k-tier-a-low-priv-additions-the-system-management-container-nested-memberof-and-the-mssqlsvc-spn-service-account)
   - [11l. The rest of the low-priv-assumed-edges plan: `site_hierarchy` fed from every source, D6 attribution, and the assumption/provenance engine](#11l-the-rest-of-the-low-priv-assumed-edges-plan-site_hierarchy-fed-from-every-source-d6-attribution-and-the-assumptionprovenance-engine)
+  - [11m. Preserve each administrator's role assignments](#11m-preserve-each-administrators-role-assignments)
 - [12. One-command end-to-end: a `--run-all` flag, not a new verb](#12-one-command-end-to-end-a---run-all-flag-not-a-new-verb)
 - [13. Tunneling all collection traffic through a SOCKS5 pivot](#13-tunneling-all-collection-traffic-through-a-socks5-pivot)
 - [14. A shared integration-test and payload-diff engine, invoked off `--run-all`](#14-a-shared-integration-test-and-payload-diff-engine-invoked-off---run-all)
@@ -187,6 +188,17 @@ that one** shared dependency, and nothing else ([`tests/pp_engine_test.py`](test
 The shared bridge is pure-queue standard-library code, so the engine stays free of the dlt library and
 the framework.
 
+**Shared evidence fields (October 26, 2026).** The edge properties and six SQL
+node property classes in [graph.py](src/openhound_sccm/graph.py) now inherit common's
+`graph.evidence.EvidenceProperties`. The serialized names remain `collectionSource`,
+`assumed`, and `assumptionBasis`. The shared helper preserves first-observed source
+order, removes repeated tags, and requires an explanation for an inference.
+SCCM's source vocabulary, inference decisions, selected possible-edge filtering,
+and omission of confirmed assumption fields remain local. Native AD and SCCM
+node classes that do not use all three fields retain their existing definitions.
+This approved extraction is being checked against unchanged saved-data output;
+ordinary dependency updates await the owner's single shared-library release.
+
 ### Trade-offs
 
 - **A shared-library change is a two-collector change.** A fix in `clients/auth` or `logging/log_context`
@@ -266,7 +278,7 @@ globals** planted just before each `pipeline.run` and cleared after —
 run-scoped `StreamBridge` the emit resources drain). It's a handshake, not elegance, but it's the only
 channel the injection model leaves open.
 
-Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py#L1153-L1532).
+Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py#L951).
 These are the two **collection** stages of the per-host collection framework plan,
 `docs/superpowers/plans/2026-06-03-per-host-collection-framework.md` — a different numbering from the
 graph-pipeline stages used in §9 and §11 (see the
@@ -281,7 +293,7 @@ Stage 2 — Per-host (engine thread pool + emit-resource drain)
 ```
 
 Stage 1 is selected with `src.with_resources(*DISCOVERY_RESOURCE_NAMES)`
-([main.py:1397-1399](src/openhound_sccm/main.py#L1397-L1399)); Stage 2 is the engine + emit pass.
+([main.py](src/openhound_sccm/main.py)); Stage 2 is the engine + emit pass.
 
 ### Trade-offs
 
@@ -390,7 +402,7 @@ Two more pieces wire discovery into this loop:
   upgrade path), merges sources/site-codes onto an existing `TargetEntry`, and — for a genuinely new host —
   calls `work_queue.submit(...)` ([context.py:455](src/openhound_sccm/context.py#L455)). Both
   Stage-1 discovery resources (which call it from inside `collectors/*`) and the CLI's `--computers`
-  seeds ([main.py:1404-1408](src/openhound_sccm/main.py#L1404-L1408)) go through this *same* funnel, so dedup
+  seeds ([main.py](src/openhound_sccm/main.py)) go through this *same* funnel, so dedup
   and filtering are identical.
 - [`target_hosts_snapshot`](src/openhound_sccm/context.py#L460-L472) lets phases read the *current* target
   set at iteration time, so a host discovered after a phase started is still picked up — the OpenHound
@@ -498,20 +510,20 @@ PowerShell tool does — rather than demanding flags. None of that fits a one-to
 ### The add-on: a hand-registered Typer command + a flag→env bridge + context discovery
 
 Rather than use `@app.collect()`, [`main.py`](src/openhound_sccm/main.py) registers
-[`collect_sccm`](src/openhound_sccm/main.py#L1153-L1532) **directly on the framework's public Typer group**
+[`collect_sccm`](src/openhound_sccm/main.py#L951) **directly on the framework's public Typer group**
 (`from openhound.cli.collect import collect as _collect_typer`) so it can expose the full CMBP flag surface
-([main.py:1153-1263](src/openhound_sccm/main.py#L1153-L1263)). It then assigns `app.collector = collect_sccm`
-([main.py:1964](src/openhound_sccm/main.py#L1964)) so the framework's import-time
+([main.py](src/openhound_sccm/main.py)). It then assigns `app.collector = collect_sccm`
+([main.py](src/openhound_sccm/main.py)) so the framework's import-time
 `validate_extension` still sees a registered hook.
 
 The command **maps CLI flags to scoped env vars** before the DLT source is built. Most source
 settings use config injection; `http_proxy` is passed explicitly after validation:
 
-- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py#L161-L193) maps each flag to its `SOURCES__SCCM__*` name;
-  [`_apply_env_overrides`](src/openhound_sccm/main.py#L320-L342) sets them last (so an explicit flag wins
-  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py#L196-L204)
+- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py#L145) maps each flag to its `SOURCES__SCCM__*` name;
+  [`_apply_env_overrides`](src/openhound_sccm/main.py#L304) sets them last (so an explicit flag wins
+  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py#L180)
   removes empties so an unset flag can't clobber a higher-priority source.
-- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py#L261-L311) catches a real foot-gun:
+- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py#L245) catches a real foot-gun:
   Click parses `-dc 10.0.0.1` as `-d c` (because `-d` takes a value), silently turning the intended DC
   into a stray positional. The collector warns on these, masking sensitive values.
 - **Context auto-detection** mirrors CMBP's order: [`_detect_windows_domain`](src/openhound_sccm/main.py)
@@ -574,7 +586,7 @@ then current-user SSO, then (where the protocol allows) anonymous.*
 |---|---|---|---|
 | **HTTP / AdminService** | shared `choose_auth` in [`clients/http_auth.py:134-168`](src/openhound_sccm/clients/http_auth.py#L134-L168), driven by [`clients/http.py`](src/openhound_sccm/clients/http.py) | pass-the-ticket → explicit (Kerberos→NTLM) → current-user SSPI → **anonymous** | `impacket` (krb5/ntlm/spnego), `pywin32` (SSPI), `requests` |
 | **WMI (AdminService fallback)** | reuses the **same** `choose_auth` ([`clients/wmi.py:333-353`](src/openhound_sccm/clients/wmi.py#L333-L353)) | pass-the-ticket → explicit (Kerberos→NTLM) → current-user SSPI → ~~anonymous~~ (skipped — DCOM requires auth) | `impacket` (DCOM), `pywin32` (`win32com`) |
-| **LDAP / AD** | attempt plan in [`clients/ad.py`](src/openhound_sccm/clients/ad.py) (`_build_attempt_plan`), credential precedence in the shared `AdClient._select_auth_modes` | pass-the-ticket (GSSAPI via a private ccache) → pass-the-hash (`ntlm_hash`, ldap3 `LM:NT`) → explicit NTLM → integrated Kerberos (GSSAPI) → current-user SSPI-NTLM → anonymous — each over an auto-detected transport | `ldap3`, `impacket` (krb5 ccache), `pywin32` (SSPI), `winkerberos`/`gssapi` |
+| **LDAP / AD** | attempt plan in [`clients/ad.py`](src/openhound_sccm/clients/ad.py) (`_build_attempt_plan`), credential precedence in the shared `AdClient._select_auth_modes` | pass-the-ticket (connection-local Kerberos) → pass-the-hash (`ntlm_hash`, ldap3 `LM:NT`) → explicit NTLM → integrated Kerberos (GSSAPI) → current-user SSPI-NTLM → anonymous — each over an auto-detected transport | `ldap3`, `impacket` (krb5 ccache), `pywin32` (SSPI), `winkerberos`/`gssapi` |
 | **SMB (RemoteRegistry + SMB phases)** | inline ladder in `connect_smb` ([`clients/smb_sso.py:215-279`](src/openhound_sccm/clients/smb_sso.py#L215-L279)) | pass-the-ticket → pass-the-hash → explicit password → current-user SSPI Negotiate → null session | `impacket` (SMBConnection, krb5 CCache), `pywin32` (SSPI) |
 | **MSSQL EPA probe** | `impacket_prober` / `sspi_prober` in [`clients/mssql_epa.py`](src/openhound_sccm/clients/mssql_epa.py) | explicit creds (incl. pass-the-hash) → current Windows user (SSPI); a **ticket-only** credential yields a WARNING+skip — pass-the-ticket can't forge the channel-binding AV pairs the probe needs | `impacket` (tds/ntlm), `pywin32` (SSPI) |
 
@@ -587,10 +599,16 @@ A few specifics worth calling out, because they show how much harder this is tha
   ladder skips Kerberos and uses NTLM directly. The GSS checksum deliberately omits the DCE-style flag
   because IIS/http.sys rejects it.
 - **WMI realizes the *same* credential rungs over a completely different transport** — DCOM via impacket
-  (one connection per WMI namespace, because a second `IWbemLevel1Login` over one connection is rejected)
+  (a fresh connection for each complete read, because reusing one connection for a second namespace is rejected)
   or `win32com` for the current user. The anonymous rung is dropped because DCOM always requires
   authentication. The payoff: `-u/-p/--nt-hash/--ticket` and passwordless collection behave identically
   whether a host answers over AdminService or only over WMI.
+  Common's explicit backend now holds exclusive ownership of its hostname entry
+  through login, result iteration and cleanup: impacket 0.13.1 stores credentials
+  by hostname rather than client. Each read closes its namespace connection before
+  releasing that ownership, without a child process or idle keepalive thread.
+  SCCM's complete-object reads delegate to the same protected `read_instance`
+  method. Its authentication ladder and existing timeout policy remain unchanged.
 - **LDAP auto-detects transport *and* signing** and is **lockout-safe**. `ad.py` tries
   LDAPS:636 → StartTLS:389 → LDAP:389-with-sign-and-seal, varying by auth mode, and adds a TLS
   channel-binding token where the scheme supports it. Crucially, [`_is_credential_failure`](src/openhound_sccm/clients/ad.py)
@@ -622,6 +640,29 @@ A few specifics worth calling out, because they show how much harder this is tha
 
 ## 7. Enhanced logging and diagnostics for blind remote environments
 
+The full/issues handlers and their scoped lifecycle now live in common's
+`logging.files`, selected by `collect_sccm` through `RunFileLogs`. The default
+SCCM line layout, delayed issues file, warning/error counters, companion debug
+records inside exceptions, and target/resource completion order remain the same.
+Private spool files replace unbounded in-memory lists of messages and traceback
+objects. Group completion publishes its contiguous block; close flushes remaining
+groups. Failed writes retain unpublished redacted spools and fail cleanup.
+Issues remain attached through chained preparation/conversion. The outer run
+scope also releases them when collection itself raises. Stale-output cleanup
+happens before opening this run's handlers, so a cleanup failure cannot leak them.
+No framework logging class is patched by this extraction. The 71-test file-log
+consumer checkpoint and adapter lint/type checks passed. Publication of the
+reviewed shared release and final live acceptance remain pending.
+
+The optional progress selection now comes from common's `dlt/progress.py`.
+`main.py::_resolve_progress` is a thin adapter that supplies the SCCM logger,
+preserving its messages and its default `off` choice. Named trackers still return
+OpenHound's `Progress` enum; `off` still supplies `.value=None`. The MSSQL
+collector uses the same helper. SCCM keeps its existing console formatter; the
+new common Go-style formatter is opt-in and is not selected here. This bounded
+extraction is part of the approved SQL completion initiative and awaits the
+combined consumer checks before release.
+
 ### The framework baseline
 
 OpenHound configures one logging stack at import time — a `RichHandler` (or a plain stream handler in
@@ -645,13 +686,13 @@ unreadable braid of 10 hosts' lines.
 > the MSSQL collector (see [Where this code lives](#where-this-code-lives-the-shared-collector-common-library)).
 > SCCM's [`log_context.py`](src/openhound_sccm/log_context.py) re-exports it and binds the two
 > collector-specific helpers (`cached_with_log`, `trace_*`) to SCCM's own logger names. The two
-> file-handler classes below (`_DiagnosticFileHandler`, `_OrderedLogFileHandler`) stay in SCCM's
-> [`main.py`](src/openhound_sccm/main.py) — they are the SCCM CLI's output artifacts, not shared infra.
+> file-handler names below (`_DiagnosticFileHandler`, `_OrderedLogFileHandler`) in SCCM's
+> [`main.py`](src/openhound_sccm/main.py) now re-export common's `logging.files` handlers.
 > The behavior described here is unchanged by the move; where a `log_context.py#Lxx` reference below points
 > at what is now a re-export, the implementation is the same-named symbol in the shared module.
 
-All in [`log_context.py`](src/openhound_sccm/log_context.py) and the handler classes in
-[`main.py`](src/openhound_sccm/main.py), built *without editing the framework's handlers* — only by adding
+Context is selected through [`log_context.py`](src/openhound_sccm/log_context.py), and common's
+`RunFileLogs` owns the handlers selected in [`main.py`](src/openhound_sccm/main.py), without editing framework handlers — only by adding
 filters/handlers and mutating live handler instances at runtime:
 
 - **`[target][phase]` tagging.** [`target_context`](src/openhound_sccm/log_context.py#L152-L167) /
@@ -682,15 +723,15 @@ filters/handlers and mutating live handler instances at runtime:
   repeated content-download lines no longer fill the console or the always-DEBUG full log.
 - **A per-run issues file** (`collect_issues_<ts>.log`, [`_DiagnosticFileHandler`](src/openhound_sccm/main.py)) captures
   every WARNING+ **with full traceback** — even when the warning was logged without one, by injecting
-  `sys.exc_info()` if a live exception is in flight, then restoring the record so the console isn't
+  `sys.exc_info()` on a private record copy if a live exception is in flight, so the console isn't
   affected. The companion [`_DebugExcInfoFilter`](src/openhound_sccm/log_context.py) does the
   same on the console in `--debug`. (A clean run writes no issues file — the handler opens lazily.)
 - **A complete, human-ordered full log** (`collect_full_<ts>.log`, [`_OrderedLogFileHandler`](src/openhound_sccm/main.py))
   is **always written at DEBUG**, independent of the console level: for the duration of a run the collector's
   own namespaces (`openhound_sccm` + `openhound_collector_common`) are pinned to DEBUG and this handler's level
   is DEBUG, so a finished collection always has the full trace on disk without a re-run (`--debug` additionally
-  folds `dlt`/`ldap3` internals in, via the root logger). It solves the interleaving problem by **buffering**
-  records keyed by the active resource *or* host, flushing each group as one labelled block the moment that
+  folds `dlt`/`ldap3` internals in, via the root logger). It solves interleaving by **spooling**
+  complete redacted records to private files keyed by resource or host, publishing each group as one labelled block when that
   resource/host *completes* — driven by completion callbacks fired from the DLT generator wrapper and the
   engine's `on_target_complete`. The result is a log you can read host-by-host even though collection ran 10-wide.
 
@@ -763,7 +804,7 @@ filters/handlers and mutating live handler instances at runtime:
     logger so other impacket CRITICALs survive. `clients/wmi.py` logs its own verbose line in its place
     so the log still explains itself. Installed and removed per run, alongside the file handlers.
 - **Runtime tidy-ups of the framework's Rich handler** ([`install_filter`](src/openhound_sccm/log_context.py#L253-L292)
-  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py#L484-L504)): turn off Rich markup
+  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py#L468)): turn off Rich markup
   parsing (so `[mayyhem.com]` isn't eaten as a malformed tag), drop the `file.py:line` column, and swap
   out the formatter that appends `(openhound_version=…)` — all by writing attributes on the *existing*
   handler instances, never by editing core.
@@ -786,9 +827,9 @@ A stock REST collector on Linux CI never meets any of these.
   **both** the root and `dlt` loggers, pointed at the *same* file. The first record after midnight (or past
   the size cap) triggers a rollover that `os.rename`s the open log — which **fails on Windows** because the
   sibling handler still holds the file open. The extension can't edit core, so
-  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py#L575-L608) (run once at import) mutates
+  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py#L559) (run once at import) mutates
   the live handler instances: it repoints each to a **per-run timestamped file** and replaces `doRollover`
-  with [`_copytruncate_rollover`](src/openhound_sccm/main.py#L549-L572) — *copy the file to a dated sibling,
+  with [`_copytruncate_rollover`](src/openhound_sccm/main.py#L533) — *copy the file to a dated sibling,
   then truncate in place* — so rotation never needs exclusive access to the open handle. It's a no-op off
   Windows, where rename-based rotation works.
 - **dlt's pipeline storage gets locked under the user profile (WinError 32, again).** A *second* WinError 32,
@@ -874,11 +915,12 @@ recorded in the spec as the **Second Convert Pipeline with DuckDB Read** (`Conve
    normalized to a common shape, then `GROUP BY sid` (scalars coalesce via `any_value`, arrays union via
    `list_distinct(flatten(...))`). This `GROUP BY` is the in-DuckDB equivalent of CMBP's `Upsert-Node`, and
    the only construct that does a true column-and-array union across the per-source tables.
-2. **`convert`** then runs its **own explicit `dlt.pipeline`** that reads those coalesced DuckDB tables
-   directly and emits to the `opengraph_file` destination, instantiating a trivial typed model per table
-   (`row → node` / `row → edge`). Reading DuckDB straight from the manual pipeline — rather than first
-   writing the coalesced rows back out to JSONL — is the more DLT-native of the two patterns, confirmed
-   with the OpenHound author. Each entity is therefore emitted **exactly once** (flat 1×).
+2. **`convert`** reads those coalesced DuckDB tables directly, using one typed
+   model per table (`row → node` / `row → edge`). Originally this used another
+   DLT pipeline. The October 26 shared extraction replaces that inner pipeline
+   with common's bounded `GraphFileWriter` (§11f), preserving the same models,
+   properties, and source routing without persistent load state. Each entity
+   remains emitted once. The outer framework command adapter remains in place.
 
 Two alternatives were considered and **rejected**, recorded so the mechanism isn't re-litigated:
 
@@ -928,12 +970,11 @@ normaliser is the belt, the collector fix the braces.
 
 ### Trade-offs
 
-Convert2-Read-DB keeps each entity to a single emission — no duplicate-node disk cost and no dependence on BloodHound's
-merge-by-id — at the price of `convert` carrying its **own** `dlt.pipeline` that reads DuckDB and re-shapes
-nodes itself instead of using the stock JSONL reader. The exact DuckDB read-implementation (a custom
-`@dlt.resource` over the open lookup connection vs. DLT's `sql_database` source) is **deferred to the
-implementation plan**, where both are prototyped against the real `lookup.duckdb`. If Convert2-Read-DB proves
-unworkable, the JSONL-writeback fallback above is the documented escape hatch.
+Convert2-Read-DB keeps each entity to a single emission without depending on
+BloodHound's merge-by-id. It carries a local DuckDB/model reader instead of the
+stock JSONL reader. Shared file mechanics keep that extension code small. The
+JSONL-writeback alternative above remains unnecessary; a cached-graph comparison
+checks that changing the file helper does not change SCCM's graph.
 
 ---
 
@@ -980,13 +1021,13 @@ All three live in [`transforms.py`](src/openhound_sccm/transforms.py) and run du
 has loaded the tables. The easy way to remember them: **`_safe` keeps the pipeline alive, `_ensure_columns`
 makes the columns exist, `_arr` makes the values the right shape.**
 
-1. **`_safe` — the safety net** ([transforms.py:90](src/openhound_sccm/transforms.py#L90)). Each "load
+1. **`_safe` — the safety net** ([transforms.py:90](src/openhound_sccm/transforms.py#L92)). Each "load
    source X into table Y" step runs as its own statement. If it fails, `_safe` **logs it and keeps going**
    instead of aborting the whole preproc. This is what lets a run that used only some collection methods
    still build a graph from whatever *was* collected. It mainly catches the missing-*table* case (a table
    that doesn't exist at all).
 
-2. **`_ensure_columns` — fill the gaps** ([transforms.py:101](src/openhound_sccm/transforms.py#L101)). Right
+2. **`_ensure_columns` — fill the gaps** ([transforms.py:101](src/openhound_sccm/transforms.py#L103)). Right
    before each coalesce, it looks at the source table and **adds any missing columns the SQL needs as empty
    (NULL) columns**. So whether a column vanished because dlt dropped it (all-NULL) or because that source
    never had it, the column now exists and the SQL compiles. Adding a column the SQL doesn't actually read
@@ -994,7 +1035,7 @@ makes the columns exist, `_arr` makes the values the right shape.**
    from silently dropping a source just because one optional column went missing.
 
 3. **`_arr` (and `CAST(... AS VARCHAR[])`) — fix the shapes**
-   ([transforms.py:124](src/openhound_sccm/transforms.py#L124)). List-like columns arrive in several shapes:
+   ([transforms.py:124](src/openhound_sccm/transforms.py#L126)). List-like columns arrive in several shapes:
    a native list, a JSON array, JSON-array *text* inside a plain column, or a single scalar string. `_arr`
    turns **all of them into a real list** so DuckDB operations like `UNNEST` and array-union work. Without
    it, `UNNEST` on a JSON value errors out with "requires a single list as input." (The specific role-column
@@ -1119,6 +1160,27 @@ CMBP maintains a hard-coded list of edge kinds whose `traversable` property is `
 
 In OpenHound the list lives in `TRAVERSABLE_EDGE_KINDS` in [kinds/edges.py](src/openhound_sccm/kinds/edges.py). It is a `frozenset` covering current and future (Stage 3–6) kinds so later stages can add edges without updating the traversability logic.
 
+The Python list now deliberately differs from the original PowerShell list for six
+relationships: `SCCM_ApplicationAuthor`, `SCCM_ComplianceSettingsManager`,
+`SCCM_OSDManager`, `SCCM_OperationsAdministrator`, `SCCM_SecurityAdministrator`, and
+`SCCM_HasStoredAccount` are traversable, matching their existing SCCM schema flags.
+Separate role-only lab tests confirmed SYSTEM execution for the five role routes.
+Application Author requires an editable application deployed to the client, and
+Security Administrator first delegates an execution-capable role. The owner's
+policy treats these as potential paths without adding a deployed-application check.
+Stored-account recovery depends on the account type and access to its storage;
+the edge does not establish complete secret coverage or a recovered password.
+
+This uses the existing conversion-time list rather than changing collection or
+the SQL relationship producers. Updating only the schema would leave Python's
+emitted property false; keeping the old list would hide the approved paths.
+No new dependency, framework change, or collection feature is needed. Re-running
+convert over an existing preprocessed bucket applies the new flags. The graph-edge
+tests verify the emitted property for each changed kind and retain a check that
+membership-only edges remain non-traversable. `SCCM_HasNetworkAccessAccount` still
+has no Python producer; its separate client-cache route is tracked by
+[`ope-e10b`](.tickets/ope-e10b.md).
+
 All edges — regardless of kind — are emitted by the single generic [`GraphEdge`](src/openhound_sccm/models/graph_edge.py) model. It reads the `graph_edges` preproc table and sets both `SCCMEdgeProperties.traversable = kind in TRAVERSABLE_EDGE_KINDS` and `SCCMEdgeProperties.collectionSource` from the row's `collection_source` array (defaulting to `[]`). The `collection_source` column is a typed `VARCHAR[]` array — **not** a JSON string. Storing it as JSON was a Stage-2 bug (DuckDB returns JSON columns as plain strings, which would have required manual parsing in convert); the typed array avoids that entirely. This keeps the edge model trivially thin and `graph_edges` a uniform table — new edge kinds only require rows in the table plus an entry in the allow-list if they should be traversable.
 
 **`graph_edges` columns (as of the low-priv-assumed-edges plan, §11l):**
@@ -1129,6 +1191,8 @@ All edges — regardless of kind — are emitted by the single generic [`GraphEd
 | `end_id` | `VARCHAR` | End node id |
 | `kind` | `VARCHAR` | Edge kind string |
 | `collection_source` | `VARCHAR[]` | Provenance tags array-unioned across duplicate rows |
+| `collection_ids` | `VARCHAR[]` | Native collections on an administrator/role assignment, or the original assigned collections supporting a calculated access edge. NULL means unavailable; [] means confirmed empty. |
+| `security_scope_ids` | `VARCHAR[]` | Native object-security scopes for this administrator/role assignment; not device collections. NULL means unavailable; [] means confirmed empty. |
 | `coercion_victim_and_relay_target_pairs` | `VARCHAR[]` | Human-readable `"Coerce <victim>, relay to <target>"` strings; populated only by the three `CoerceAndRelay*` builders; `NULL` (coalesced to `[]` by dedup) for every other edge kind. |
 | `coercion_victim_hostnames` | `VARCHAR[]` | FQDNs of coercion victim hosts; populated only by `_edge_coerce_relay_smb`; `NULL` (coalesced to `[]` by dedup) for all other kinds. |
 | `sccm_infra` | `BOOLEAN` | Flags the start-node principal as SCCM infrastructure; populated only by `_edge_is_mapped_to` (`SCCM_IsMappedTo` only, CMBP parity); `NULL` for every other kind. |
@@ -1145,7 +1209,7 @@ A final dedup pass (`_graph_edges_dedup`) in the `graph_edges` preproc query gro
 
 Stage 4 adds two new edge kinds and a pre-edge dedup pass, all of which interact closely with the `node_client_device` table built by Stages 2–3.
 
-**`_dedup_client_device` — merge real+inferred twins before edges are built.** After `_enrich_client_device` resolves `ad_domain_sid` on real clients (from `SMS_R_System`) and inferred clients carry it from the CmRcService SPN's `object_sid`, the table can contain two rows for the same physical host: a real client (`is_confirmed_active_client = True`, id = SMSID) and its inferred twin (`is_confirmed_active_client = False`, id = `<SID>@root`). `_dedup_client_device` ([transforms.py:1531](src/openhound_sccm/transforms.py#L1531)) groups by `ad_domain_sid` (with a NULL-isolation guard so unresolved real clients are never grouped together), ranks the real client first, and keeps only the top-ranked row. Array columns (`collection_ids`, `collection_names`) are unioned across the group before the inferred row is discarded, so no data is lost. Critically, this runs **before** `_graph_edges_init` and all edge builders — so every edge is built from the deduped table and references only survivors, with no `graph_edges` rewrite needed afterward. This is a deliberate divergence from CMBP's order, where the merge happens after edges are built (`ps1:2269-2311`).
+**`_dedup_client_device` — merge real+inferred twins before edges are built.** After `_enrich_client_device` resolves `ad_domain_sid` on real clients (from `SMS_R_System`) and inferred clients carry it from the CmRcService SPN's `object_sid`, the table can contain two rows for the same physical host: a real client (`is_confirmed_active_client = True`, id = SMSID) and its inferred twin (`is_confirmed_active_client = False`, id = `<SID>@root`). `_dedup_client_device` ([transforms.py:1531](src/openhound_sccm/transforms.py#L1533)) groups by `ad_domain_sid` (with a NULL-isolation guard so unresolved real clients are never grouped together), ranks the real client first, and keeps only the top-ranked row. Array columns (`collection_ids`, `collection_names`) are unioned across the group before the inferred row is discarded, so no data is lost. Critically, this runs **before** `_graph_edges_init` and all edge builders — so every edge is built from the deduped table and references only survivors, with no `graph_edges` rewrite needed afterward. This is a deliberate divergence from CMBP's order, where the merge happens after edges are built (`ps1:2269-2311`).
 
 **`_edge_same_host` — bidirectional Computer ↔ SCCM_ClientDevice.** After dedup, each surviving `SCCM_ClientDevice` row whose `ad_domain_sid` matches a `Computer` node's `sid` gets two `SCCM_SameHostAs` edges (one in each direction). This gives BloodHound paths in both directions (CMBP `ps1:2314-2320`). Because dedup runs first, the edge builder always sees the canonical survivor, never the discarded inferred twin.
 
@@ -1199,8 +1263,8 @@ Most of those endpoints are now resolved upstream instead: the `ad_props` arms o
 
 #### The framework baseline
 
-A stock collector emits one OpenGraph dataset under a single `source_kind`. Core's
-`opengraph_file` destination takes `source_kind` as a required `dlt.config.value` and stamps
+A stock collector emits one OpenGraph dataset. In the SDK 0.2.12 baseline used
+by this collector, core's `opengraph_file` destination takes `source_kind` and stamps
 `{"metadata": {"source_kind": ...}}` into every file. There is no provision for emitting part
 of the graph under a *different* source — or under *no* source at all.
 
@@ -1214,37 +1278,71 @@ SCCM source would touch AD data it shouldn't. We want the AD nodes (and the edge
 to merge into BloodHound's **native AD graph** by SID, augmenting SharpHound rather than shadowing
 it — which means emitting them with **no `source_kind` at all**.
 
-#### The add-on: three emit passes + an untagged extension destination
+#### The add-on: three emit passes through the shared local writer
+
+At the final node-writing boundary, `emit_graph_from_duckdb` in
+[`convert_pipeline.py`](src/openhound_sccm/convert_pipeline.py) appends the secondary
+`SCCM` or `MSSQL` kind after the concrete kind. It leaves AD nodes alone. SCCM
+environment IDs remain hierarchy-root site IDs; MSSQL environment IDs remain the
+SQL host's AD domain SID. `schema_MSSQL.json` now selects `Domain` for the findings
+environment. These labels are added here so every node written by this collector
+gets the same treatment, including SQL topology discovered during SCCM collection.
+No collection or preprocessing work is added. See the
+[change record](docs/changes/2026-10-22-environment-scope.md).
 
 - **Node routing needs no preproc step.** The coalesced `node_*` tables are already segregated by type, so the
   convert spec list is just split into `SCCM_NODE_SPECS` (`node_site`/`collection`/`security_role`/
   `admin_user`/`client_device`), `MSSQL_NODE_SPECS` (the six `node_mssql_*` tables, `source_kind="MSSQL"`,
   `resource_prefix="mssql"`), and `AD_NODE_SPECS` (`node_computer`/`user`/`group`/`backfill`) in
   [main.py](src/openhound_sccm/main.py).
-- **Edge routing is one preproc step, now a three-way partition.** `transforms._graph_edges_split`
+- **Edge routing is one preproc step with four separate outputs.** `transforms._graph_edges_split`
   runs *after* `_node_backfill` and partitions `graph_edges` into `graph_edges_ad` (either endpoint id
   is in `node_computer ∪ node_user ∪ node_group ∪ node_backfill` — highest precedence),
-  `graph_edges_mssql` (not AD-touching **and** both endpoints are in the new `_mssql_ids` set, unioned
-  from the six MSSQL node id columns), and `graph_edges_sccm` (the remaining complement). AD↔MSSQL
+  `graph_edges_mssql` (not AD-touching **and** both endpoints are in the `_mssql_ids` set, unioned
+  from the six MSSQL node id columns), `graph_edges_hybrid` (not AD-touching and exactly one
+  endpoint is SQL), and `graph_edges_sccm` (neither endpoint is AD or SQL). AD↔MSSQL
   edges stay in `graph_edges_ad` under this precedence (e.g. `MSSQL_HostFor`, `MSSQL_HasLogin`), and
-  the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) stays in `graph_edges_sccm`, since
-  it is not both-MSSQL. Every backfill stub id counts as AD, so the `SCCM_HasMember` /
+  the MSSQL↔SCCM edge `SCCM_AssignAllPermissions` (database → site) goes to `graph_edges_hybrid`.
+  Every backfill stub id counts as AD, so the `SCCM_HasMember` /
   `SCCM_HasStoredAccount` edges to bare-`Base` principals follow their stub into the AD payload.
-- **Three emit passes.** `_emit_split_graph` calls `emit_graph_from_duckdb` three times into the same
-  directory: the SCCM pass (`source_kind="SCCM"`, `resource_prefix="sccm"`) and the MSSQL pass
-  (`source_kind="MSSQL"`, `resource_prefix="mssql"`) both through core's `opengraph_file`, and the AD
-  pass (`source_kind=None`, `resource_prefix="ad"`) through the extension's
-  [`opengraph_file_untagged`](src/openhound_sccm/opengraph_untagged.py) — a sibling of core's writer
-  that omits the `metadata` block entirely. Distinct resource prefixes give distinct file basenames
-  (`sccm_*` / `mssql_*` / `ad_*`), so three pipelines writing to one directory never collide.
+- **Three existing emit passes plus one hybrid file.** `_emit_split_graph` calls
+  `emit_graph_from_duckdb` three times into the same directory: SCCM
+  (`source_kind="SCCM"`, `resource_prefix="sccm"`), MSSQL
+  (`source_kind="MSSQL"`, `resource_prefix="mssql"`), and native AD
+  (`source_kind=None`, `resource_prefix="ad"`). All three now use common's
+  `graph/files.py::GraphFileWriter`. It promotes the existing labelled/unlabelled
+  file behavior into a shared local helper, without starting another DLT pipeline.
+  Distinct prefixes keep their files separate. SCCM still owns the models,
+  property normalization, and every routing decision; common imports no SCCM
+  code. The former local `opengraph_untagged.py` is removed after this extraction.
+  No new dependency or schema change is needed.
+- **One exact filename for SQL-to-SCCM connections.** `_emit_split_graph` then calls
+  [`emit_hybrid_edges_from_duckdb`](src/openhound_sccm/convert_pipeline.py). It reads
+  `graph_edges_hybrid`, uses the same `GraphEdge` model and property cleanup, and writes
+  `hybrid_edges.json` with no metadata block and no nodes. This follows the extension
+  process's rule for relationships spanning products. It streams edges into a temporary
+  file and replaces the final file only when complete; an empty result replaces old
+  results with an empty list. Failures are logged and raised. This small local writer
+  is needed because the existing DLT writers create numbered files per batch, while
+  the owner requested exactly `hybrid_edges.json`. Loading every edge into memory or
+  joining and deleting numbered files afterward would add unnecessary work. No shared
+  repository, dependency, schema, relationship meaning, or object-screen change is needed.
+  The normal collection ZIP includes this file because it includes every graph JSON file.
+  Rerun preprocessing and conversion for older saved collections, using a fresh output
+  directory to avoid uploading old SCCM files as well as the new hybrid file.
 
 #### Trade-offs
 
 - An AD↔SCCM or AD↔MSSQL edge lives in the untagged file but references an `SCCM_*` or `MSSQL_*` node
   defined in a differently-tagged file; this is safe only because BloodHound resolves edge endpoints
-  by id across all ingested files — so all three file sets must be uploaded together.
-- `opengraph_file_untagged` duplicates core's writer logic (a coupling to watch on OpenHound
-  upgrades), because core's destination can't express "no metadata" and core is off-limits.
+  by id across all ingested files — so all four file sets must be uploaded together.
+- The shared writer buffers at most 1,000 records or eight MiB of encoded text
+  per file stream, stages complete parts, and publishes only after model
+  generation succeeds. Publication is atomic per file; a failed publication
+  fails conversion. A hidden ownership manifest allows replacement to retire
+  only this helper's old numbered parts. Old files from earlier writers still
+  require a fresh output directory. This avoids coupling source labels to the
+  SDK writer, whose 0.4.2 interface no longer accepts `source_kind`.
 - `_graph_edges_split` must run after `node_backfill`; a future reordering of `transforms()` that
   breaks that would silently route stub-edges to the wrong file. Guarded by
   [`graph_edges_split_test.py`](tests/graph_edges_split_test.py).
@@ -1306,7 +1404,8 @@ table and are routed by `_graph_edges_split` (§11f) **by endpoint**: both-MSSQL
 `MSSQL_IsMappedTo`) go to `graph_edges_mssql`; edges with an AD endpoint (`MSSQL_HostFor`,
 `MSSQL_ExecuteOnHost`, `MSSQL_HasLogin`, `MSSQL_GetTGS`, `MSSQL_ServiceAccountFor`,
 `MSSQL_GetAdminTGS`) go to `graph_edges_ad` (untagged AD payload); and the MSSQL↔SCCM
-`SCCM_AssignAllPermissions` (database → site) goes to `graph_edges_sccm`. `_graph_edges_split`
+`SCCM_AssignAllPermissions` (database → site) goes to `graph_edges_hybrid`, written as
+untagged `hybrid_edges.json`. `_graph_edges_split`
 builds an `_mssql_ids` set from the six MSSQL node id columns to make this decision.
 
 ### 11h. Stage 6: coerce-and-relay possible edges and the synthetic Authenticated Users node
@@ -1373,7 +1472,7 @@ probe in this file.
   ([`_CCMSETUP_VERSION_RE`](src/openhound_sccm/collectors/http.py#L147-L151)) matching the
   `5.XX.XXXX.XXXX` pattern SCCMVersionGuesser uses; a hit is emitted as one row to a new raw table,
   `http_site_versions` (`site_code`, `sccm_version`, `source="HTTP-ccmsetup"`, `mp_host`).
-- `preprocess`'s [`_coalesce_http_site_version`](src/openhound_sccm/transforms.py#L1224-L1241) LEFT
+- `preprocess`'s [`_coalesce_http_site_version`](src/openhound_sccm/transforms.py#L1226-L1243) LEFT
   JOINs this table onto `node_site` and coalesces **privileged-first**
   (`coalesce(ns.version, hv.http_version)`) — AdminService/WMI's `version` always wins when both are
   known; the HTTP fingerprint only fills sites that yielded no privileged version. This must run as
@@ -1382,7 +1481,7 @@ probe in this file.
   ([models/sccm_site.py](src/openhound_sccm/models/sccm_site.py)) calls
   `cve_table.lookup_cves(version)` to populate the new `SCCM_Site.versionCVEs` property (the
   SCCMVersionGuesser build/CVE map, `cve_table.BUILD_MAP` / `CVE_MAP`), and
-  [`_edge_coerce_relay_adminservice`](src/openhound_sccm/transforms.py#L2880-L2896) reads the same
+  [`_edge_coerce_relay_adminservice`](src/openhound_sccm/transforms.py#L2882-L2898) reads the same
   version to **suppress** the `SCCM_CoerceAndRelayToAdminService` edge on sites confirmed to be SCCM 2509+
   (build ≥ `cve_table.ADMINSERVICE_NTLM_MIN_BUILD` = 9141 — the build where the AdminService starts
   rejecting NTLM). An unknown/unparseable version fails **open**: the edge is kept as a possible edge
@@ -1430,12 +1529,12 @@ device-referenced principals, and so on. `resolve_principal` already caches ever
 At the end of the per-host stage, a new DLT resource, `ldap_resolved_principals`
 ([source.py:227](src/openhound_sccm/source.py#L227)), drains that accumulator into a raw table — one
 row per uniquely-resolved AD object, regardless of which phase resolved it. `preprocess`'s
-`_derive_ad_props` ([transforms.py:267](src/openhound_sccm/transforms.py#L267)) builds a
+`_derive_ad_props` ([transforms.py:267](src/openhound_sccm/transforms.py#L269)) builds a
 `sid -> AD-attribute` lookup table (`ad_props`) from it — deriving `Enabled` from the
 `userAccountControl` `ACCOUNTDISABLE` bit, `Type` from the last `objectClass` element (title-cased),
 and always setting `IsDomainPrincipal = True` (every row in this table was, by construction,
 actually resolved against AD) — and `_join_ad_props`
-([transforms.py:341](src/openhound_sccm/transforms.py#L341)) LEFT JOINs it onto `node_computer`,
+([transforms.py:341](src/openhound_sccm/transforms.py#L343)) LEFT JOINs it onto `node_computer`,
 `node_user`, and `node_group` by SID, before those tables reach `convert`.
 
 > **CRITICAL: resolved-principals-only, not a domain-wide sweep.** This reaches only the principals
@@ -1449,7 +1548,7 @@ actually resolved against AD) — and `_join_ad_props`
 > every AD-native node in the graph carries them.
 
 **Trade-off.** `ldap_resolved_principals` is itself a best-effort finalization table whose own
-`pipeline.run` is allowed to fail without aborting the collect ([transforms.py:276](src/openhound_sccm/transforms.py#L276)),
+`pipeline.run` is allowed to fail without aborting the collect ([transforms.py:276](src/openhound_sccm/transforms.py#L278)),
 so it may be absent on some runs. `_derive_ad_props` treats it like any other optional source
 (`_ensure_columns` backfills missing/all-NULL columns, `_safe` logs and skips outright absence),
 leaving `ad_props` created-but-empty rather than raising, so `_join_ad_props`'s LEFT JOINs always
@@ -1751,6 +1850,12 @@ collecting; it always keeps timestamped per-run logs and integration/compare rep
 appends a new load package beside any already present and `preprocess` UNIONs every package's rows into
 one graph — invisibly, since the exit code and `graph/`'s file timestamps look identical either way, and a
 table the new run finds empty simply keeps the old run's rows. `_clean_previous_collection` (`main.py`)
+is now a thin SCCM adapter over common's `orchestration/artifacts.py`. SCCM keeps
+the same artifact list and maps cleanup failures to its established argument
+error. Common checks all resolved targets stay below the named output directory
+before removing any of them; logs and reports are not in the list. The shared
+`orchestration/commands.py::cli_path_arg` also supplies the existing continuation
+path formatting, with literal PowerShell quoting for special characters. Cleanup
 runs deliberately **outside** the collection's own try/except, so a locked artifact (e.g. `lookup.duckdb`
 open in another tool) aborts the run rather than silently collecting onto stale data; without the flag it
 still warns (naming the prior load-package count and the oldest package's date) instead of staying silent.
@@ -1802,6 +1907,70 @@ CMBP names these nodes `$domainObject.samAccountName` — bare, unqualified. Thi
 - A standalone graph with no SharpHound data will show object ids for any principal whose domain FQDN could not be resolved, where the old code showed *something*. Accepted: an id is honest about what is unknown; a fabricated name is a claim that overwrites better data.
 - `ad_props` is now load-bearing for names as well as attributes. If `ldap_resolved_principals` fails to persist (a best-effort final `pipeline.run`, never observed across 12 recorded runs), `ad_props` builds empty and the whole AD payload ships unnamed. `_derive_ad_props` and `_domain_fqdn_by_sid` each warn when they build empty, so the degradation is visible in the preproc log rather than silent — previously there was a warning at the emission site but none at the consumption site.
 - Any future AD node kind must be stamped too, or it ships unnamed. Guarded by `sharphound_naming_test.py`.
+
+---
+
+### 11m. Preserve each administrator's role assignments
+
+**Problem.** The original device-access calculation paired every role assigned to
+an administrator with every collection listed on that administrator. SCCM allows
+different collections for each role, so this could grant a role over devices
+outside its assignment. Collections belong to an administrator's assignment;
+putting them on a shared role node would also mix different administrators.
+
+**Collection.** [The privileged collector](src/openhound_sccm/collectors/privileged.py)
+reads each `SMS_Admin` and `SMS_Role` individually after listing their summaries.
+The lab confirmed that normal queries leave the lazy `Permissions` and
+`Operations` fields empty. AdminService uses its keyed object endpoint; the
+collector's [WMI wrapper](src/openhound_sccm/clients/wmi.py) uses `GetObject`/`Get`
+through the already authenticated backend. This wrapper addition is local to
+this repository; the shared library and OpenHound are unchanged. The original
+embedded field names and values survive in the saved data. Each read also records
+`permissions_complete` or `operations_complete`; failed reads preserve the summary
+and log that the details are incomplete.
+
+**Preprocessing.** [role_assignments.py](src/openhound_sccm/role_assignments.py)
+builds `admin_role_assignments`, one record per administrator and role. Collection
+entries (`CategoryTypeID = 1`) and security-scope entries (`29`) remain separate.
+Missing details, malformed entries, or unknown category types withhold that read's
+calculated access and generate a warning. A successfully retrieved empty array
+grants nothing. Original records remain available for inspection. The separate
+`admin_collection_permissions` table follows limiting-collection descendants,
+retaining the original assigned collection as evidence. Its recursive `UNION`
+removes duplicates and terminates cycles. Both tables are built in DuckDB; device
+membership expansion does not run in Python memory.
+
+**Graph.** Administrator-to-role `SCCM_IsAssigned` edges carry native
+`collectionIds` and `securityScopeIds`. Their role node retains its existing
+`operations` property, with each original action record represented as a JSON
+string. Administrator-to-collection edges and administrator node lists remain
+overviews. The seven supported device-role edges are calculated from the paired
+table and carry only the original assigned `collectionIds` that support that edge.
+`SCCM_AllPermissions` requires both global collections on the Full Administrator
+assignment. The optional administrator Tier Zero selector checks the supported
+role's assignment edge for All Systems. Scopes are preserved for review and do
+not filter device membership. Custom-role evaluation and additional attack-route
+prerequisite checks remain separate work.
+
+The [edge property classes](src/openhound_sccm/graph.py) and
+[edge model](src/openhound_sccm/models/graph_edge.py) distinguish missing details
+(`NULL`, omitted from graph output) from a confirmed empty list (`[]`). The
+`graph_edges` table adds nullable `collection_ids` and `security_scope_ids`
+columns; deduplication unions their evidence, and every output partition retains
+them. This adds no node kinds, relationship kinds, or dependencies. Old collections
+need recollection because preprocessing cannot recover discarded assignments.
+
+The [change record](docs/changes/2026-10-26-role-assignments.md) explains alternatives,
+tests, verification commands, release limitations, and suggested review/commit steps.
+Its manual lab check used a disposable account with Full Administrator and Read-only
+Analyst on different empty collections. Modifying a child under the first succeeded;
+the provider explicitly denied the same action under the second. All test objects
+were removed and cleanup was independently verified.
+
+The role-support warning describes additional unsupported role IDs without
+calling them custom. Newer built-in roles such as CMPivot Administrator can also
+fall outside the supported and known-omitted lists. This changes the wording
+only; the role lists and graph calculations remain the same.
 
 ---
 
@@ -2115,8 +2284,22 @@ took a separate, manual step outside `openhound collect sccm`.
 
 ## Changelog
 
+- **2026-10-26:** Documented shared connection-local LDAP ticket authentication,
+  without an OS ticket-cache environment change. Recorded the separately reviewed
+  owned-WMI recommendation; SCCM WMI defaults remain unchanged.
+
 | Date | Change |
 |---|---|
+| 2026-10-26 | Replaced the inner conversion DLT pipelines and local native destination with common's bounded graph file writer. Preserved model/routing rules, evidence, custom labels, native output, and the fixed hybrid file. Cached graph comparison retained 99 nodes and 307 relationships, with only explicitly allowed conversion timestamps ignored. |
+| 2026-10-26 | Moved reusable prior-output inspection, declared-artifact cleanup, and continuation path quoting to common. Kept SCCM's artifact list, warnings, reports/log preservation, and cleanup-error policy in thin adapters. |
+| 2026-10-26 | Promoted full/issues handlers and their lifecycle into common, retaining SCCM formats and defaults. Spool files bound unfinished-group memory; scoped cleanup releases diagnostics after collection failure as well as chained stages. |
+| 2026-10-26 | Adopted shared evidence fields in edge and SQL-node property classes, preserving SCCM evidence decisions and serialized names. Preparation/conversion of the same saved collection and exact graph comparison provide the extraction check; see [the evidence record](docs/changes/2026-10-26-shared-evidence-fields.md). |
+| 2026-10-26 | Preserved administrator/role/collection pairings (section 11m), retained original permission evidence, retrieved lazy role actions, and attached assignment evidence to edges. Corrected device-access, hierarchy-wide, and optional Tier Zero calculations to use each role's own collections. Added focused collection, graph, and missing-data tests. |
+| 2026-10-23 | Replaced local progress-selection classes with the shared `dlt.progress` helper and a logger-preserving adapter. Default-off behavior and the SCCM console format remain the same. Combined consumer checks and the shared release are pending; see [the extraction record](docs/changes/2026-10-23-shared-progress-selection.md). |
+| 2026-10-23 | Moved all 24 saved searches to `extension/saved_searches/` and filled three blank descriptions, identifying the replaceable `PS1-DEV` example. Separated SQL-to-SCCM connections into `graph_edges_hybrid` and the exact untagged `hybrid_edges.json` file. Retained the existing AD output, relationship properties, and object screens. Added routing/file checks and updated the user instructions. See [change and verification notes](docs/changes/2026-10-23-saved-searches-and-hybrid-output.md). |
+| 2026-10-23 | Changed the MSSQL schema environment kind to `MSSQL_Server` at the owner's request. Node environment IDs remain SQL-host AD domain SIDs; this schema-only change does not establish server-based grouping. Fixed a literal database placeholder in edge-help Markdown that BloodHound interpreted as HTML. |
+| 2026-10-22 | Added secondary SCCM/MSSQL kinds at final conversion and selected Domain as the MSSQL findings environment. Retained SCCM hierarchy-root and MSSQL host-domain environment IDs. Native AD output is unchanged. |
+| 2026-10-21 | **Made five role paths and site-stored accounts traversable in Python** (section 11c). The existing SCCM schema already marks them traversable. Graph-edge tests check the emitted flags; Application Author remains a potential path requiring an editable deployed application, and Security Administrator's route includes role delegation. No collection, schema, or shared-library change. The deferred client-cache NAA edge remains tracked in ope-e10b. |
 | 2026-10-05 | **System Management ACL scope preserves effective inheritance-type ACEs** (section 3). The DACL parser skips inherit-only and ObjectType-scoped grants, but an InheritedObjectType GUID alone limits child inheritance and does not remove Full Control on the container. A regression test distinguishes that case from inherit-only; a DC-only lab run with disposable Exchange-like and SCCM principals confirmed DACL rows, GenericAll edges, and target registration. |
 | 2026-09-30 | **Added opt-in `--http-proxy` on the PR #11 branch.** Direct HTTP remains the default. An explicit HTTP proxy or `auto` routes AdminService and HTTP role probes only; `auto` reads environment and static Windows registry proxy settings and honors bypasses while the Requests session keeps `trust_env=False` to avoid ambient `.netrc` credentials. The option cannot be combined with the process-wide SOCKS5 `--proxy`. Proxy 407 responses produce a visible warning, and a failed direct HTTP connection suggests `auto` when environment or static Windows proxy settings apply to that target. |
 | 2026-09-30 | **Bounded verbose output from local client logs without losing host discovery** (§7). The scraper keeps reading CCM/ccmsetup logs on Windows even when `root\CCM` is absent. It logs one full URL and UNC sample per host, counts suppressed matches in one summary, and leaves the target set unchanged. A test covers repeated references across both log directories and discovery from logs left by a former client. |

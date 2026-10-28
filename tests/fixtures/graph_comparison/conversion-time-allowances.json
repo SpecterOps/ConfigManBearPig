@@ -1,0 +1,92 @@
+[
+  {
+    "entity": "node",
+    "kind": "Computer",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "Container",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "Group",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_Database",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_DatabaseRole",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_DatabaseUser",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_Login",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_Server",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "MSSQL_ServerRole",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "SCCM_AdminUser",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "SCCM_ClientDevice",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "SCCM_Collection",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "SCCM_SecurityRole",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "SCCM_Site",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  },
+  {
+    "entity": "node",
+    "kind": "User",
+    "property": "last_seen",
+    "reason": "OpenHound stamps the time of each separate conversion. Both runs use the same saved collection; every other property and source label is compared exactly."
+  }
+]

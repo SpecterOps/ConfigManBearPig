@@ -14,6 +14,7 @@ BASE = "Base"
 CONTAINER = "Container"
 
 # SCCM kinds
+SCCM = "SCCM"  # Secondary label; concrete node kinds stay first.
 SCCM_SITE = "SCCM_Site"
 SCCM_CLIENT_DEVICE = "SCCM_ClientDevice"
 SCCM_COLLECTION = "SCCM_Collection"
@@ -21,6 +22,7 @@ SCCM_ADMIN_USER = "SCCM_AdminUser"
 SCCM_SECURITY_ROLE = "SCCM_SecurityRole"
 
 # MSSQL kinds
+MSSQL = "MSSQL"  # Secondary label; concrete node kinds stay first.
 MSSQL_SERVER = "MSSQL_Server"
 MSSQL_LOGIN = "MSSQL_Login"
 MSSQL_DATABASE = "MSSQL_Database"

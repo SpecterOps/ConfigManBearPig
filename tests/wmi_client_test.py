@@ -7,6 +7,7 @@ the caller supplies the namespace and class; site-code identification lives in
 the privileged collector (see test_privileged.py).
 """
 import base64
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +27,61 @@ def test_build_wql_select_star_when_no_columns():
 def test_build_wql_columns_and_where():
     wql = w._build_wql("SMS_SCI_SiteDefinition", ("SiteCode", "Props"), "SiteCode = 'PS1'")
     assert wql == "SELECT SiteCode,Props FROM SMS_SCI_SiteDefinition WHERE SiteCode = 'PS1'"
+
+
+def test_complete_instance_read_uses_getobject_and_releases_dcom_object():
+    calls = []
+    released = []
+    obj = SimpleNamespace(
+        getProperties=lambda: {"AdminID": {"value": 17}, "Permissions": {"value": []}},
+        RemRelease=lambda: released.append(True),
+    )
+
+    class CompleteBackend(w._ImpacketBackend):
+        def __init__(self):
+            self.operation = None
+
+        def close(self):
+            released.append("session-closed")
+
+        def _services_for(self, namespace):
+            def get(path):
+                calls.append((namespace, path))
+                return obj, None
+            return SimpleNamespace(GetObject=get)
+
+    client = _client()
+    client._backend = CompleteBackend()
+    assert client.read_instance('root\\SMS\\site_PS1', 'SMS_Admin', 'AdminID', 17) == {
+        "AdminID": 17, "Permissions": [],
+    }
+    assert calls == [('root\\SMS\\site_PS1', 'SMS_Admin.AdminID=17')]
+    assert released == [True, "session-closed"]
+
+
+def test_complete_instance_read_uses_windows_get_and_normalizes_embedded_entries():
+    calls = []
+    prop = SimpleNamespace(Name="Permissions", Value=[])
+
+    class CompleteBackend(w._PyWin32Backend):
+        def _require_owner_thread(self):
+            pass  # This test supplies an inert Windows object, not a COM object.
+
+        def _services_for(self, namespace):
+            def get(path):
+                calls.append(path)
+                return SimpleNamespace(Properties_=[prop])
+            return SimpleNamespace(Get=get)
+
+    client = _client()
+    client._backend = CompleteBackend('ps1-sms.mayyhem.com')
+    assert client.read_instance('root\\SMS\\site_PS1', 'SMS_Role', 'RoleID', 'SMS0001R') == {"Permissions": []}
+    assert calls == ['SMS_Role.RoleID="SMS0001R"']
+
+
+def test_complete_instance_read_requires_an_authenticated_backend(caplog):
+    assert _client().read_instance('root\\SMS', 'SMS_Admin', 'AdminID', 17) is None
+    assert 'before a successful query' in caplog.text
 
 
 # --- normalization --------------------------------------------------------

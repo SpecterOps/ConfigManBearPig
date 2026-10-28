@@ -80,7 +80,7 @@ def test_authenticated_users_built_from_non_adminservice_relay_kind():
     # Trailing NULLs are sccm_infra/assumed/assumption_basis (unrelated to this test;
     # only SCCM_IsMappedTo populates sccm_infra, and no builder here stamps assumed).
     con.execute(
-        f"INSERT INTO sccm.graph_edges VALUES "
+        f"INSERT INTO sccm.graph_edges (start_id, end_id, kind, collection_source, coercion_victim_and_relay_target_pairs, coercion_victim_hostnames, sccm_infra, assumed, assumption_basis) VALUES "
         f"('CORP.EXAMPLE.COM-S-1-5-11', 'some-login-id', '{MSSQL_COERCE_AND_RELAY_TO_MSSQL}', "
         f"['MSSQL-ScanForEPA'], ['Coerce DB01.corp.example.com, relay to db01:1433'], NULL, NULL, NULL, NULL)"
     )

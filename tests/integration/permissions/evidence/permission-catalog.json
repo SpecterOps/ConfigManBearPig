@@ -1,0 +1,674 @@
+[
+  {
+    "name": "SMS_Admin",
+    "id": 28,
+    "operations": [
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 4,
+        "OperationName": "Remove",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 1024,
+        "OperationName": "Add",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 28,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_Application",
+    "id": 31,
+    "operations": [
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 2048,
+        "OperationName": "Approve",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 31,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_Collection",
+    "id": 1,
+    "operations": [
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 8,
+        "OperationName": "Read BitLocker Recovery Key",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 16,
+        "OperationName": "Rotate BitLocker Recovery Key",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 32,
+        "OperationName": "Remote Control",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 64,
+        "OperationName": "Run CMPivot",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 128,
+        "OperationName": "Modify Resource",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 512,
+        "OperationName": "Delete Resource",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 2048,
+        "OperationName": "View Collected File",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 4096,
+        "OperationName": "Read Resource",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 16384,
+        "OperationName": "Deploy Packages",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 32768,
+        "OperationName": "Audit Security",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 65536,
+        "OperationName": "Deploy Client Settings",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 262144,
+        "OperationName": "Enforce Security",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 524288,
+        "OperationName": "Deploy AntiMalware Policies",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 1048576,
+        "OperationName": "Deploy Applications",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 2097152,
+        "OperationName": "Modify Collection Setting",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 4194304,
+        "OperationName": "Deploy Configuration Items",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 8388608,
+        "OperationName": "Deploy Task Sequences",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 16777216,
+        "OperationName": "Control AMT",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 33554432,
+        "OperationName": "Provision AMT",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 67108864,
+        "OperationName": "Deploy Software Updates",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 134217728,
+        "OperationName": "Deploy Firewall Policies",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 268435456,
+        "OperationName": "Run Script",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 536870912,
+        "OperationName": "Notify Resource",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 1073741824,
+        "OperationName": "Modify Client Status Alert",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 1,
+        "BitFlag": 2147483648,
+        "OperationName": "Enroll Into Comanagement",
+        "IsTypeWideOperation": false
+      }
+    ]
+  },
+  {
+    "name": "SMS_ConfigurationItem",
+    "id": 11,
+    "operations": [
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 262144,
+        "OperationName": "Network Access",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 11,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_Package",
+    "id": 2,
+    "operations": [
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 2,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_Role",
+    "id": 27,
+    "operations": [
+      {
+        "ObjectTypeID": 27,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 27,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 27,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 27,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_Scripts",
+    "id": 213,
+    "operations": [
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 213,
+        "BitFlag": 262144,
+        "OperationName": "Approve",
+        "IsTypeWideOperation": false
+      }
+    ]
+  },
+  {
+    "name": "SMS_Site",
+    "id": 6,
+    "operations": [
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 16384,
+        "OperationName": "Meter Site",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 65536,
+        "OperationName": "Manage Status Filters",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 262144,
+        "OperationName": "Modify CH Settings",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 524288,
+        "OperationName": "Import Machine",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 1048576,
+        "OperationName": "Read CH Settings",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 2097152,
+        "OperationName": "Modify Connector Policy",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 4194304,
+        "OperationName": "Manage OSD Certificate",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 6,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  },
+  {
+    "name": "SMS_TaskSequencePackage",
+    "id": 20,
+    "operations": [
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 1,
+        "OperationName": "Read",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 2,
+        "OperationName": "Modify",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 4,
+        "OperationName": "Delete",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 16,
+        "OperationName": "Set Security Scope",
+        "IsTypeWideOperation": false
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 1024,
+        "OperationName": "Create",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 8192,
+        "OperationName": "Manage Folder Item",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 131072,
+        "OperationName": "Manage Folder",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 1048576,
+        "OperationName": "Create Task Sequence Media",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 2097152,
+        "OperationName": "Create Stand-alone Media",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 268435456,
+        "OperationName": "Run Report",
+        "IsTypeWideOperation": true
+      },
+      {
+        "ObjectTypeID": 20,
+        "BitFlag": 536870912,
+        "OperationName": "Modify Report",
+        "IsTypeWideOperation": true
+      }
+    ]
+  }
+]

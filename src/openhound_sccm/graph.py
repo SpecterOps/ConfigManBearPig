@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 
 from openhound.core.models.entries_dataclass import EdgeProperties, Node, NodeProperties
+from openhound_collector_common.graph.evidence import EvidenceProperties
 
 # A domain SID is the `S-1-5-21-X-Y-Z` prefix; an account SID appends `-RID`.
 _DOMAIN_SID = re.compile(r"^(S-1-5-21(?:-\d+){3})-\d+$")
@@ -57,7 +58,7 @@ BACKFILL_START_KIND: dict[str, str] = {
 
 
 @dataclass
-class SCCMEdgeProperties(EdgeProperties):
+class SCCMEdgeProperties(EdgeProperties, EvidenceProperties):
     """Property set carried by every edge this collector emits.
 
     Property names mirror ConfigManBearPig.ps1 exactly so BloodHound entity panels
@@ -91,15 +92,28 @@ class SCCMEdgeProperties(EdgeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     general: str | None = field(default=None, kw_only=True)
     windowsAbuse: str | None = field(default=None, kw_only=True)
     linuxAbuse: str | None = field(default=None, kw_only=True)
     opsec: str | None = field(default=None, kw_only=True)
     references: list[str] | None = field(default=None, kw_only=True)
     SCCMInfra: bool | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
+
+
+@dataclass
+class SCCMRoleEdgeProperties(SCCMEdgeProperties):
+    """Evidence for an administrator's role assignment or calculated access.
+
+    Attributes:
+        collectionIds: Native collection IDs assigned for this role. On a calculated
+            access edge, only the original assigned collections supporting that edge.
+            None means details were unavailable; an empty list means none were assigned.
+        securityScopeIds: Native security-scope IDs assigned for this administrator
+            and role. Present only on the administrator-to-role assignment edge.
+    """
+
+    collectionIds: list[str] | None = field(default=None, kw_only=True)
+    securityScopeIds: list[str] | None = field(default=None, kw_only=True)
 
 
 @dataclass
@@ -576,7 +590,8 @@ class SCCMSecurityRoleProperties(NodeProperties):
         copiedFromID: The role ID this role was cloned from, if it was created by
             copying an existing role, or null otherwise.
         numberOfAdmins: How many admin users currently hold this role.
-        operations: The list of individual permissions/operations this role grants.
+        operations: Original role-action records represented as JSON strings, each
+            containing SCCM's ObjectTypeID and GrantedOperations values.
         rootSiteCode: The site code of the top-most site in this role's site hierarchy.
         siteCode: The site code of the SCCM site where this role is defined.
         createdBy: Who (which account) created this role.
@@ -748,7 +763,7 @@ class SCCMClientDeviceProperties(NodeProperties):
 # (spec §2). `strictEncryption` / `instanceNames` are port-added (no CMBP key).
 # ----------------------------------------------------------------------------
 @dataclass
-class MSSQLServerProperties(NodeProperties):
+class MSSQLServerProperties(NodeProperties, EvidenceProperties):
     """A SQL Server instance discovered on an SCCM-related host (a site database
     server, or a computer with sysadmin rights on some other SQL instance).
 
@@ -784,7 +799,6 @@ class MSSQLServerProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     dnsHostName: str | None = field(default=None, kw_only=True)
     SQLServicePort: str | None = field(default=None, kw_only=True)
     SCCMInfra: bool = field(default=False, kw_only=True)
@@ -805,12 +819,10 @@ class MSSQLServerProperties(NodeProperties):
     # control manager can. Stays unset at low privilege: the Services hive is
     # admin-gated.
     SQLServiceStartType: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
 
 
 @dataclass
-class MSSQLDatabaseProperties(NodeProperties):
+class MSSQLDatabaseProperties(NodeProperties, EvidenceProperties):
     """A database hosted on an `MSSQL_Server`.
 
     Attributes:
@@ -831,17 +843,14 @@ class MSSQLDatabaseProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     isTrustworthy: bool = field(default=True, kw_only=True)
     SCCMInfra: bool = field(default=True, kw_only=True)
     SCCMSite: str | None = field(default=None, kw_only=True)
     SQLServer: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
 
 
 @dataclass
-class MSSQLServerRoleProperties(NodeProperties):
+class MSSQLServerRoleProperties(NodeProperties, EvidenceProperties):
     """A server-level SQL Server role (e.g. ``sysadmin``) on an `MSSQL_Server`.
 
     Attributes:
@@ -858,17 +867,14 @@ class MSSQLServerRoleProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     isFixedRole: bool = field(default=True, kw_only=True)
     members: list[str] = field(default_factory=list, kw_only=True)
     SCCMSite: str | None = field(default=None, kw_only=True)
     SQLServer: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
 
 
 @dataclass
-class MSSQLDatabaseRoleProperties(NodeProperties):
+class MSSQLDatabaseRoleProperties(NodeProperties, EvidenceProperties):
     """A database-level SQL Server role (e.g. ``db_owner``) on an `MSSQL_Database`.
 
     Attributes:
@@ -888,18 +894,15 @@ class MSSQLDatabaseRoleProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     database: str | None = field(default=None, kw_only=True)
     isFixedRole: bool = field(default=True, kw_only=True)
     members: list[str] = field(default_factory=list, kw_only=True)
     SCCMSite: str | None = field(default=None, kw_only=True)
     SQLServer: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
 
 
 @dataclass
-class MSSQLLoginProperties(NodeProperties):
+class MSSQLLoginProperties(NodeProperties, EvidenceProperties):
     """A server-level login (an account that can connect to an `MSSQL_Server`).
 
     Attributes:
@@ -920,18 +923,15 @@ class MSSQLLoginProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     loginType: str | None = field(default=None, kw_only=True)
     memberOfRoles: list[str] = field(default_factory=list, kw_only=True)
     SCCMInfra: bool = field(default=True, kw_only=True)
     SCCMSite: str | None = field(default=None, kw_only=True)
     SQLServer: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)
 
 
 @dataclass
-class MSSQLDatabaseUserProperties(NodeProperties):
+class MSSQLDatabaseUserProperties(NodeProperties, EvidenceProperties):
     """A database-level user (a login's identity inside one specific database).
 
     Attributes:
@@ -954,12 +954,9 @@ class MSSQLDatabaseUserProperties(NodeProperties):
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
-    collectionSource: list[str] = field(default_factory=list, kw_only=True)
     database: str | None = field(default=None, kw_only=True)
     login: str | None = field(default=None, kw_only=True)
     memberOfRoles: list[str] = field(default_factory=list, kw_only=True)
     SCCMInfra: bool = field(default=True, kw_only=True)
     SCCMSite: str | None = field(default=None, kw_only=True)
     SQLServer: str | None = field(default=None, kw_only=True)
-    assumed: bool | None = field(default=None, kw_only=True)
-    assumptionBasis: str | None = field(default=None, kw_only=True)

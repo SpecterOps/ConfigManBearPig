@@ -1,0 +1,1780 @@
+{
+  "description": "Two SCCM hierarchies, seven built-in control roles, scoped and global assignments, conditional/assumed paths, nested/cyclic groups, and deliberately nonqualifying objects.",
+  "nodes": [
+    {
+      "id": "cas-a",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZCASA",
+        "siteType": "Central Administration Site",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "primary-a1",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZPA1",
+        "siteType": "Primary Site",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "primary-a2",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZPA2",
+        "siteType": "Primary Site",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "secondary-a",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZSECA",
+        "siteType": "Secondary Site",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "unknown-a",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZUNKA",
+        "siteType": null,
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "cas-b",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZCASB",
+        "siteType": "Central Administration Site",
+        "environmentid": "root-b"
+      }
+    },
+    {
+      "id": "primary-b1",
+      "labels": [
+        "SCCM_Site"
+      ],
+      "properties": {
+        "siteCode": "PZPB1",
+        "siteType": "Primary Site",
+        "environmentid": "root-b"
+      }
+    },
+    {
+      "id": "cas-active",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZCASA"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "cas-passive",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZCASA"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "primary-active",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZPA1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "primary-passive",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZPA1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "other-primary",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZPA2"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "cas-active-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "provider-a",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Provider@PZPA1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "provider-a-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "sql-host-a",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "sql-instance-a",
+      "labels": [
+        "MSSQL_Server"
+      ],
+      "properties": {
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "database-cas-a",
+      "labels": [
+        "MSSQL_Database"
+      ],
+      "properties": {
+        "SCCMInfra": true,
+        "assumed": true
+      }
+    },
+    {
+      "id": "database-primary-a",
+      "labels": [
+        "MSSQL_Database"
+      ],
+      "properties": {
+        "SCCMInfra": true,
+        "assumed": true
+      }
+    },
+    {
+      "id": "sql-host-a-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "unrelated-database",
+      "labels": [
+        "MSSQL_Database"
+      ],
+      "properties": {
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "unrelated-sql-instance",
+      "labels": [
+        "MSSQL_Server"
+      ],
+      "properties": {
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "secondary-host",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZSECA"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "unknown-host",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZUNKA"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "management-point",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Management Point@PZPA1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "distribution-point",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Distribution Point@PZPA1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "cas-b-host",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Site Server@PZCASB"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "provider-b",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [
+          "SMS Provider@PZPB1"
+        ],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "sql-host-b",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "sql-instance-b",
+      "labels": [
+        "MSSQL_Server"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "database-b",
+      "labels": [
+        "MSSQL_Database"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "dc-computer",
+      "labels": [
+        "Computer",
+        "Tag_Tier_Zero"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "dc-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "client-tagged-computer",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "client-tagged-device",
+      "labels": [
+        "SCCM_ClientDevice",
+        "Tag_Tier_Zero"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "unmapped-tagged-client",
+      "labels": [
+        "SCCM_ClientDevice",
+        "Tag_Tier_Zero"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "workstation-a",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "workstation-a-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "workstation-b",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {
+        "SCCMSiteSystemRoles": [],
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "workstation-b-client",
+      "labels": [
+        "SCCM_ClientDevice"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "stored-account",
+      "labels": [
+        "User"
+      ],
+      "properties": {
+        "SCCMInfra": true
+      }
+    },
+    {
+      "id": "relay-source",
+      "labels": [
+        "Group"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "unrelated-login",
+      "labels": [
+        "MSSQL_Login"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "role-SMS0001R",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0001R",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS0008R",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0008R",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS0009R",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0009R",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS0006R",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0006R",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS000AR",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS000AR",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS000ER",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS000ER",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-SMS000FR",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS000FR",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "all-systems-a",
+      "labels": [
+        "SCCM_Collection"
+      ],
+      "properties": {
+        "collectionID": "SMS00001",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "narrow-collection-a",
+      "labels": [
+        "SCCM_Collection"
+      ],
+      "properties": {
+        "collectionID": "PZ000001",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "role-full-b",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0001R",
+        "environmentid": "root-b"
+      }
+    },
+    {
+      "id": "all-systems-b",
+      "labels": [
+        "SCCM_Collection"
+      ],
+      "properties": {
+        "collectionID": "SMS00001",
+        "environmentid": "root-b"
+      }
+    },
+    {
+      "id": "global-0001r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-0001r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-0001r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-0001r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-0008r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-0008r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-0008r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-0008r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-0009r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-0009r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-0009r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-0009r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-0006r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-0006r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-0006r",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-0006r-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-000ar",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-000ar-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-000ar",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-000ar-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-000er",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-000er-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-000er",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-000er-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-000fr",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "global-000fr-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "scoped-000fr",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "scoped-000fr-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "admin-group",
+      "labels": [
+        "Group"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "nested-group",
+      "labels": [
+        "Group"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "nested-user",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "nested-computer",
+      "labels": [
+        "Computer"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "cycle-group",
+      "labels": [
+        "Group"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "unrelated-container",
+      "labels": [
+        "Container"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "global-admin-b",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-b"
+      }
+    },
+    {
+      "id": "global-ad-user-b",
+      "labels": [
+        "User"
+      ],
+      "properties": {}
+    },
+    {
+      "id": "unrelated-scoped-admin",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "custom-admin",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "custom-admin-role",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "PZ100001",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "readonly-admin",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "readonly-admin-role",
+      "labels": [
+        "SCCM_SecurityRole"
+      ],
+      "properties": {
+        "roleID": "SMS0002R",
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "cross-hierarchy-admin",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    },
+    {
+      "id": "split-role-admin",
+      "labels": [
+        "SCCM_AdminUser"
+      ],
+      "properties": {
+        "environmentid": "root-a"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "start": "cas-active-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "cas-active",
+      "properties": {}
+    },
+    {
+      "start": "cas-active",
+      "kind": "SCCM_SameHostAs",
+      "end": "cas-active-client",
+      "properties": {}
+    },
+    {
+      "start": "provider-a",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "cas-a",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "provider-a",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "primary-a1",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "provider-a",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "primary-a2",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "provider-a-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "provider-a",
+      "properties": {}
+    },
+    {
+      "start": "provider-a",
+      "kind": "SCCM_SameHostAs",
+      "end": "provider-a-client",
+      "properties": {}
+    },
+    {
+      "start": "sql-host-a",
+      "kind": "MSSQL_HostFor",
+      "end": "sql-instance-a",
+      "properties": {}
+    },
+    {
+      "start": "sql-instance-a",
+      "kind": "MSSQL_Contains",
+      "end": "database-cas-a",
+      "properties": {}
+    },
+    {
+      "start": "database-cas-a",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "cas-a",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "sql-instance-a",
+      "kind": "MSSQL_Contains",
+      "end": "database-primary-a",
+      "properties": {}
+    },
+    {
+      "start": "database-primary-a",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "primary-a1",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "sql-host-a-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "sql-host-a",
+      "properties": {}
+    },
+    {
+      "start": "sql-host-a",
+      "kind": "SCCM_SameHostAs",
+      "end": "sql-host-a-client",
+      "properties": {}
+    },
+    {
+      "start": "sql-instance-a",
+      "kind": "MSSQL_Contains",
+      "end": "unrelated-database",
+      "properties": {}
+    },
+    {
+      "start": "sql-host-a",
+      "kind": "MSSQL_HostFor",
+      "end": "unrelated-sql-instance",
+      "properties": {}
+    },
+    {
+      "start": "provider-b",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "cas-b",
+      "properties": {}
+    },
+    {
+      "start": "provider-b",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "primary-b1",
+      "properties": {}
+    },
+    {
+      "start": "sql-host-b",
+      "kind": "MSSQL_HostFor",
+      "end": "sql-instance-b",
+      "properties": {}
+    },
+    {
+      "start": "sql-instance-b",
+      "kind": "MSSQL_Contains",
+      "end": "database-b",
+      "properties": {}
+    },
+    {
+      "start": "database-b",
+      "kind": "SCCM_AssignAllPermissions",
+      "end": "primary-b1",
+      "properties": {}
+    },
+    {
+      "start": "dc-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "dc-computer",
+      "properties": {}
+    },
+    {
+      "start": "dc-computer",
+      "kind": "SCCM_SameHostAs",
+      "end": "dc-client",
+      "properties": {}
+    },
+    {
+      "start": "primary-a1",
+      "kind": "SCCM_HasClient",
+      "end": "dc-client",
+      "properties": {}
+    },
+    {
+      "start": "client-tagged-device",
+      "kind": "SCCM_SameHostAs",
+      "end": "client-tagged-computer",
+      "properties": {}
+    },
+    {
+      "start": "client-tagged-computer",
+      "kind": "SCCM_SameHostAs",
+      "end": "client-tagged-device",
+      "properties": {}
+    },
+    {
+      "start": "primary-a1",
+      "kind": "SCCM_HasClient",
+      "end": "client-tagged-device",
+      "properties": {}
+    },
+    {
+      "start": "primary-b1",
+      "kind": "SCCM_HasClient",
+      "end": "unmapped-tagged-client",
+      "properties": {}
+    },
+    {
+      "start": "workstation-a-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "workstation-a",
+      "properties": {}
+    },
+    {
+      "start": "workstation-a",
+      "kind": "SCCM_SameHostAs",
+      "end": "workstation-a-client",
+      "properties": {}
+    },
+    {
+      "start": "primary-a2",
+      "kind": "SCCM_HasClient",
+      "end": "workstation-a-client",
+      "properties": {}
+    },
+    {
+      "start": "workstation-b-client",
+      "kind": "SCCM_SameHostAs",
+      "end": "workstation-b",
+      "properties": {}
+    },
+    {
+      "start": "workstation-b",
+      "kind": "SCCM_SameHostAs",
+      "end": "workstation-b-client",
+      "properties": {}
+    },
+    {
+      "start": "primary-b1",
+      "kind": "SCCM_HasClient",
+      "end": "workstation-b-client",
+      "properties": {}
+    },
+    {
+      "start": "cas-a",
+      "kind": "SCCM_HasStoredAccount",
+      "end": "stored-account",
+      "properties": {}
+    },
+    {
+      "start": "relay-source",
+      "kind": "SCCM_CoerceAndRelayToAdminService",
+      "end": "cas-a",
+      "properties": {
+        "assumed": true
+      }
+    },
+    {
+      "start": "unrelated-login",
+      "kind": "MSSQL_ControlDB",
+      "end": "database-cas-a",
+      "properties": {}
+    },
+    {
+      "start": "global-0001r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-0001r",
+      "properties": {}
+    },
+    {
+      "start": "global-0001r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0001R",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-0001r",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-0001r",
+      "kind": "SCCM_FullAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-0001r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-0001r",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0001r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0001R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-0001r",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0001r",
+      "kind": "SCCM_FullAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-0008r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-0008r",
+      "properties": {}
+    },
+    {
+      "start": "global-0008r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0008R",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-0008r",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-0008r",
+      "kind": "SCCM_ApplicationAuthor",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-0008r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-0008r",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0008r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0008R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-0008r",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0008r",
+      "kind": "SCCM_ApplicationAuthor",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-0009r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-0009r",
+      "properties": {}
+    },
+    {
+      "start": "global-0009r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0009R",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-0009r",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-0009r",
+      "kind": "SCCM_ApplicationAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-0009r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-0009r",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0009r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0009R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-0009r",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0009r",
+      "kind": "SCCM_ApplicationAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-0006r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-0006r",
+      "properties": {}
+    },
+    {
+      "start": "global-0006r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0006R",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-0006r",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-0006r",
+      "kind": "SCCM_ComplianceSettingsManager",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-0006r-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-0006r",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0006r",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0006R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-0006r",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-0006r",
+      "kind": "SCCM_ComplianceSettingsManager",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-000ar-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-000ar",
+      "properties": {}
+    },
+    {
+      "start": "global-000ar",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000AR",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-000ar",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-000ar",
+      "kind": "SCCM_OSDManager",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-000ar-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-000ar",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000ar",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000AR",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-000ar",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000ar",
+      "kind": "SCCM_OSDManager",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-000er-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-000er",
+      "properties": {}
+    },
+    {
+      "start": "global-000er",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000ER",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-000er",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-000er",
+      "kind": "SCCM_OperationsAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-000er-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-000er",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000er",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000ER",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-000er",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000er",
+      "kind": "SCCM_OperationsAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "global-000fr-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-000fr",
+      "properties": {}
+    },
+    {
+      "start": "global-000fr",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000FR",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-000fr",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "global-000fr",
+      "kind": "SCCM_SecurityAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "scoped-000fr-user",
+      "kind": "SCCM_IsMappedTo",
+      "end": "scoped-000fr",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000fr",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS000FR",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "scoped-000fr",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "scoped-000fr",
+      "kind": "SCCM_SecurityAdministrator",
+      "end": "dc-client",
+      "properties": {
+        "traversable": false
+      }
+    },
+    {
+      "start": "admin-group",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-0001r",
+      "properties": {}
+    },
+    {
+      "start": "nested-group",
+      "kind": "MemberOf",
+      "end": "admin-group",
+      "properties": {}
+    },
+    {
+      "start": "nested-user",
+      "kind": "MemberOf",
+      "end": "nested-group",
+      "properties": {}
+    },
+    {
+      "start": "nested-computer",
+      "kind": "MemberOf",
+      "end": "nested-group",
+      "properties": {}
+    },
+    {
+      "start": "cycle-group",
+      "kind": "MemberOf",
+      "end": "nested-group",
+      "properties": {}
+    },
+    {
+      "start": "nested-group",
+      "kind": "MemberOf",
+      "end": "cycle-group",
+      "properties": {}
+    },
+    {
+      "start": "unrelated-container",
+      "kind": "MemberOf",
+      "end": "admin-group",
+      "properties": {}
+    },
+    {
+      "start": "global-admin-b",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-full-b",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "global-admin-b",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-b",
+      "properties": {}
+    },
+    {
+      "start": "global-admin-b",
+      "kind": "SCCM_FullAdministrator",
+      "end": "workstation-b-client",
+      "properties": {}
+    },
+    {
+      "start": "global-ad-user-b",
+      "kind": "SCCM_IsMappedTo",
+      "end": "global-admin-b",
+      "properties": {}
+    },
+    {
+      "start": "unrelated-scoped-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0001R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "unrelated-scoped-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    },
+    {
+      "start": "unrelated-scoped-admin",
+      "kind": "SCCM_FullAdministrator",
+      "end": "workstation-a-client",
+      "properties": {}
+    },
+    {
+      "start": "custom-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "custom-admin-role",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "custom-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "readonly-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "readonly-admin-role",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "readonly-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "cross-hierarchy-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-full-b",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "cross-hierarchy-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "split-role-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "role-SMS0001R",
+      "properties": {
+        "collectionIds": [
+          "PZ000001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "split-role-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "readonly-admin-role",
+      "properties": {
+        "collectionIds": [
+          "SMS00001"
+        ],
+        "securityScopeIds": []
+      }
+    },
+    {
+      "start": "split-role-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "all-systems-a",
+      "properties": {}
+    },
+    {
+      "start": "split-role-admin",
+      "kind": "SCCM_IsAssigned",
+      "end": "narrow-collection-a",
+      "properties": {}
+    }
+  ],
+  "tier_zero_nodes": [
+    "dc-computer",
+    "client-tagged-device",
+    "unmapped-tagged-client",
+    "unmapped-tagged-client"
+  ],
+  "expected": {
+    "t0-hierarchy-sites": [
+      "cas-a",
+      "primary-a1",
+      "primary-a2",
+      "cas-b",
+      "primary-b1"
+    ],
+    "t0-hierarchy-infrastructure": [
+      "cas-active",
+      "cas-passive",
+      "primary-active",
+      "primary-passive",
+      "other-primary",
+      "cas-active-client",
+      "provider-a",
+      "provider-a-client",
+      "sql-host-a",
+      "sql-instance-a",
+      "database-cas-a",
+      "database-primary-a",
+      "sql-host-a-client",
+      "cas-b-host",
+      "provider-b",
+      "sql-host-b",
+      "sql-instance-b",
+      "database-b"
+    ],
+    "t0-hierarchy-administrators": [
+      "global-0001r",
+      "global-0008r",
+      "global-0009r",
+      "global-0006r",
+      "global-000ar",
+      "global-000er",
+      "global-000fr",
+      "global-admin-b"
+    ],
+    "t0-computers": [
+      "dc-computer",
+      "dc-client",
+      "client-tagged-computer",
+      "client-tagged-device"
+    ]
+  }
+}

@@ -4,15 +4,16 @@
 Each row in the graph_edges preproc table represents one directed relationship
 between two graph nodes. This model reads those rows and emits an Edge whose
 `traversable` property is set from the CMBP allow-list. The three coerce-and-relay
-kinds additionally carry coercion-context lists (SCCMRelayEdgeProperties); every
-other kind uses the lean base SCCMEdgeProperties. It never produces a node
+kinds carry coercion-context lists (SCCMRelayEdgeProperties). Role assignment and
+calculated access edges carry their collection/scope evidence (SCCMRoleEdgeProperties).
+Other kinds use the base SCCMEdgeProperties. It never produces a node
 (as_node returns None) because graph_edges rows are pure edge data.
 
 Subclasses the shared `openhound_collector_common.graph.graph_edge.GraphEdge` (the
 same base the MSSQL extension uses): the base contributes the row fields
 (start_id/end_id/kind/collection_source), the id-matched-endpoint contract, and
 `as_node = None`. This subclass sets SCCM's traversable allow-list, adds the
-relay-only coercion columns, and overrides `edges` to emit SCCM's richer,
+relay-only coercion columns and assignment evidence, and overrides `edges` to emit SCCM's richer,
 CMBP-cased edge properties.
 """
 import logging
@@ -22,7 +23,7 @@ from openhound.core.models.entries_dataclass import Edge, EdgePath
 from openhound_collector_common.graph.graph_edge import GraphEdge as _BaseGraphEdge
 
 from ..edge_help import EDGE_HELP
-from ..graph import SCCMEdgeProperties, SCCMRelayEdgeProperties
+from ..graph import SCCMEdgeProperties, SCCMRelayEdgeProperties, SCCMRoleEdgeProperties
 from ..kinds.edges import (
     MSSQL_COERCE_AND_RELAY_TO_MSSQL,
     SCCM_COERCE_AND_RELAY_TO_ADMIN_SERVICE,
@@ -45,7 +46,7 @@ class GraphEdge(_BaseGraphEdge):
     `traversable` is set from the CMBP allow-list. Never produces a node.
 
     Inherits start_id/end_id/kind/collection_source, the model config, and `as_node`
-    (None) from the shared base; adds the relay-only coercion columns and overrides
+    (None) from the shared base; adds coercion and assignment evidence and overrides
     `edges` to emit SCCM's SCCMEdgeProperties / SCCMRelayEdgeProperties.
     """
 
@@ -67,6 +68,11 @@ class GraphEdge(_BaseGraphEdge):
     # 5); every other kind leaves both NULL, so convert prunes them.
     assumed: bool | None = None
     assumption_basis: str | None = None
+
+    # Native IDs from the exact administrator/role assignment. NULL means unknown;
+    # [] means an individual read confirmed no assignments of that type.
+    collection_ids: list[str] | None = None
+    security_scope_ids: list[str] | None = None
 
     @property
     def edges(self) -> Iterator[Edge]:
@@ -98,6 +104,7 @@ class GraphEdge(_BaseGraphEdge):
         # `or None` prunes those to match the sccm_infra convention: only an
         # affirmative claim is worth cluttering a confirmed edge's panel with.
         assumed = self.assumed or None
+        properties: SCCMEdgeProperties
         if self.kind in _RELAY_KINDS:
             # Relay edges carry the operator-facing coercion context (CMBP).
             properties = SCCMRelayEdgeProperties(
@@ -105,6 +112,17 @@ class GraphEdge(_BaseGraphEdge):
                 collectionSource=self.collection_source or [],
                 coercionVictimAndRelayTargetPairs=self.coercion_victim_and_relay_target_pairs or [],
                 coercionVictimHostnames=self.coercion_victim_hostnames or [],
+                SCCMInfra=self.sccm_infra,
+                assumed=assumed, assumptionBasis=self.assumption_basis,
+                **help_fields,
+            )
+        elif self.collection_ids is not None or self.security_scope_ids is not None:
+            logger.debug("GraphEdge: attached role-assignment evidence for kind %r", self.kind)
+            properties = SCCMRoleEdgeProperties(
+                traversable=traversable,
+                collectionSource=self.collection_source or [],
+                collectionIds=self.collection_ids,
+                securityScopeIds=self.security_scope_ids,
                 SCCMInfra=self.sccm_infra,
                 assumed=assumed, assumptionBasis=self.assumption_basis,
                 **help_fields,

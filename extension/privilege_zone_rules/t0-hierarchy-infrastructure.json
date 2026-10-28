@@ -1,0 +1,8 @@
+{
+  "name": "SCCM: Tier Zero Hierarchy Control - Infrastructure",
+  "description": "Active and passive CAS/primary site servers, SMS Provider computers, site databases, their SQL instances and hosts, and matching SCCM client representations. Uses explicit site-control relationships, including assumed relationships; MP/DP roles and SCCMInfra alone do not qualify a host.",
+  "cypher": "// Protect all CAS and primary sites, even without a known T0 client.\nMATCH (site:SCCM_Site)\nWHERE site.siteType IN ['Central Administration Site', 'Primary Site']\n// Include the controller and its client, SQL instance, and host.\n// Three links cover client -> computer -> SQL instance -> site database.\nMATCH (n)-[:SCCM_SameHostAs|MSSQL_HostFor|MSSQL_Contains*0..3]->(controller)\n// Find SMS Provider or database control; site servers can qualify without this link.\nOPTIONAL MATCH (controller)-[:SCCM_AssignAllPermissions]->(controlledSite:SCCM_Site)\nWITH site, n, controller, controlledSite\n// Limit classification to infrastructure objects.\nWHERE (n:Computer OR n:SCCM_ClientDevice OR n:MSSQL_Server OR n:MSSQL_Database)\n// Match an active or passive site server for this site.\n  AND ((controller:Computer AND ('SMS Site Server@' + site.siteCode) IN controller.SCCMSiteSystemRoles)\n// Or match an SMS Provider computer or site database controlling this site.\n    OR ((controller:Computer OR controller:MSSQL_Database) AND controlledSite = site))\nRETURN DISTINCT n",
+  "enabled": true,
+  "zone": "Tier Zero",
+  "allow_disable": true
+}
