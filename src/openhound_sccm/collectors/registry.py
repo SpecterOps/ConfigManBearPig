@@ -2,6 +2,8 @@ import socket
 import time
 from typing import Iterable, Any, Optional
 
+from openhound_collector_common.clients.credential_guard import CredentialGuard
+
 from ..clients.smb import negotiated_signing_required
 from ..clients.smb_sso import connect_smb
 from ..context import SourceContext
@@ -80,7 +82,8 @@ class _RegistryProbe:
 
     def __init__(self, hostname: str, domain: str, username: Optional[str], password: Optional[str],
                  nt_hash: Optional[str] = None, kerberos_ticket: Optional[str] = None,
-                 kdc_host: Optional[str] = None) -> None:
+                 kdc_host: Optional[str] = None,
+                 credential_guard: Optional[CredentialGuard] = None) -> None:
         self.hostname = hostname
         self.domain = domain
         self.username = username
@@ -88,6 +91,8 @@ class _RegistryProbe:
         self.nt_hash = nt_hash
         self.kerberos_ticket = kerberos_ticket
         self.kdc_host = kdc_host
+        # The run's shared record of a rejected password; see connect_smb.
+        self.credential_guard = credential_guard
         self.smb = None
         self.dce = None
         self.root_key = None
@@ -117,6 +122,7 @@ class _RegistryProbe:
         smb = connect_smb(
             self.hostname, self.domain, self.username, self.password,
             nt_hash=self.nt_hash, kerberos_ticket=self.kerberos_ticket, kdc_host=self.kdc_host,
+            credential_guard=self.credential_guard,
         )
         if smb is None:
             return None
@@ -405,6 +411,7 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
         nt_hash=getattr(ctx, "nt_hash", None),
         kerberos_ticket=getattr(ctx, "kerberos_ticket", None),
         kdc_host=getattr(creds, "domain_controller", None),
+        credential_guard=getattr(ctx, "credential_guard", None),
     ) as probe:
         if probe is None:
             logger.info("Could not connect to %s for registry queries", target)

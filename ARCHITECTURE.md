@@ -573,6 +573,11 @@ release alongside the EPA/hash fixes. No new dependency, process, option or lab
 setting is introduced. Common's `docs/changes/2026-10-29-ldap-rejected-password.md`
 records the checks and limits.
 
+That rule never fired for SCCM in practice: a lab run on October 30 showed the
+shared client's one-step bind dropped the reason code. The fix, and the
+run-wide stop that followed it, are described under "One rejected sign-in
+stops the whole run" below.
+
 **Shared EPA isolation, October 29, 2026.** The approved common working-tree fix
 keeps the missing-service probe's NTLM change inside its own login. It removes a
 provider-global test flag that could interfere with ordinary SQL/WMI/HTTP logins.
@@ -663,6 +668,21 @@ A few specifics worth calling out, because they show how much harder this is tha
   `701`, `773`, `775`) as credential failures — every other error (signing required, CBT mismatch, TLS
   failure) falls through to the next transport **without incrementing `badPwdCount`**, so the fallback
   chain can't lock out the account. A REST API has no such hazard.
+- **One rejected sign-in stops the whole run** (October 30, 2026). A lab run with a wrong password
+  against one computer cost 42 failed sign-ins and reported success. The shared client's one-step bind
+  had dropped the `52e` reason code, so every directory search signed in twice; then every computer
+  tried the same password over Kerberos, the AdminService web page, WMI and SMB. Now one run-wide
+  `CredentialGuard` from the shared library lives on `SourceContext.credential_guard`
+  ([context.py](src/openhound_sccm/context.py)). [source.py](src/openhound_sccm/source.py) hands it to
+  the directory client, and the SMB ([smb_sso.py](src/openhound_sccm/clients/smb_sso.py) `connect_smb`,
+  also used by remote registry), WMI ([clients/wmi.py](src/openhound_sccm/clients/wmi.py) `_open`) and
+  web ([clients/http.py](src/openhound_sccm/clients/http.py) `_get_negotiate`) sign-ins check it before
+  signing in and report definite refusals to it. A refused Kerberos ticket request ends the web and WMI
+  ladders, so NTLM never resubmits the same password. The SQL step skips its EPA probes after a
+  refusal. [main.py](src/openhound_sccm/main.py) `_check_credentials_before_collection` signs in once
+  before discovery, registers a stop action that stops the work queue, and `_stop_if_credentials_rejected`
+  ends a rejected run with exit code 1. After the fix the same lab runs cost exactly 1 failed sign-in.
+  "Access denied" and a web 401 do not stop a run: a correct account without access gets them too.
 - **The MSSQL EPA probe authenticates *in order to misbehave*.** It can't read Extended Protection
   enforcement directly, so it sends **deliberately malformed** NTLM channel-binding and service-binding
   values and watches how SQL Server reacts ([`mssql_epa.py`](src/openhound_sccm/clients/mssql_epa.py),
@@ -2336,6 +2356,15 @@ took a separate, manual step outside `openhound collect sccm`.
 ---
 
 ## Changelog
+
+- **2026-10-30:** One rejected sign-in now stops the whole run, approved by the
+  owner after a lab check. SCCM checks the password with one directory sign-in
+  before discovery, shares the shared library's run-wide `CredentialGuard` with
+  every SMB, WMI, web and directory sign-in, stops the work queue on the first
+  definite refusal, and exits with code 1. Lab: a wrong password went from 42
+  and 82 failed sign-ins, with a success exit code, to exactly 1 and exit 1.
+  See the "One rejected sign-in stops the whole run" bullet above and
+  `docs/changes/2026-10-30-one-rejected-sign-in.md`.
 
 - **2026-10-29:** Recommended adopting common's approved rejected-password
   recognition fix in the planned reviewed release. Spaces in the error label no

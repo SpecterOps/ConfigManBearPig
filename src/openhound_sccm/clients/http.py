@@ -23,6 +23,10 @@ from urllib.parse import urlparse
 
 import requests
 import urllib3
+from openhound_collector_common.clients.credential_guard import (
+    CredentialGuard,
+    is_rejected_sign_in,
+)
 
 from ..log_context import get_logger
 from . import http_auth
@@ -40,6 +44,9 @@ class ErrorClass(enum.Enum):
     RESPONSE = "response"          # an HTTP response was received (ANY status)
     CONNECT_FAILURE = "connect"    # dead socket / DNS / refused / timeout
     TLS_FAILURE = "tls"            # secure-channel / handshake error
+    # Not sent: the run's sign-in details were already rejected, so this client
+    # refused to submit them again (see credential_guard in the shared library).
+    SIGN_IN_REFUSED = "sign-in details already rejected"
 
 
 @dataclass
@@ -133,6 +140,7 @@ class HttpClient:
         kdc_host: Optional[str] = None,
         verify_ssl: bool = False,
         http_proxy: Optional[str] = None,
+        credential_guard: Optional[CredentialGuard] = None,
         # Applies to both connect and read. 10s rather than 5s because the SCCM
         # AdminService answers some WMI-backed classes slowly when the SMS Provider
         # is warming up or under load -- SMS_SCI_Reserved was observed exceeding 5s
@@ -148,6 +156,10 @@ class HttpClient:
         self._nt_hash = nt_hash
         self._kerberos_ticket = kerberos_ticket
         self._kdc_host = kdc_host
+        # The run's shared record of a rejected password. Checked before each
+        # Negotiate sign-in; a definite Kerberos refusal is reported there and
+        # ends the ladder, because NTLM would submit the same password again.
+        self._credential_guard = credential_guard
         self._timeout = timeout
         self._host = urlparse(self._base_url).hostname or self._base_url
         # Some servers persist Negotiate auth on the keep-alive connection, so a
@@ -202,6 +214,7 @@ class HttpClient:
             kdc_host=kdc,
             http_proxy=getattr(ctx, "http_proxy", None),
             timeout=timeout,
+            credential_guard=getattr(ctx, "credential_guard", None),
         )
 
     def _request(self, url: str, **kwargs: Any) -> requests.Response:
@@ -341,6 +354,13 @@ class HttpClient:
                     logger.warning("HTTP Negotiate(%s) rejected on %s (401)", rung, url)
                     return HttpResult(resp.status_code, resp.content, ErrorClass.RESPONSE)
         except Exception as exc:  # noqa: BLE001 - protocol failure -> try next rung
+            if rung in ("kerberos", "ntlm") and is_rejected_sign_in(exc):
+                # The domain controller refused the password while issuing a
+                # Kerberos ticket. NTLM would submit the same password again.
+                logger.warning("HTTP Negotiate(%s) on %s: the sign-in details were rejected", rung, url)
+                if self._credential_guard is not None:
+                    self._credential_guard.record_rejection(f"Kerberos for {self._host}")
+                return HttpResult(None, None, ErrorClass.SIGN_IN_REFUSED)
             logger.verbose("HTTP Negotiate(%s) protocol failure on %s: %s", rung, url, _safe_error(exc))
             return None
 
@@ -368,9 +388,14 @@ class HttpClient:
             sspi_available=http_auth.sspi_negotiate_available(),
         )
         for rung in plan:
+            if self._credential_guard is not None and self._credential_guard.is_rejected:
+                logger.warning("Not signing in to %s: the sign-in details were already rejected", self._host)
+                return HttpResult(None, None, ErrorClass.SIGN_IN_REFUSED)
             result = self._negotiate_once(url, rung)
             if result is None:
                 continue  # protocol failure on this rung; try the next
+            if result.error_class is ErrorClass.SIGN_IN_REFUSED:
+                return result  # Rejected: never try the next rung with the same password.
             if result.status_code != 401:
                 # Authenticated: remember it so later requests reuse the connection.
                 self._authenticated = True

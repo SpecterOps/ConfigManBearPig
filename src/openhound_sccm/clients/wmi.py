@@ -33,6 +33,10 @@ import base64
 import json
 from typing import Any, Iterator, Optional
 
+from openhound_collector_common.clients.credential_guard import (
+    CredentialGuard,
+    is_rejected_sign_in,
+)
 from openhound_collector_common.clients.wmi import (
     _ImpacketBackend, _PyWin32Backend,
 )
@@ -59,7 +63,8 @@ class WmiClient:
 
     def __init__(self, *, target: str, domain: str, username: Optional[str] = None,
                  password: Optional[str] = None, nt_hash: Optional[str] = None,
-                 kerberos_ticket: Optional[str] = None, kdc_host: Optional[str] = None) -> None:
+                 kerberos_ticket: Optional[str] = None, kdc_host: Optional[str] = None,
+                 credential_guard: Optional[CredentialGuard] = None) -> None:
         self._target = target
         self._domain = domain or ""
         self._username = username
@@ -67,6 +72,10 @@ class WmiClient:
         self._nt_hash = nt_hash
         self._kerberos_ticket = kerberos_ticket
         self._kdc_host = kdc_host
+        # The run's shared record of a rejected password. Checked before each
+        # sign-in method; a definite rejection is reported there and ends the
+        # ladder, because the next method would submit the same password.
+        self._credential_guard = credential_guard
         self._backend: Any = None       # the rung that connected, cached
 
     @classmethod
@@ -88,6 +97,7 @@ class WmiClient:
             nt_hash=getattr(ctx, "nt_hash", None),
             kerberos_ticket=getattr(ctx, "kerberos_ticket", None),
             kdc_host=kdc,
+            credential_guard=getattr(ctx, "credential_guard", None),
         )
 
     # ----- auth ladder ----------------------------------------------------
@@ -224,6 +234,10 @@ class WmiClient:
             sspi_available=http_auth.sspi_negotiate_available(),
         )
         for rung in plan:
+            if self._credential_guard is not None and self._credential_guard.is_rejected:
+                logger.warning("Not signing in to WMI on %s: the sign-in details were already rejected",
+                               self._target)
+                return None
             backend = self._build_backend(rung)
             if backend is None:
                 logger.info("WMI on %s: skipping anonymous rung (DCOM requires authentication)", self._target)
@@ -236,8 +250,14 @@ class WmiClient:
                 logger.error("WMI provider cleanup failed during authentication on %s", self._target)
                 raise
             except Exception as ex:  # noqa: BLE001 - this rung failed; try the next
-                logger.verbose("WMI %s rung failed on %s: %s", rung, self._target, ex)
                 backend.close()
+                if rung != "sspi" and is_rejected_sign_in(ex):
+                    # The next rung would submit the same password: stop here.
+                    logger.warning("WMI %s rung on %s: the sign-in details were rejected", rung, self._target)
+                    if self._credential_guard is not None:
+                        self._credential_guard.record_rejection(f"WMI on {self._target}")
+                    return None
+                logger.verbose("WMI %s rung failed on %s: %s", rung, self._target, ex)
                 continue
             logger.info("WMI authenticated on %s via %s", self._target, rung)
             self._backend = backend

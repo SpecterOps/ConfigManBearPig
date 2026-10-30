@@ -37,6 +37,7 @@ from openhound_collector_common.clients.ad import (
     bytes_to_guid,
     bytes_to_sid,
 )
+from openhound_collector_common.clients.credential_guard import CredentialGuard
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,11 @@ class ADClient(AdClient):
     # UTF-8-decoded (doing so corrupts them via errors="replace" substitution).
     _BINARY_ATTRS = frozenset({"ntsecuritydescriptor", "dnsrecord"})
 
-    def __init__(self, credentials: ADCredentials):
+    def __init__(
+        self,
+        credentials: ADCredentials,
+        credential_guard: CredentialGuard | None = None,
+    ):
         # Kept for callers that read ``ctx.ad.creds`` (clients/http.py,
         # collectors/dns.py read ``creds.domain_controller``).
         self.creds = credentials
@@ -154,6 +159,9 @@ class ADClient(AdClient):
                 kerberos_ticket=credentials.kerberos_ticket,
             ),
             port=credentials.port,
+            # The run's shared record: one rejection anywhere stops every
+            # later sign-in, and a rejection here stops the run.
+            credential_guard=credential_guard,
         )
 
     @staticmethod

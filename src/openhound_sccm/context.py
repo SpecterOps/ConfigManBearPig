@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from ldap3 import BASE
 
+from openhound_collector_common.clients.credential_guard import CredentialGuard
 from openhound_collector_common.discovery.dns import make_resolver
 from openhound_collector_common.collection.registry import TargetRegistry, matches_allowed_targets
 from openhound_collector_common.collection.errors import FatalCollectionError
@@ -81,6 +82,12 @@ class SourceContext:
     # allow-listed targets onto it.
     allowed_targets: frozenset = field(default_factory=frozenset)
     work_queue: Any = field(default=None)
+    # One run-wide record of whether the sign-in details were rejected. The
+    # directory, SMB, WMI, web and SQL sign-ins all check it before signing in
+    # and report a definite rejection to it, so one wrong password stops the
+    # whole run instead of being tried on every computer. source.py hands the
+    # same record to the directory client; main.py makes it stop the queue.
+    credential_guard: CredentialGuard = field(default_factory=CredentialGuard)
     ad_resolution_cache: dict[str, dict[str, Any] | None] = field(default_factory=dict)
     discovered_domains: set = field(default_factory=set)
 

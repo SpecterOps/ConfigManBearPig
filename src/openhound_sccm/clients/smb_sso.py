@@ -13,6 +13,11 @@ import importlib
 import sys
 from typing import Optional
 
+from openhound_collector_common.clients.credential_guard import (
+    CredentialGuard,
+    is_rejected_sign_in,
+)
+
 from ..log_context import get_logger
 from .http_auth import format_hashes, split_user_domain  # canonical helpers, shared with wmi.py
 from impacket import crypto
@@ -216,8 +221,14 @@ def connect_smb(
     kerberos_ticket: Optional[str] = None,
     kdc_host: Optional[str] = None,
     timeout: int = 5,
+    credential_guard: Optional[CredentialGuard] = None,
 ) -> Optional[SMBConnection]:
     """Return an authenticated SMBConnection to *hostname*, or None on failure.
+
+    ``credential_guard`` is the run's shared record of a rejected password.
+    Once any sign-in in the run was rejected, this returns None without
+    connecting. A definite SMB rejection (wrong password, or a disabled,
+    locked or expired account) is reported there so the whole run stops.
 
     Auth ladder (explicit creds win; the chosen rung is the only one attempted):
       1. kerberos_ticket    -> pass-the-ticket (kerberosLogin with the TGT)
@@ -231,6 +242,17 @@ def connect_smb(
     credential set as the AdminService / WMI clients (via impacket's
     ``SMBConnection.login`` / ``kerberosLogin``).
     """
+    if credential_guard is not None and credential_guard.is_rejected:
+        logger.warning(
+            "Not signing in to SMB on %s: the sign-in details were already rejected",
+            hostname,
+        )
+        return None
+    # An anonymous null session uses no account, so its refusal proves nothing
+    # about the password and must not stop the run.
+    uses_identity = bool(
+        kerberos_ticket or nt_hash or (username and password) or _SSPI_NEGOTIATE_AVAILABLE
+    )
     try:
         smb = SMBConnection(hostname, hostname, timeout=timeout)
     except Exception as exc:  # noqa: BLE001 - any transport error means unreachable
@@ -269,6 +291,8 @@ def connect_smb(
         return smb
     except Exception as exc:  # noqa: BLE001 - auth failure -> host not collectable
         logger.verbose("SMB auth to %s failed: %s", hostname, exc)
+        if credential_guard is not None and uses_identity and is_rejected_sign_in(exc):
+            credential_guard.record_rejection(f"SMB on {hostname}")
         try:
             smb.close()
         except Exception:

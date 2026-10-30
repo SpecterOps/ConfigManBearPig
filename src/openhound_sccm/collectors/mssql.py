@@ -123,7 +123,14 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
         logger.info("MSSQL port %d is open", port)
 
     epa_result = None
-    if port_open:
+    credential_guard = getattr(ctx, "credential_guard", None)
+    if port_open and credential_guard is not None and credential_guard.is_rejected:
+        # Each EPA probe is a sign-in. Once the run's password was rejected,
+        # probing would only add failed sign-ins against the same account.
+        logger.warning(
+            "EPA testing %s skipped: the sign-in details were already rejected", target
+        )
+    elif port_open:
         # Probe EPA enforcement using the credential ladder (explicit creds -> SSPI ->
         # ticket-only WARNING+skip -> skip). Skipped when the port is closed -- there
         # is nothing listening to probe.

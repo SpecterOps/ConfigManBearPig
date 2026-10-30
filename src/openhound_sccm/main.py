@@ -29,6 +29,10 @@ from openhound.core.collect import CollectContext, Collector
 from openhound.core.convert import ConvertContext, Converter, Method
 from openhound.core.preproc import PreProcContext
 from openhound.core.progress import Progress
+from openhound_collector_common.clients.credential_guard import (
+    CREDENTIALS_REJECTED_REASON,
+    CredentialCheck,
+)
 from openhound_collector_common.dlt.progress import ProgressOption, resolve_progress
 from openhound_collector_common.logging.files import DiagnosticFileHandler as _DiagnosticFileHandler, GroupedFileHandler as _OrderedLogFileHandler  # noqa: F401 - handler re-exports used by the existing consumer checks
 from openhound_collector_common.logging.files import RunFileLogs
@@ -774,6 +778,39 @@ def _build_phase_scope():
     return _phase_scope
 
 
+def _check_credentials_before_collection(ctx) -> None:
+    """Sign in once before discovery, so a wrong password costs one failed sign-in.
+
+    The owner's rule is to stop after a single invalid sign-in. Without this
+    check, every directory search and every computer tried the same password:
+    a lab run against one computer cost 42 failed sign-ins. The successful
+    sign-in stays open and discovery reuses it.
+    """
+    if ctx.ad.confirm_credentials() is CredentialCheck.REJECTED:
+        logger.error(
+            "The supplied sign-in details were rejected or could not be used. Nothing was "
+            "collected and no other sign-in was attempted. Check the user name and "
+            "password, then run again."
+        )
+        raise typer.Exit(code=1)
+    # Accepted, unchecked (domain controller unreachable) and not-needed (no
+    # typed-in details) were each logged by confirm_credentials; collection continues.
+
+
+def _stop_if_credentials_rejected(ctx) -> None:
+    """End the run as failed once any sign-in in it was rejected."""
+    guard = getattr(ctx, "credential_guard", None)
+    if guard is None or not guard.is_rejected:
+        return  # No sign-in was rejected, so the run continues normally.
+    logger.error(
+        "Collection stopped because %s rejected the supplied sign-in details. No further "
+        "sign-ins were attempted, and the saved data is incomplete. Check the user name "
+        "and password, then run again.",
+        guard.rejected_by,
+    )
+    raise typer.Exit(code=1)
+
+
 def _run_per_host_stage(pipeline, work_queue, ctx, threads, maxsize: int = 1000, phases=None) -> dict[str, int]:
     """Stage 2: drain the work queue with a worker pool while streaming each
     per-host table to disk through its emit resource.
@@ -1068,6 +1105,9 @@ def collect_sccm(
         _impacket_logger = logging.getLogger("impacket")
         _impacket_noise_filter = _ImpacketNoiseFilter()
         _impacket_logger.addFilter(_impacket_noise_filter)
+        # Set once discovery builds its context; the failure handler below reads
+        # it to report a rejected password clearly, even before that point.
+        per_host_ctx = None
 
         try:
             _warn_for_suspicious_cli_arguments()
@@ -1127,6 +1167,15 @@ def collect_sccm(
                 # Reuse the exact context discovery built, so the per-host stage shares
                 # its target accumulator, allow-list, caches, and work queue.
                 per_host_ctx = get_last_ctx()
+                if per_host_ctx is not None:
+                    # Owner rule: stop after a single invalid sign-in. A rejection
+                    # anywhere stops new computers from starting...
+                    per_host_ctx.credential_guard.add_stop_action(
+                        lambda: work_queue.stop(CREDENTIALS_REJECTED_REASON)
+                    )
+                    # ...and one directory sign-in checks the password before
+                    # discovery or any computer can use it.
+                    _check_credentials_before_collection(per_host_ctx)
 
                 if dc_only:
                     logger.info(
@@ -1140,6 +1189,8 @@ def collect_sccm(
                 # Capture discovery row counts from the pipeline that just ran (held via
                 # LoadInfo.pipeline) before the per-host pass replaces the trace.
                 discovery_counts = _normalize_row_counts(load_info.pipeline) if load_info else {}
+                # Discovery may have seen a rejection; never visit computers after one.
+                _stop_if_credentials_rejected(per_host_ctx)
 
                 # Seed CLI-specified targets through the same register_target path, so
                 # the allow-list / resolution / dedup is identical for them.
@@ -1154,6 +1205,7 @@ def collect_sccm(
                 per_host_expected = _should_run_per_host(per_host_ctx, PER_HOST_PHASES, dc_only)
                 if per_host_expected:
                     per_host_counts = _run_per_host_stage(collector.pipeline, work_queue, per_host_ctx, threads)
+                    _stop_if_credentials_rejected(per_host_ctx)
                 elif per_host_ctx is not None:
                     # --dc-only: the per-host stage (which normally flushes resolved
                     # principals) is skipped, but discovery already resolved principals
@@ -1182,6 +1234,9 @@ def collect_sccm(
         except typer.Exit:
             raise  # Preserve intentional command statuses.
         except Exception as error:
+            # A rejected password stops the per-host queue, which surfaces here
+            # as a stopped-collection error. Say what actually happened instead.
+            _stop_if_credentials_rejected(per_host_ctx)
             logger.exception("Collection failed: %s", error)
             raise typer.Exit(code=1) from error
         finally:

@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import dlt
+from openhound_collector_common.clients.credential_guard import CredentialGuard
 from openhound_collector_common.dlt.source_bridge import StreamBridge
 
 from .clients.ad import ADClient, ADCredentials
@@ -292,8 +293,12 @@ def source(
         kerberos_ticket=kerberos_ticket,
         port=ldap_port,
     )
+    # One run-wide record of a rejected password, shared by the directory
+    # client and (through ctx) every per-computer sign-in.
+    credential_guard = CredentialGuard()
     ctx = SourceContext(
-        ad=ADClient(creds),
+        ad=ADClient(creds, credential_guard=credential_guard),
+        credential_guard=credential_guard,
         domain=domain,
         username=username,
         password=password,

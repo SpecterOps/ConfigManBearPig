@@ -58,8 +58,19 @@ def test_open_connection_disables_auto_referrals(monkeypatch):
     captured: dict = {}
 
     class _FakeConnection:
+        # The shared client opens and binds step by step (October 30, 2026),
+        # so the stand-in accepts those calls and reports a successful bind.
         def __init__(self, server, **kwargs):
             captured.update(kwargs)
+
+        def open(self, read_server_info=True):
+            pass
+
+        def bind(self, read_server_info=True):
+            return True
+
+        def refresh_server_info(self):
+            pass
 
     monkeypatch.setattr(shared_ad, "Connection", _FakeConnection)
 

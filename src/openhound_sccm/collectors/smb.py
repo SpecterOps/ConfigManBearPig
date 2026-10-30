@@ -240,6 +240,7 @@ def collect_smb(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str
         nt_hash=getattr(ctx, "nt_hash", None),
         kerberos_ticket=getattr(ctx, "kerberos_ticket", None),
         kdc_host=getattr(creds, "domain_controller", None),
+        credential_guard=getattr(ctx, "credential_guard", None),
     )
     if smb is None:
         # connect_smb already logged the transport/auth cause at verbose.

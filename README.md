@@ -523,7 +523,7 @@ The flag groups below mirror the panels shown in `--help`: **Authentication**, *
 
 The shared HTTP client ([clients/http.py](src/openhound_sccm/clients/http.py)) authenticates to the SCCM AdminService with **Negotiate**, in this precedence:
 
-1. **Explicit credentials win** — `-u` plus one of `-p` / `--nt-hash` / `--ticket`. Kerberos is tried first (a service ticket for `HTTP/<fqdn>`, built from the password, the NT hash as the RC4 key, or the supplied ticket), with an automatic **NTLM fallback** on protocol failure. A bare-IP target skips Kerberos (no SPN can be formed) and uses NTLM directly.
+1. **Explicit credentials win** — `-u` plus one of `-p` / `--nt-hash` / `--ticket`. Kerberos is tried first (a service ticket for `HTTP/<fqdn>`, built from the password, the NT hash as the RC4 key, or the supplied ticket), with an automatic **NTLM fallback** on protocol failure. A refused password is not a protocol failure: it stops the run instead (see [A wrong password costs one failed sign-in](#a-wrong-password-costs-one-failed-sign-in)). A bare-IP target skips Kerberos (no SPN can be formed) and uses NTLM directly.
 2. **Current-user Windows SSO** — passwordless SSPI Negotiate, when no credentials are supplied (Windows only).
 3. **Anonymous** — no `Authorization` header. This is what the HTTP role-probe uses, so it can read the unauthenticated `401`/`403` that reveal site-system roles.
 
@@ -534,6 +534,24 @@ The **WMI fallback** ([clients/wmi.py](src/openhound_sccm/clients/wmi.py)) reuse
 The **SMB-based phases** — RemoteRegistry ([collectors/registry.py](src/openhound_sccm/collectors/registry.py)) and SMB ([collectors/smb.py](src/openhound_sccm/collectors/smb.py)) — authenticate through the shared `connect_smb` ([clients/smb_sso.py](src/openhound_sccm/clients/smb_sso.py)), which honors the same credential set over SMB: **pass-the-ticket** (`kerberosLogin` with the supplied TGT), **pass-the-hash** (`--nt-hash`), explicit **password** NTLM, current-user **SSPI** Negotiate, then an anonymous **null session**. SMB's signing-required check is unauthenticated (negotiate-only) and so works regardless of the credential method.
 
 The **LDAP discovery phase** ([clients/ad.py](src/openhound_sccm/clients/ad.py)) honors the same credential set over `ldap3` through the shared lockout-safe waterfall: **pass-the-ticket** (connection-local Kerberos through the shared client) → **pass-the-hash** (`--nt-hash`, ldap3 `LM:NT` NTLM bind) → explicit **password** NTLM → integrated **Kerberos** / current-user **SSPI** → anonymous, each auto-detecting the transport (LDAPS:636 → StartTLS:389 → LDAP:389 sign-and-seal). Only genuine bad-credential result-49 subcodes halt the waterfall, so transport fallbacks never increment `badPwdCount`.
+
+#### A wrong password costs one failed sign-in
+
+With `-u` plus `-p`, `--nt-hash` or `--ticket`, the collector signs in to the domain controller **once, before discovery**, to check the details. If they are refused, the run stops right there with exit code `1`. Nothing is collected, and no computer is contacted. The account receives exactly one failed sign-in.
+
+If a refusal happens later in a run, for example because the password was changed, the first definite refusal stops the whole run. No computer that has not started is visited, and every other sign-in (directory, SMB, remote registry, WMI, AdminService, and the SQL EPA probes) refuses to submit the same details again. The run ends with exit code `1` and names where the refusal happened. A refused Kerberos ticket request never falls back to NTLM with the same password.
+
+Only replies that prove the account or password was refused count: a wrong password, or an unknown, disabled, locked or expired account. "Access denied" and an AdminService `401` do not stop a run, because a correct account without access gets those too. Passwordless current-user runs have no typed-in password, so they skip the first check.
+
+```powershell
+# A deliberately wrong password: expect one failed sign-in and exit code 1.
+uv run openhound collect sccm .\out-wrong -d mayyhem.com --dc dc.mayyhem.com -u "MAYYHEM\lowpriv" -p "deliberately-wrong" -c ps1-sms.mayyhem.com
+$LASTEXITCODE
+# The log says: "The supplied sign-in details were rejected or could not be used.
+# Nothing was collected and no other sign-in was attempted."
+```
+
+Lab result, October 30, 2026: a wrong password against ps1-sms used to cost `lowpriv` 42 failed sign-ins (82 for two computers), and the run reported success. It now costs 1 and reports failure. See [the change note](docs/changes/2026-10-30-one-rejected-sign-in.md).
 
 Supplied LDAP tickets are used directly on their connection, without changing
 `KRB5CCNAME` or an OS ticket cache. Use a registered DC hostname, such as
