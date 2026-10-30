@@ -279,6 +279,12 @@ These resources run a single time per collection and seed the per-host work queu
 
 Each discovered (or `--computers`-supplied) host runs through the ordered per-host phases in [`per_host_phases.py`](src/openhound_sccm/per_host_phases.py), concurrently across a worker pool (`--threads`). A phase only runs for a host when its name is enabled by `--collection-methods` (`method_enabled` in [context.py](src/openhound_sccm/context.py)).
 
+The shared scheduler preserves that ordering and recursive discovery. An ordinary
+phase failure is logged and other phases continue. Failed client cleanup or
+cancelled output stops new targets, releases waiting output writers and fails
+the command after active workers finish. A successful file write cannot hide a
+failed collection worker. Native provider calls can delay that final wait.
+
 | Phase | What it does | Status |
 |---|---|---|
 | **RemoteRegistry** ([collectors/registry.py](src/openhound_sccm/collectors/registry.py)) | Binds the remote registry over SMB (impacket `rrp`) to read SCCM keys under `HKLM\SOFTWARE\Microsoft\SMS` — site codes, component servers/roles, current users, and SQL/MSSQL settings. Retries the initial bind to absorb the RemoteRegistry trigger-start race. | ✅ Implemented |
@@ -461,6 +467,7 @@ zero domain credentials presented anywhere in the run.
 
 # Limitations
 
+- **Explicit WMI reads to the same hostname wait for one another.** The shared provider stores credentials by hostname. A read therefore owns that hostname through result iteration and cleanup, including complete-object permissions, so another client cannot replace its identity. Each read closes its namespace connection; different hosts can still run concurrently. WMI remains in process and keeps SCCM's existing authentication ladder and timeout policy.
 - **Installing with `uv` needs `--prerelease=allow`.** The collector requires `ldap3>=2.10.2rc4`. That release candidate is the first to export `ENCRYPT` and `TLS_CHANNEL_BINDING` and to accept `session_security` on a `Connection` — the three things LDAP sign-and-seal and channel binding are built on, and therefore what it takes to bind to a domain controller that enforces signing or channel binding (increasingly the default). ldap3 has never shipped them in a final release: its latest stable is 2.9.1, and 2.10.2 exists only as release candidates. `pip` allows a pre-release automatically when the requirement itself names one; `uv` asks you to opt in. Without the flag, `uv tool install` reports *"only ldap3<2.10.2rc4 is available"*, which looks like a broken package and is not. (Inside this project — `uv sync`, `uv run` — no flag is needed: a project is allowed its own declared pre-release. See [Testing Changes](#testing-changes).)
 - **Re-running into the same output directory silently merges two collections.** `collect` (via the underlying `dlt` framework) **appends** a new load package beside any already in the output directory rather than overwriting it, and `preprocess` then reads every package and **UNIONs** their rows into one graph. Nothing looks wrong when this happens — the command exits 0 and `graph\` gets fresh timestamps — but a table this run finds empty silently **keeps the previous run's rows**, so a decommissioned site system, a stale role, or a removed client can linger in the graph indefinitely. Pass `--clean` to remove `out\sccm`, `out\graph`, and `out\lookup.duckdb` before collecting (timestamped logs and integration/compare reports are always kept). Without the flag, a used directory still produces a loud console and `collect_issues_*.log` warning — naming how many prior load packages are present and when the oldest was written — but the collection proceeds and nothing is cleaned up for you. See [`--clean`](#--clean-and-re-running-into-a-used-output-directory).
 - **Graph output covers graph-pipeline Stages 1–6 plus the low-privilege additions.** (Those are the increments of the preprocess/convert port — plans [`2026-06-16-sccm-preproc-convert-stage0.md`](docs/superpowers/plans/2026-06-16-sccm-preproc-convert-stage0.md) … [`2026-07-01-sccm-preproc-convert-stage7.md`](docs/superpowers/plans/2026-07-01-sccm-preproc-convert-stage7.md); see the [Reference key](#reference-key).) `convert` now emits fifteen node kinds and thirty-eight edge kinds (see the [Node Reference](#node-reference) and [Edge Reference](#edge-reference)). Richer edges from NAA secrets await the NAA-secret collector.
@@ -481,6 +488,8 @@ zero domain credentials presented anywhere in the run.
 - **`SCCM_AdminsReplicatedTo` needs a *typed* CAS, and a CAS has no management point of its own.** Only LDAP management-point capabilities and AdminService/WMI ever report a site's type directly, and a Central Administration Site has no MP to report capabilities *from* — so the collector infers a CAS from being the parent of a site otherwise typed Primary (and, symmetrically, a Secondary from being the child of a Primary). This is a deduction, not a guess, and applies in both flag modes. It still has a blind spot: a `SEC`-style site (a Secondary with no parent ever recorded in this run) stays untyped rather than being misclassified, which means it also stays outside `SCCM_AdminsReplicatedTo`'s Primary↔Secondary edge until a source reports its parent.
 - **Site code is used as the site identity.** A `SCCM_Site` node's id (and `environmentid`) is the **site code** ([models/sccm_site.py](src/openhound_sccm/models/sccm_site.py)). SCCM hierarchies have no globally unique id, so two distinct hierarchies that happen to reuse the same site code will **merge** in the graph, producing false positives. Microsoft recommends against reusing site codes within a forest: https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/prepare-to-install-sites#bkmk_sitecodes
 - **EPA "Allowed" vs "Required" is indistinguishable under integrated auth.** When EPA is detected using the current Windows user (SSPI), Windows always emits the channel-binding and target-name AV pairs, so the collector cannot tell `Allowed` from `Required` and reports the literal `Allowed/Required`. Explicit-credential and pass-the-hash paths (via impacket) *can* distinguish them. See [clients/mssql_epa.py](src/openhound_sccm/clients/mssql_epa.py) and the EPA matrix harness described under [Understanding the Codebase](#understanding-the-codebase).
+- **Shared EPA fixes awaiting release:** the approved common working-tree fixes keep a missing-service probe from changing concurrent ordinary logins and decode hexadecimal hashes at the NTLM provider boundary. CMBP's adapter and defaults are unchanged; adopt both through the planned reviewed common release. Password and hash lab checks passed, including CMBP's actual adapter. See common's `docs/changes/2026-10-29-ntlm-probe-isolation.md` for the bounded checks and remaining acceptance work.
+- **Shared directory-login fix awaiting release:** a rejected-password reply written as `Invalid Credentials` now stops further submissions, just like `invalidCredentials`. The known rejected-account code is still required; other connection failures retain their existing retry rules. Adopt this approved fix in the same planned common release. No CMBP option, permission or lab setting changes. See common's `docs/changes/2026-10-29-ldap-rejected-password.md`.
 - **`extension.yaml` describes the CLI, it does not drive it.** The `credentials`/`parameters` blocks in [src/openhound_sccm/extension.yaml](src/openhound_sccm/extension.yaml) accurately document the collector's real flags, but nothing in the collector reads them — OpenHound parses the file for extension *metadata* only (see [tests/extension_metadata_test.py](tests/extension_metadata_test.py)). Supplying values there configures nothing; pass configuration via CLI flags or `SOURCES__SCCM__*` env vars.
 - **`--proxy` cannot tunnel live current-user SSPI / OS-Kerberos, and carries no UDP.** Windows SSPI Negotiate and OS-Kerberos make their KDC/DCOM connections inside the OS (LSASS/win32com), not this process, so a userland socket hook cannot pull them through the pivot. Use `--ticket` (pass-the-ticket, which tunnels completely) or set up OS-level transparent proxying (tun2socks / Proxifier) on the outside box. Separately, DNS is forced onto TCP to ride the tunnel — SOCKS5 CONNECT is TCP-only, so no other UDP traffic is carried. See [Proxying / pivoting](#proxying--pivoting).
 
@@ -687,7 +696,7 @@ openhound convert sccm .\out-confirmed\sccm .\graph-confirmed --lookup-file .\ou
 
 | Option | Description |
 |---|---|
-| `--run-integration-tests` | Implies `--run-all`; asserts the collected graph against the built-in mayyhem lab fixtures — build that lab with [Mayyhem/ludus_sccm](https://github.com/Mayyhem/ludus_sccm) (see [Validate against a real hierarchy](#validate-against-a-real-hierarchy)). Prints PASS/FAIL/SKIP + summary + coverage, writes `integration_results-<ts>.json`, exits non-zero on any failure. |
+| `--run-integration-tests` | Implies `--run-all`; asserts the collected graph against the built-in mayyhem lab fixtures — build that lab with [Mayyhem/ludus_sccm](https://github.com/Mayyhem/ludus_sccm) (see [Validate against a real hierarchy](#validate-against-a-real-hierarchy)). Prints PASS/FAIL/SKIP + summary + coverage, writes `integration_results-<ts>.json` and `.html`, exits non-zero on any failure. |
 | `--integration-privilege <auto\|high\|low>` | Which fixture set `--run-integration-tests` asserts. Describes the **collection**, not the fixtures. `auto` (the default) decides from whether any `adminservice_*` / `wmi_*` table actually returned rows this run. `low` skips the cases marked `requires_privilege` — the SCCM-admin-only RBAC families (`SCCM_FullAdministrator`, `SCCM_IsAssigned`, `SCCM_IsMappedTo`, `SCCM_AllPermissions` and the `SCCM_AdminUser` / `SCCM_SecurityRole` / `SCCM_Collection` nodes), which have no AD/LDAP representation and which RemoteRegistry does not expose — see [Collection privilege tiers](#collection-privilege-tiers). `high` asserts every case. Everything outside that set is asserted in all modes, so a low-privilege run stays a real gate. |
 | `--compare-to-zip <path>` | Implies `--run-all`; deep-diffs this run's graph against an arbitrary node/edge payload (a CMBP zip or another OpenHound run) down to property name/value, with a by-kind rollup. The saved payload is the **baseline**; this run is the candidate. Writes `compare-<ts>.json` and **exits non-zero if this run lost anything the baseline had**. |
 
@@ -2605,6 +2614,15 @@ grants in the mayyhem.com lab. Their manual test scripts live in
 do not add custom-role evaluation or new relationships to the collector. The
 [execution-trigger follow-up](docs/research/sccm-execution-triggers.md) checks what
 makes changed code run after the original deployment has already succeeded.
+The [user-targeted deployment follow-up](docs/research/sccm-user-targeted-deployments.md)
+compares user/device collection permissions, user/SYSTEM execution settings, and
+Required versus Available deployment activation with recorded lab evidence.
+It also explains how primary-device settings, sessions, and client policy affect
+which computer receives a user-targeted deployment and whether execution is certain.
+The two-client follow-up confirms that one Required user deployment can install
+independently on two computers, as either SYSTEM or the recipient. It lists the
+evidence needed for a path to a particular computer and separates confirmed
+execution from primary-device routes still needing validation.
 
 ## Set up a development environment
 
@@ -2811,7 +2829,10 @@ Two flags exist for exactly this comparison, both implying `--run-all`:
 `--run-integration-tests` asserts the graph against the bundled fixtures, and `--compare-to-zip <payload>`
 diffs this run against a saved payload property-by-property. Both exit non-zero on failure — for the
 comparison, "failure" means this run lost something the saved payload had. When both are passed, both
-run to completion so you get both reports, and the process reports the worse of the two outcomes.
+are attempted even if one raises an error, and the process fails if either check
+or its report fails. Fixture results include a matching self-contained HTML file
+that can be opened locally. Old reports are preserved and cannot count as this
+run's results.
 
 The `dev/` scripts drive individual subsystems against a single host without a full collection. They
 read credentials from the environment, never from the source:

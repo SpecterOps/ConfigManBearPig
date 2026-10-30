@@ -7,10 +7,14 @@ provides the lazy-loaded caches that every ``@app.resource`` in
 """
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from collections.abc import Mapping
 
 from ldap3 import BASE
 
 from openhound_collector_common.discovery.dns import make_resolver
+from openhound_collector_common.collection.registry import TargetRegistry, matches_allowed_targets
+from openhound_collector_common.collection.errors import FatalCollectionError
+from openhound_collector_common.collection.methods import parse_methods
 
 from .clients.ad import ADClient
 from .models.target_entry import TargetEntry
@@ -125,14 +129,15 @@ class SourceContext:
     # per-host resources call ``target_hosts_snapshot()`` to read this set
     # at iteration time so late additions are picked up.
     #
-    # Two parallel indexes:
-    #   target_hosts_by_hostname — lowercased canonical hostname and prior short-name aliases
-    #   _target_hosts_by_sid      — only when SID available; key = objectSid string
-    # Both dicts hold references to the same entry dicts, so a mutation via
-    # either index is immediately visible via the other.
-    target_hosts_by_hostname: dict = field(default_factory=dict)  # str -> TargetEntry
-    _target_hosts_by_sid: dict = field(default_factory=dict)       # str -> TargetEntry
-    _target_hosts_lock: Any = field(default=None)
+    # Common owns the name/identity indexes and lock; SCCM still chooses when
+    # a SID proves identity, how names improve, and how sources/sites merge.
+    # Both indexes refer to the same caller-owned TargetEntry objects.
+    _targets: TargetRegistry[TargetEntry] = field(default_factory=TargetRegistry)
+
+    @property
+    def target_hosts_by_hostname(self) -> Mapping[str, TargetEntry]:
+        """Read current host aliases; registration changes go through the shared index."""
+        return self._targets.aliases
 
     @property
     def system_management_dn(self) -> str:
@@ -148,19 +153,8 @@ class SourceContext:
         method. Unknown method names are ignored so callers can pass in
         arbitrary labels without crashing the pipeline.
         """
-        if not self.collection_methods:
-            return True
-        wanted = {m.strip().lower() for m in self.collection_methods.split(",") if m.strip()}
-        if "all" in wanted:
-            return True
-        return method.lower() in wanted
+        return parse_methods(self.collection_methods).includes(method)
 
-
-    def _ensure_target_lock(self) -> Any:
-        if self._target_hosts_lock is None:
-            import threading
-            self._target_hosts_lock = threading.Lock()
-        return self._target_hosts_lock
 
     def _build_domains_to_try(self, hint_domain: Optional[str] = None) -> list:
         """Return an ordered, deduplicated list of domains to search.
@@ -378,7 +372,7 @@ class SourceContext:
                     candidates.add(v.lower().rstrip("$"))
                     if "." in v:
                         candidates.add(v.split(".")[0].lower())
-        return bool(candidates & self.allowed_targets)
+        return matches_allowed_targets(self.allowed_targets, candidates)
 
     def register_target(
         self,
@@ -404,6 +398,9 @@ class SourceContext:
         if not ad_object:
             try:
                 ad_object = self.resolve_principal(identifier)
+            except FatalCollectionError:
+                logger.error("Principal resolution cleanup/cancellation failed; target registration must stop")
+                raise
             except Exception as ex:
                 # Best-effort: a missing LDAP client (ad=None) or a transient LDAP
                 # error leaves ad_object None. The single user-facing "adding target
@@ -432,11 +429,9 @@ class SourceContext:
             )
         canonical_lower = canonical.lower()
 
-        with self._ensure_target_lock():
+        with self._targets.lock:
             # Step 4: Find existing entry — SID index first, hostname fallback
-            existing: Optional[TargetEntry] = (
-                self._target_hosts_by_sid.get(sid) if sid else None
-            ) or self.target_hosts_by_hostname.get(canonical_lower)
+            existing = self._targets.find(sid, canonical_lower)
 
             if existing is not None:
                 logger.verbose(f"Already registered target: {existing.ad_object.get('dns_host_name') if existing.ad_object else existing.hostname}")
@@ -445,12 +440,12 @@ class SourceContext:
                 if "." in canonical_lower and "." not in existing.hostname.lower():
                     logger.verbose("Upgrading hostname %r -> %r", existing.hostname, canonical)
                     existing.hostname = canonical
-                    self.target_hosts_by_hostname[canonical_lower] = existing
+                    self._targets.bind_alias(canonical_lower, existing)
                 # Backfill ad_object + SID index if we now have one
                 if ad_object and existing.ad_object is None:
                     existing.ad_object = ad_object
                     if sid:
-                        self._target_hosts_by_sid[sid] = existing
+                        self._targets.bind_identity(sid, existing)
                 # Merge source
                 if source and source not in existing.sources:
                     existing.sources.append(source)
@@ -474,9 +469,9 @@ class SourceContext:
                 site_code=site_code if site_code else None,
                 is_new=True,
             )
-            self.target_hosts_by_hostname[canonical_lower] = entry
+            self._targets.bind_alias(canonical_lower, entry)
             if sid:
-                self._target_hosts_by_sid[sid] = entry
+                self._targets.bind_identity(sid, entry)
             if self.work_queue is not None:
                 self.work_queue.submit(canonical)
             logger.info("Added collection target: %r from %r", canonical, source)
@@ -490,9 +485,4 @@ class SourceContext:
         up by phases that haven't started yet. Thread-safe against concurrent
         ``register_target`` mutations.
         """
-        with self._ensure_target_lock():
-            unique = {
-                entry.hostname.lower(): entry
-                for entry in self.target_hosts_by_hostname.values()
-            }
-            return list(unique.values())
+        return self._targets.snapshot(lambda entry: entry.hostname.lower())

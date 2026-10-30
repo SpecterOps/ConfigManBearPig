@@ -9,7 +9,11 @@ from typer.testing import CliRunner
 
 from openhound_sccm.clients.http import ErrorClass, HttpClient, parse_http_proxy
 from openhound_sccm.clients.http_auth import AuthMode
-from openhound_sccm.main import _parse_http_proxy_or_exit, _display_cli_value, collect_sccm
+from openhound_sccm.main import (
+    _parse_http_proxy_or_exit,
+    _suspicious_cli_argument_warnings,
+    collect_sccm,
+)
 
 
 @pytest.mark.parametrize(
@@ -120,7 +124,15 @@ def test_context_passes_http_proxy_and_cli_masks_credentials():
                           http_proxy="http://user:pass@proxy.mayyhem.com:80")
     client = HttpClient.from_context(ctx, "mp.mayyhem.com", auth=AuthMode.NONE)
     assert client._http_proxy == ctx.http_proxy
-    assert _display_cli_value("--http-proxy", "user:pass@proxy.mayyhem.com") == "<value>"
+    # Typing "-http-proxy" with one dash leaves the proxy address behind as a
+    # separate value. The typo warning must name the option but never repeat
+    # the address, because it can contain a proxy username and password.
+    warnings = _suspicious_cli_argument_warnings(
+        ["-http-proxy", "user:pass@proxy.mayyhem.com"]
+    )
+    assert len(warnings) == 1
+    assert "<value>" in warnings[0]
+    assert "user:pass" not in warnings[0]
 
 def test_proxy_error_log_redacts_credentials(monkeypatch):
     from unittest import mock

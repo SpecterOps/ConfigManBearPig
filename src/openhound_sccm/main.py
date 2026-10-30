@@ -39,6 +39,7 @@ from openhound_collector_common.orchestration.artifacts import (
     prior_load_packages as _shared_prior_load_packages,
 )
 from openhound_collector_common.orchestration.commands import cli_path_arg as _cli_path_arg
+from openhound_collector_common.orchestration.arguments import suspicious_argument_warnings
 from dlt.common.pipeline import LoadInfo
 import dlt
 from .convert_pipeline import emit_graph_from_duckdb, emit_hybrid_edges_from_duckdb
@@ -242,63 +243,12 @@ _SENSITIVE_OPTIONS: set[str] = {
 }
 
 
-def _display_cli_value(option: str, value: str) -> str:
-    if option in _SENSITIVE_OPTIONS:
-        return "<value>"
-    return value
-
-
 def _suspicious_cli_argument_warnings(argv: Sequence[str]) -> list[str]:
-    """Build warnings for short-option attachments that leave a value behind.
-
-    Click accepts ``-dc`` as ``-d c`` because ``-d`` takes a value. That means
-    typos like ``-dc 10.2.10.100`` make it through parsing and silently turn
-    the intended domain-controller value into a positional argument.
-    """
-    warnings: list[str] = []
-    for index, token in enumerate(argv):
-        if not token.startswith("-") or token.startswith("--") or token == "-":
-            continue
-
-        next_token = argv[index + 1] if index + 1 < len(argv) else None
-        if next_token is None or next_token.startswith("-"):
-            continue
-
-        one_dash_long = f"-{token}"
-        if one_dash_long in _LONG_OPTIONS_WITH_VALUES:
-            value = _display_cli_value(one_dash_long, next_token)
-            warnings.append(
-                f'Suspicious CLI option "{token} {value}" was parsed as a '
-                "short option with an attached value, leaving the next value "
-                f'as a separate argument. Did you mean "{one_dash_long} {value}"?'
-            )
-            continue
-
-        for short_option in _SHORT_OPTIONS_WITH_VALUES:
-            if not token.startswith(short_option) or token == short_option:
-                continue
-
-            attached_value = token[len(short_option):]
-            if len(attached_value) > 2:
-                break
-
-            canonical = _SHORT_OPTIONS_WITH_VALUES[short_option]
-            value = _display_cli_value(short_option, f"{attached_value} {next_token}")
-            if short_option in _SENSITIVE_OPTIONS:
-                warnings.append(
-                    f'Suspicious CLI option "{short_option}" has an attached '
-                    "value followed by another value token. Did you mean to "
-                    f'quote the {canonical} value, for example "{short_option} {value}"?'
-                )
-            else:
-                warnings.append(
-                    f'Suspicious CLI option "{token} {next_token}" looks like '
-                    f'a split value for {canonical}. Did you mean '
-                    f'"{short_option} {value}"?'
-                )
-            break
-
-    return warnings
+    """Use shared typo detection with SCCM's existing option names and masking."""
+    return suspicious_argument_warnings(
+        argv, short_options=_SHORT_OPTIONS_WITH_VALUES,
+        long_options=_LONG_OPTIONS_WITH_VALUES, sensitive_options=_SENSITIVE_OPTIONS,
+    )
 
 
 def _warn_for_suspicious_cli_arguments(argv: Sequence[str] | None = None) -> None:
@@ -859,21 +809,30 @@ def _run_per_host_stage(pipeline, work_queue, ctx, threads, maxsize: int = 1000,
     bridge = StreamBridge(table_names, maxsize=maxsize)
     _source.set_bridge(bridge)
     phase_scope = _build_phase_scope()
+    producer_errors: list[BaseException] = []
 
     def _pool() -> None:
-        run_pipeline(
-            work_queue,
-            ctx,
-            phases,
-            bridge.streams,
-            max_workers=threads,
-            should_run=should_run_phase,
-            phase_scope=phase_scope,
-            on_target_complete=fire_host_complete,
-        )
+        try:
+            run_pipeline(
+                work_queue,
+                ctx,
+                phases,
+                bridge.streams,
+                max_workers=threads,
+                should_run=should_run_phase,
+                phase_scope=phase_scope,
+                on_target_complete=fire_host_complete,
+                emit=bridge.put,
+                finish=bridge.broadcast_done,
+                on_failure=lambda error: bridge.cancel("A collection worker failed; see the run logs"),
+            )
+        except BaseException as error:
+            # A successful DLT drain must not hide a failed producer thread.
+            producer_errors.append(error)
+            bridge.cancel("The per-host producer failed; see the run logs")
 
     per_host_counts: dict[str, int] = {}
-    pool_thread = threading.Thread(target=_pool, name="per-host-pool", daemon=True)
+    pool_thread = threading.Thread(target=_pool, name="per-host-pool", daemon=False)
     pool_thread.start()
     try:
         # Each emit resource blocks on its queue until DONE, so it holds a dlt
@@ -894,16 +853,24 @@ def _run_per_host_stage(pipeline, work_queue, ctx, threads, maxsize: int = 1000,
         # the in-memory trace still reflects the per-host pass — a later run on the
         # same pipeline would replace it.
         per_host_counts = _normalize_row_counts(pipeline)
+    except BaseException:
+        work_queue.stop("The output consumer stopped; no further targets will start")
+        bridge.cancel("The output consumer stopped")
+        raise
     finally:
         # Always await the engine thread. If pipeline.run raised, the emit
         # consumers stopped draining, so a worker may be blocked on a full queue;
-        # empty the queues until the engine finishes so it reaches quiescence and
-        # join() can never hang. No-op on the success path (queues already
-        # drained, engine already finishing).
+        # cancel/drain the queues so those writes can finish. Active provider
+        # calls must still return and release their own resources; native calls
+        # can overrun a requested stop. Never abandon those worker threads.
         while pool_thread.is_alive():
             bridge.drain_to_unblock()
             pool_thread.join(timeout=0.1)
         _source.clear_bridge()
+
+    if producer_errors:
+        logger.error("Per-host collection failed after its active workers finished cleanup")
+        raise RuntimeError("Per-host collection failed; saved data is incomplete") from producer_errors[0]
 
     # ctx.resolved_principals now reflects every AD principal resolved during
     # the WHOLE run: Stage-1 discovery (which finished before this function
@@ -1042,7 +1009,7 @@ def collect_sccm(
         False, "--run-integration-tests", rich_help_panel="Testing",
         help="Implies --run-all, then assert the resulting graph against the built-in mayyhem "
              "lab fixtures. Prints PASS/FAIL/SKIP + summary + coverage, writes "
-             "integration_results-<ts>.json, and exits non-zero if any case fails.",
+             "integration_results-<ts>.json and .html, and exits non-zero if any case fails.",
     ),
     integration_privilege: IntegrationPrivilege = typer.Option(
         IntegrationPrivilege.auto, "--integration-privilege", rich_help_panel="Testing",
@@ -1281,23 +1248,15 @@ def collect_sccm(
                 # Both testing flags run to completion before either decides the exit
                 # code, so an operator who passed both always gets both reports rather
                 # than having the first failure hide the second's findings.
-                rc_compare = 0
-                if compare_to_zip is not None:
-                    from openhound_sccm.integration import compare_to_zip as _compare_to_zip
-                    rc_compare = _compare_to_zip(
-                        graph_dir, compare_to_zip,
-                        out_path=output_path / f"compare-{_ts}.json", log=logger.info,
-                    )
-                rc_suite = 0
-                if run_integration_tests:
-                    rc_suite = _run_integration_suite(
-                        graph_dir,
-                        output_path / f"integration_results-{_ts}.json",
-                        privileged=_resolve_integration_privileged(
-                            integration_privilege, collect_counts),
-                    )
                 if compare_to_zip is not None or run_integration_tests:
-                    raise typer.Exit(code=_combined_testing_exit_code(rc_compare, rc_suite))
+                    code = _run_graph_checks(
+                        graph_dir, output_path, _ts,
+                        compare_to_zip=compare_to_zip,
+                        privileged=_resolve_integration_privileged(
+                            integration_privilege, collect_counts
+                        ) if run_integration_tests else None,
+                    )
+                    raise typer.Exit(code=code)
             else:
                 logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
         except typer.Exit:
@@ -1357,13 +1316,37 @@ def _resolve_integration_privileged(choice: IntegrationPrivilege,
     return privileged
 
 
-def _combined_testing_exit_code(rc_compare: int, rc_suite: int) -> int:
-    """Non-zero if EITHER testing flag failed.
+def _run_graph_checks(
+    graph_dir: pathlib.Path, output_path: pathlib.Path, run_label: str, *,
+    compare_to_zip: pathlib.Path | None, privileged: bool | None,
+) -> int:
+    """Keep SCCM's choices while common attempts each requested check/report.
 
-    Both always run so the operator gets both reports; the process then reports
-    the worse of the two outcomes rather than letting one mask the other.
+    A None privilege means no fixture suite was requested. False still runs the
+    existing low-privilege suite; it must not be mistaken for an omitted check.
     """
-    return 1 if (rc_compare or rc_suite) else 0
+    from openhound_collector_common.integration_testing.validation import (
+        RequestedCheck, run_requested_checks,
+    )
+    from openhound_sccm.integration import compare_to_zip as compare
+
+    checks = []
+    if compare_to_zip is not None:
+        comparison_report = output_path / f"compare-{run_label}.json"
+        checks.append(RequestedCheck(
+            "baseline comparison",
+            lambda: compare(graph_dir, compare_to_zip, out_path=comparison_report, log=logger.info),
+            comparison_report,
+        ))
+    # Omitted checks have no operational work or result to report.
+    if privileged is not None:
+        suite_report = output_path / f"integration_results-{run_label}.json"
+        checks.append(RequestedCheck(
+            "SCCM fixture assertions",
+            lambda: _run_integration_suite(graph_dir, suite_report, privileged=privileged),
+            suite_report,
+        ))
+    return run_requested_checks(checks).exit_code
 
 
 def _run_integration_suite(graph_dir: pathlib.Path, results_path: pathlib.Path,

@@ -10,6 +10,7 @@ from openhound_collector_common.integration_testing.compare import compare_graph
 from openhound_collector_common.integration_testing.graph import load_graph
 from openhound_collector_common.integration_testing.results import write_results_json  # noqa: F401 (re-export)
 from openhound_collector_common.integration_testing.runner import run_suite
+from openhound_collector_common.integration_testing.reports import write_summary_reports
 
 from openhound_sccm.integration.fixtures.edges import MAYYHEM_EDGE_CASES
 from openhound_sccm.integration.fixtures.nodes import MAYYHEM_INVARIANTS, MAYYHEM_NODE_CASES
@@ -53,7 +54,12 @@ def run_integration_tests(graph_dir: Path, results_path: Path | None = None,
                      len(edge_cases), len(node_cases))
     summary = run_suite(graph, edge_cases, node_cases,
                         invariants=MAYYHEM_INVARIANTS, schema_path=SCHEMA_PATH,
-                        results_path=results_path, log=log)
+                        log=log)
+    if results_path is not None:
+        write_summary_reports(summary, results_path, context={
+            "collector": "SCCM", "privilege": "high" if privileged else "low",
+        })
+    # No report path means the existing caller requested console results only.
     return 1 if summary.failed > 0 else 0
 
 

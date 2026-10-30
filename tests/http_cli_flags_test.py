@@ -17,7 +17,13 @@ def test_flags_map_to_env(monkeypatch):
     from openhound_sccm import main as sccm_main
 
     for var in ("SOURCES__SCCM__NT_HASH", "SOURCES__SCCM__KERBEROS_TICKET"):
-        monkeypatch.delenv(var, raising=False)
+        # Setting first makes pytest remember that the variable was absent, so
+        # it removes the values written below when this test ends. Deleting an
+        # absent variable alone records nothing, and the hash and ticket then
+        # leaked into later tests, where the shared library correctly rejects
+        # a hash and a ticket supplied together.
+        monkeypatch.setenv(var, "")
+        monkeypatch.delenv(var)
     sccm_main._apply_env_overrides({"nt_hash": "aabbccdd", "kerberos_ticket": "QUJD"})
     assert os.environ["SOURCES__SCCM__NT_HASH"] == "aabbccdd"
     assert os.environ["SOURCES__SCCM__KERBEROS_TICKET"] == "QUJD"

@@ -26,6 +26,7 @@ def test_run_integration_tests_returns_exit_code(tmp_path):
     rc = run_integration_tests(tmp_path, results_path=tmp_path / "res.json")
     assert rc in (0, 1)                       # runs end-to-end without raising
     assert (tmp_path / "res.json").exists()
+    assert (tmp_path / "res.html").exists()
 
 
 def test_compare_to_zip_flags_a_regression(tmp_path):

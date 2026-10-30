@@ -1,0 +1,3224 @@
+{
+  "study": "October 29 SCCM user deployment placement",
+  "siteVersion": "5.00.9128.1000",
+  "clientVersion": "5.00.9128.1007",
+  "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+  "propagationSourceRunTag": "CMBP-PERM-07973253",
+  "propagation": [
+    {
+      "name": "two-client-InstallForSystem",
+      "actor": "MAYYHEM\\cpr079732530002",
+      "behavior": "InstallForSystem",
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_b1b1f61d-c98e-4cc5-989d-7fc040941ba9/1",
+        "Name": "CMBP-PERM-07973253 two-client-InstallForSystem",
+        "ID": 16777925
+      },
+      "requestedMarker": {
+        "nonce": "2ca8964380be4504972d89e9fe18eaec",
+        "path": "C:\\Windows\\Temp\\cup-2ca8964380be4504972d89e9fe18eaec.jsonl"
+      },
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "phases": [
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:28:21.1542381Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:29:12.3329738Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              }
+            ],
+            "expectedObserved": true,
+            "clients": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:29:30.8423861Z",
+                "markers": [
+                  {
+                    "nonce": "2ca8964380be4504972d89e9fe18eaec",
+                    "sid": "S-1-5-18",
+                    "utc": "2026-10-29T18:29:28.5989114Z",
+                    "computer": "PS1-DEV"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{6522C615-3FF1-4F6C-A964-A4D5729A919E}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForSystem_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142300.000000+***",
+                    "EnforcementDeadline": "20261029182300.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active          1  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:09  10/23/2026 3:16 PM\r\n"
+                ]
+              }
+            ],
+            "elapsedSeconds": 70.46
+          },
+          "name": "first-computer"
+        },
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:29:32.5538919Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "4bc0be6f-348c-43ba-996b-fc1e746165e5",
+                "PSShowComputerName": true
+              }
+            ],
+            "expectedObserved": true,
+            "clients": [
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:29:45.5070179Z",
+                "markers": [
+                  {
+                    "nonce": "2ca8964380be4504972d89e9fe18eaec",
+                    "sid": "S-1-5-18",
+                    "utc": "2026-10-29T18:29:41.7257713Z",
+                    "computer": "PS1-DP"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{6522C615-3FF1-4F6C-A964-A4D5729A919E}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForSystem_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142300.000000+***",
+                    "EnforcementDeadline": "20261029182300.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "a1f065a4-b783-4aac-a601-b908996440cb",
+                "PSShowComputerName": true
+              }
+            ],
+            "elapsedSeconds": 14.25
+          },
+          "name": "second-computer-same-assignment"
+        },
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:29:46.0320772Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:29:50.1163945Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "3dbe78b0-248f-44b5-b48a-9bb211bc662e",
+                "PSShowComputerName": true
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:30:19.5340231Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:30:23.3976430Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "3506ffa5-9016-434e-9a9e-54057fb04bdf",
+                "PSShowComputerName": true
+              }
+            ],
+            "expectedObserved": false,
+            "clients": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:30:47.1454000Z",
+                "markers": [
+                  {
+                    "nonce": "2ca8964380be4504972d89e9fe18eaec",
+                    "sid": "S-1-5-18",
+                    "utc": "2026-10-29T18:29:28.5989114Z",
+                    "computer": "PS1-DEV"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{6522C615-3FF1-4F6C-A964-A4D5729A919E}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForSystem_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142300.000000+***",
+                    "EnforcementDeadline": "20261029182300.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active          2  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:10  10/23/2026 3:16 PM\r\n"
+                ]
+              },
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:30:47.5226608Z",
+                "markers": [
+                  {
+                    "nonce": "2ca8964380be4504972d89e9fe18eaec",
+                    "sid": "S-1-5-18",
+                    "utc": "2026-10-29T18:29:41.7257713Z",
+                    "computer": "PS1-DP"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{6522C615-3FF1-4F6C-A964-A4D5729A919E}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForSystem_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142300.000000+***",
+                    "EnforcementDeadline": "20261029182300.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "a0a98713-ae71-4471-bf86-b683300a9075",
+                "PSShowComputerName": true
+              }
+            ],
+            "elapsedSeconds": 67
+          },
+          "name": "same-clients-after-success"
+        }
+      ],
+      "assignment": {
+        "Name": "CMBP-PERM-07973253 two-client-InstallForSystem_CMBP-PERM-07973253 one user_Install",
+        "ID": 16777262,
+        "DeadlineUTC": "2026-10-29T18:23:00.0000000Z"
+      },
+      "secondBeforeRequest": {
+        "computer": "PS1-DP",
+        "observedUTC": "2026-10-29T18:29:31.2257695Z",
+        "markers": [],
+        "markerCount": 0,
+        "assignments": [],
+        "recipientProfilePresent": true,
+        "recipientUserPolicyNamespacePresent": true,
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "ps1-dp.mayyhem.com",
+        "RunspaceId": "af5d2cfc-54ea-4ee6-81e5-90049428b601",
+        "PSShowComputerName": true
+      },
+      "recipientStates": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T18:30:52.9266548Z",
+          "groupSIDs": [
+            "S-1-5-21-2685035784-114219579-2457378813-513",
+            "S-1-1-0",
+            "S-1-5-32-555",
+            "S-1-5-32-545",
+            "S-1-5-4",
+            "S-1-2-1",
+            "S-1-5-11",
+            "S-1-5-15",
+            "S-1-2-0",
+            "S-1-18-1"
+          ],
+          "isWindowsAdministrator": false,
+          "applications": [
+            {
+              "Name": "CMBP-PERM-07973253 two-client-InstallForSystem",
+              "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_b1b1f61d-c98e-4cc5-989d-7fc040941ba9",
+              "Revision": "2",
+              "IsMachineTarget": false,
+              "InstallState": "Installed",
+              "EvaluationState": 1,
+              "AllowedActions": [
+                "Install"
+              ]
+            }
+          ],
+          "computer": "PS1-DEV"
+        },
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T18:30:56.9132691Z",
+          "groupSIDs": [
+            "S-1-5-21-2685035784-114219579-2457378813-513",
+            "S-1-1-0",
+            "S-1-5-32-555",
+            "S-1-5-32-545",
+            "S-1-5-4",
+            "S-1-2-1",
+            "S-1-5-11",
+            "S-1-5-15",
+            "S-1-2-0",
+            "S-1-18-1"
+          ],
+          "isWindowsAdministrator": false,
+          "applications": [
+            {
+              "Name": "CMBP-PERM-07973253 two-client-InstallForSystem",
+              "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_b1b1f61d-c98e-4cc5-989d-7fc040941ba9",
+              "Revision": "2",
+              "IsMachineTarget": false,
+              "InstallState": "Installed",
+              "EvaluationState": 1,
+              "AllowedActions": [
+                "Install"
+              ]
+            }
+          ],
+          "computer": "PS1-DP",
+          "PSComputerName": "ps1-dp.mayyhem.com",
+          "RunspaceId": "54ecd1e5-f50a-4e2c-b93a-55c4d2c862aa",
+          "PSShowComputerName": true
+        }
+      ]
+    },
+    {
+      "name": "two-client-InstallForUser",
+      "actor": "MAYYHEM\\cpr079732530003",
+      "behavior": "InstallForUser",
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_c83d374a-7587-4e5b-bfec-88cf059ea358/1",
+        "Name": "CMBP-PERM-07973253 two-client-InstallForUser",
+        "ID": 16777932
+      },
+      "requestedMarker": {
+        "nonce": "524722fc2cdc4032a2ef0e4742e781df",
+        "path": "C:\\Windows\\Temp\\cup-524722fc2cdc4032a2ef0e4742e781df.jsonl"
+      },
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "phases": [
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:31:15.8647408Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:31:44.3361043Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              }
+            ],
+            "expectedObserved": true,
+            "clients": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:31:52.2148636Z",
+                "markers": [
+                  {
+                    "nonce": "524722fc2cdc4032a2ef0e4742e781df",
+                    "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                    "utc": "2026-10-29T18:31:47.8681801Z",
+                    "computer": "PS1-DEV"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{981930AF-D0F5-4624-B31A-DC14F49AE75F}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForUser_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142600.000000+***",
+                    "EnforcementDeadline": "20261029182600.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active          3  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:11  10/23/2026 3:16 PM\r\n"
+                ]
+              }
+            ],
+            "elapsedSeconds": 36.72
+          },
+          "name": "first-computer"
+        },
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:31:54.1163928Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "109c094f-312b-4d9b-9c3b-e96b3fa9b0f6",
+                "PSShowComputerName": true
+              }
+            ],
+            "expectedObserved": true,
+            "clients": [
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:32:02.0070185Z",
+                "markers": [
+                  {
+                    "nonce": "524722fc2cdc4032a2ef0e4742e781df",
+                    "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                    "utc": "2026-10-29T18:31:57.8663957Z",
+                    "computer": "PS1-DP"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{981930AF-D0F5-4624-B31A-DC14F49AE75F}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForUser_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142600.000000+***",
+                    "EnforcementDeadline": "20261029182600.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "0e3175a4-cd20-4359-a0eb-b4a3170cd514",
+                "PSShowComputerName": true
+              }
+            ],
+            "elapsedSeconds": 9.4
+          },
+          "name": "second-computer-same-assignment"
+        },
+        {
+          "result": {
+            "requests": [
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:32:02.6210510Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:32:06.6007696Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "235fb4b9-e34c-4466-b3cd-fcc228061b35",
+                "PSShowComputerName": true
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:32:36.5061096Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DEV"
+              },
+              {
+                "identity": "mayyhem\\domainuser",
+                "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                "action": "Retrieve",
+                "utc": "2026-10-29T18:32:40.4601435Z",
+                "policyRequest": {
+                  "returnValue": 0
+                },
+                "computer": "PS1-DP",
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "b6a839de-7d07-46ca-96ad-b02e016685e3",
+                "PSShowComputerName": true
+              }
+            ],
+            "expectedObserved": false,
+            "clients": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:33:04.4753885Z",
+                "markers": [
+                  {
+                    "nonce": "524722fc2cdc4032a2ef0e4742e781df",
+                    "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                    "utc": "2026-10-29T18:31:47.8681801Z",
+                    "computer": "PS1-DEV"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{981930AF-D0F5-4624-B31A-DC14F49AE75F}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForUser_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142600.000000+***",
+                    "EnforcementDeadline": "20261029182600.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active          5  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:12  10/23/2026 3:16 PM\r\n"
+                ]
+              },
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:33:04.8195198Z",
+                "markers": [
+                  {
+                    "nonce": "524722fc2cdc4032a2ef0e4742e781df",
+                    "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                    "utc": "2026-10-29T18:31:57.8663957Z",
+                    "computer": "PS1-DP"
+                  }
+                ],
+                "markerCount": 1,
+                "assignments": [
+                  {
+                    "AssignmentID": "{981930AF-D0F5-4624-B31A-DC14F49AE75F}",
+                    "AssignmentName": "CMBP-PERM-07973253 two-client-InstallForUser_CMBP-PERM-07973253 one user_Install",
+                    "AssignmentIsMachine": null,
+                    "StartTime": "20261029142600.000000+***",
+                    "EnforcementDeadline": "20261029182600.000000+***"
+                  }
+                ],
+                "recipientProfilePresent": true,
+                "recipientUserPolicyNamespacePresent": true,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "3b9bd0c6-fc97-4620-9c73-31a26b030088",
+                "PSShowComputerName": true
+              }
+            ],
+            "elapsedSeconds": 67.8
+          },
+          "name": "same-clients-after-success"
+        }
+      ],
+      "assignment": {
+        "Name": "CMBP-PERM-07973253 two-client-InstallForUser_CMBP-PERM-07973253 one user_Install",
+        "ID": 16777263,
+        "DeadlineUTC": "2026-10-29T18:26:00.0000000Z"
+      },
+      "secondBeforeRequest": {
+        "computer": "PS1-DP",
+        "observedUTC": "2026-10-29T18:31:52.6007695Z",
+        "markers": [],
+        "markerCount": 0,
+        "assignments": [],
+        "recipientProfilePresent": true,
+        "recipientUserPolicyNamespacePresent": true,
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "ps1-dp.mayyhem.com",
+        "RunspaceId": "5d9c8d5d-b948-4fcd-a7b6-907f5576f32d",
+        "PSShowComputerName": true
+      },
+      "recipientStates": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T18:33:10.1628871Z",
+          "groupSIDs": [
+            "S-1-5-21-2685035784-114219579-2457378813-513",
+            "S-1-1-0",
+            "S-1-5-32-555",
+            "S-1-5-32-545",
+            "S-1-5-4",
+            "S-1-2-1",
+            "S-1-5-11",
+            "S-1-5-15",
+            "S-1-2-0",
+            "S-1-18-1"
+          ],
+          "isWindowsAdministrator": false,
+          "applications": [
+            {
+              "Name": "CMBP-PERM-07973253 two-client-InstallForUser",
+              "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_c83d374a-7587-4e5b-bfec-88cf059ea358",
+              "Revision": "2",
+              "IsMachineTarget": false,
+              "InstallState": "Installed",
+              "EvaluationState": 1,
+              "AllowedActions": [
+                "Install"
+              ]
+            }
+          ],
+          "computer": "PS1-DEV"
+        },
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T18:33:14.1007829Z",
+          "groupSIDs": [
+            "S-1-5-21-2685035784-114219579-2457378813-513",
+            "S-1-1-0",
+            "S-1-5-32-555",
+            "S-1-5-32-545",
+            "S-1-5-4",
+            "S-1-2-1",
+            "S-1-5-11",
+            "S-1-5-15",
+            "S-1-2-0",
+            "S-1-18-1"
+          ],
+          "isWindowsAdministrator": false,
+          "applications": [
+            {
+              "Name": "CMBP-PERM-07973253 two-client-InstallForUser",
+              "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_c83d374a-7587-4e5b-bfec-88cf059ea358",
+              "Revision": "2",
+              "IsMachineTarget": false,
+              "InstallState": "Installed",
+              "EvaluationState": 1,
+              "AllowedActions": [
+                "Install"
+              ]
+            }
+          ],
+          "computer": "PS1-DP",
+          "PSComputerName": "ps1-dp.mayyhem.com",
+          "RunspaceId": "5a1bf5ab-f040-4a57-9024-34976c5b25a4",
+          "PSShowComputerName": true
+        }
+      ]
+    }
+  ],
+  "primaryRequirement": {
+    "runTag": "CMBP-PERM-075a51c2",
+    "startedUTC": "2026-10-29T18:45:02.6292716Z",
+    "records": [
+      {
+        "name": "primary-requirement",
+        "actor": "MAYYHEM\\cpr075a51c20001",
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_315b4918-3233-4862-a7e2-bef886054626/1",
+          "Name": "CMBP-PERM-075a51c2 primary-requirement",
+          "ID": 16777953
+        },
+        "behavior": "InstallForSystem",
+        "requestedMarker": {
+          "nonce": "9f1da73699b34680a88563eb0ba09fdb",
+          "path": "C:\\Windows\\Temp\\cup-9f1da73699b34680a88563eb0ba09fdb.jsonl"
+        },
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "phases": [
+          {
+            "result": {
+              "requests": [
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:45:41.1841116Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:45:45.1320881Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "e4391544-738b-4834-90ef-624c59961558",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:46:14.5008356Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:46:18.4602264Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "c32e0806-0ed8-4d7d-80cb-8b5f4db14c37",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:46:47.6744957Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:46:51.5227337Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "19d368e5-4b59-4555-aac0-f6c5a080a6bf",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:47:20.8343144Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:47:24.6633620Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "9b9a8c98-fa5a-490d-a784-7104cb421c70",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:47:53.8514634Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:47:57.8039940Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "1e5c403c-dae1-4d64-932b-e0d0740fb24a",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:48:27.2891770Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:48:31.1321267Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "aacdde59-95b5-4f63-94a8-2e35ebdaef98",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:49:00.5267880Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:49:04.7883865Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "d1e5762b-1c79-4d04-aa9f-22fcf61658f1",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:49:34.5486313Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:49:38.4290073Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "8696fb9d-f9ec-4d38-b9ca-2fdb66e25c47",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:50:08.0986480Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:50:12.0383880Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "9dd3b8e6-190a-41a9-b26f-f1ba432b4293",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:50:41.4745690Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:50:45.4290156Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "7b9708d6-a2b3-43e1-9027-a55ed244887f",
+                  "PSShowComputerName": true
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:51:15.0234268Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DEV"
+                },
+                {
+                  "identity": "mayyhem\\domainuser",
+                  "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+                  "action": "Retrieve",
+                  "utc": "2026-10-29T18:51:19.1321450Z",
+                  "policyRequest": {
+                    "returnValue": 0
+                  },
+                  "computer": "PS1-DP",
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "8da92c44-a3e4-454b-9a89-a0e6a87b1025",
+                  "PSShowComputerName": true
+                }
+              ],
+              "expectedObserved": false,
+              "clients": [
+                {
+                  "computer": "PS1-DEV",
+                  "observedUTC": "2026-10-29T18:51:37.4947953Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [
+                    {
+                      "AssignmentID": "{CA04357A-347E-4B24-A058-2B78A13A166C}",
+                      "AssignmentName": "CMBP-PERM-075a51c2 primary-requirement_CMBP-PERM-075a51c2 one user_Install",
+                      "AssignmentIsMachine": null,
+                      "StartTime": "20261029144000.000000+***",
+                      "EnforcementDeadline": "20261029184000.000000+***"
+                    }
+                  ],
+                  "recipientProfilePresent": true,
+                  "recipientUserPolicyNamespacePresent": true,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser            console             1  Active          6  10/23/2026 4:52 PM\r\n",
+                    ">domainadmin                               3  Disc      3+01:31  10/23/2026 3:16 PM\r\n"
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "observedUTC": "2026-10-29T18:51:37.8508960Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [
+                    {
+                      "AssignmentID": "{CA04357A-347E-4B24-A058-2B78A13A166C}",
+                      "AssignmentName": "CMBP-PERM-075a51c2 primary-requirement_CMBP-PERM-075a51c2 one user_Install",
+                      "AssignmentIsMachine": null,
+                      "StartTime": "20261029144000.000000+***",
+                      "EnforcementDeadline": "20261029184000.000000+***"
+                    }
+                  ],
+                  "recipientProfilePresent": true,
+                  "recipientUserPolicyNamespacePresent": true,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "f60525c5-3a6b-458d-816d-79d3e04d4f5c",
+                  "PSShowComputerName": true
+                }
+              ],
+              "elapsedSeconds": 362.06
+            },
+            "name": "only-primary-computer"
+          }
+        ],
+        "primaryRequirement": {
+          "hasPrimaryDeviceRequirement": true,
+          "rules": [
+            "<Rule xmlns=\"http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules\" id=\"Rule_8faa106d-2cca-4d23-b2a7-7368a593a261\" Severity=\"None\" NonCompliantWhenSettingIsNotFound=\"false\"><Annotation><DisplayName Text=\"Primary device Equals True\" /><Description Text=\"\" /></Annotation><Expression><Operator>Equals</Operator><Operands><GlobalSettingReference AuthoringScopeId=\"GLOBAL\" LogicalName=\"PrimaryDevice\" DataType=\"Boolean\" SettingLogicalName=\"PrimaryDevice_Setting_LogicalName\" SettingSourceType=\"CIM\" Method=\"Value\" /><ConstantValue Value=\"True\" DataType=\"Boolean\" /></Operands></Expression></Rule>"
+          ],
+          "addedBySetupAdministrator": true,
+          "PSComputerName": "ps1-pss.mayyhem.com",
+          "RunspaceId": "4320d395-4246-4b9c-b191-9f3978afb203",
+          "PSShowComputerName": true
+        },
+        "firstPrimary": {
+          "user": "mayyhem\\domainuser",
+          "resourceID": 16777228,
+          "computer": "PS1-DP",
+          "active": true,
+          "types": [
+            1
+          ],
+          "sources": [
+            2,
+            4,
+            9
+          ]
+        },
+        "assignment": {
+          "Name": "CMBP-PERM-075a51c2 primary-requirement_CMBP-PERM-075a51c2 one user_Install",
+          "ID": 16777265,
+          "DeadlineUTC": "2026-10-29T18:40:00.0000000Z"
+        },
+        "savedDefinition": {
+          "Name": "CMBP-PERM-075a51c2 primary-requirement",
+          "Contexts": [
+            "System"
+          ],
+          "Version": 3,
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_315b4918-3233-4862-a7e2-bef886054626/3",
+          "PSComputerName": "ps1-pss.mayyhem.com",
+          "RunspaceId": "ff29848a-d4ff-4f6b-add0-639ab1099c34",
+          "PSShowComputerName": true
+        },
+        "affinityPolicyAcceleration": [
+          {
+            "computer": "PS1-DEV",
+            "identity": "mayyhem\\domainadmin",
+            "kind": "setup administrator machine-policy acceleration",
+            "utc": "2026-10-29T18:45:40.4653517Z",
+            "requests": [
+              {
+                "ReturnValue": null
+              },
+              {
+                "ReturnValue": null
+              }
+            ]
+          },
+          {
+            "computer": "PS1-DP",
+            "identity": "mayyhem\\domainadmin",
+            "kind": "setup administrator machine-policy acceleration",
+            "utc": "2026-10-29T18:45:40.8352120Z",
+            "requests": [
+              {
+                "ReturnValue": null
+              },
+              {
+                "ReturnValue": null
+              }
+            ],
+            "PSComputerName": "ps1-dp.mayyhem.com",
+            "RunspaceId": "38b02d1c-b17b-458c-85d5-6fe7d56eee8f",
+            "PSShowComputerName": true
+          }
+        ],
+        "nonprimaryState": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T18:51:43.1979187Z",
+          "groupSIDs": [
+            "S-1-5-21-2685035784-114219579-2457378813-513",
+            "S-1-1-0",
+            "S-1-5-32-555",
+            "S-1-5-32-545",
+            "S-1-5-4",
+            "S-1-2-1",
+            "S-1-5-11",
+            "S-1-5-15",
+            "S-1-2-0",
+            "S-1-18-1"
+          ],
+          "isWindowsAdministrator": false,
+          "applications": [
+            {
+              "Name": "CMBP-PERM-075a51c2 primary-requirement",
+              "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_315b4918-3233-4862-a7e2-bef886054626",
+              "Revision": "3",
+              "IsMachineTarget": false,
+              "InstallState": "NotInstalled",
+              "EvaluationState": 2,
+              "AllowedActions": []
+            }
+          ],
+          "computer": "PS1-DEV"
+        }
+      }
+    ],
+    "cleanupComplete": true,
+    "recipient": "MAYYHEM\\domainuser",
+    "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+    "selection": "PrimaryRequirement",
+    "machinePolicyIsSetupAcceleration": true,
+    "sessionsBefore": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser                                1  Disc            4  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      3+01:24  10/23/2026 3:16 PM"
+    ],
+    "updatedUTC": "2026-10-29T18:51:57.9191516Z",
+    "recipientSessionConnected": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser            console             1  Active          .  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      3+01:24  10/23/2026 3:16 PM"
+    ],
+    "error": {
+      "message": "Primary requirement positive control did not execute.",
+      "type": "System.Management.Automation.RuntimeException"
+    },
+    "restoredRecipientSession": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser                                1  Disc            .  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      3+01:31  10/23/2026 3:16 PM"
+    ],
+    "finishedUTC": "2026-10-29T18:51:57.9191516Z"
+  },
+  "predeployment": {
+    "runTag": "CMBP-PERM-d032bdeb",
+    "startedUTC": "2026-10-29T18:55:19.3372728Z",
+    "records": [
+      {
+        "name": "no-session-predeployment",
+        "actor": "MAYYHEM\\cprd032bdeb0001",
+        "behavior": "InstallForSystem",
+        "recipient": "MAYYHEM\\localuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1000",
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_1c48de4a-ad94-4ad5-bba2-44e80c36b47d/1",
+          "Name": "CMBP-PERM-d032bdeb no-session-predeployment",
+          "ID": 16777971
+        },
+        "requestedMarker": {
+          "nonce": "7004844bbb5a4cc097255e42a05402c1",
+          "path": "C:\\Windows\\Temp\\cup-7004844bbb5a4cc097255e42a05402c1.jsonl"
+        },
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "phases": [
+          {
+            "result": {
+              "requests": [
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:55:54.4791770Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:55:54.8196776Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "dd5e34f3-049d-4543-a0e8-03ce99aefc42",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:56:22.2167391Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:56:22.5228030Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "befc71de-153d-4a74-aaaf-de491159ddd9",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:56:49.9042550Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:56:50.1790547Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "ac24d1e2-a7a4-4f98-816d-fde5ff7fc9fd",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:57:17.5606817Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:57:17.8665532Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "39832aeb-489b-4a2e-9864-9557e1fb2c3a",
+                  "PSShowComputerName": true
+                }
+              ],
+              "expectedObserved": false,
+              "clients": [
+                {
+                  "computer": "PS1-DEV",
+                  "observedUTC": "2026-10-29T18:57:23.4060743Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [],
+                  "recipientProfilePresent": false,
+                  "recipientUserPolicyNamespacePresent": false,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser                                1  Disc            5  10/23/2026 4:52 PM\r\n",
+                    ">domainadmin                               3  Disc      3+01:36  10/23/2026 3:16 PM\r\n"
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "observedUTC": "2026-10-29T18:57:23.7571769Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [],
+                  "recipientProfilePresent": false,
+                  "recipientUserPolicyNamespacePresent": false,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "06df3e67-5419-40ac-b8e8-bd78dd5045f8",
+                  "PSShowComputerName": true
+                }
+              ],
+              "elapsedSeconds": 94.48
+            },
+            "name": "predeployment-disabled-no-session"
+          },
+          {
+            "result": {
+              "requests": [
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:57:33.5170185Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:57:33.8040590Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "9f815a6b-6778-4cdf-8bff-8813ace77074",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:01.0821179Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:01.3665551Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "41a6d96a-3038-4899-a40a-6c54aca87e22",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:28.6661355Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:28.9759259Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "f7e8337e-4436-4217-976a-c99901137595",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:56.2936879Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:58:56.6009290Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "b2ab06d2-d0a9-46a0-9ee3-2f2b4b0dba9e",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:59:23.9842101Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:59:24.2728088Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "7b18f909-a151-4d31-9d1e-7ee35716a9f9",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:59:51.4691047Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T18:59:51.7571794Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "4c709d38-f7c5-48a2-b82a-b2cf5c2e1016",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:00:19.0949679Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:00:19.3821726Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "cec0a5e6-7730-4141-96ee-f4e962f47d7d",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:00:46.6574669Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:00:46.9446576Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "79092cf3-0466-4efa-924b-2a0c4602e966",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:01:14.3474638Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:01:14.6321461Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "55b1a2ab-0d3d-41c6-88ba-4d433ee2616a",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:01:41.9741956Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:01:42.2883866Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "e62e1cfb-59c2-4154-ab01-7cc0b9bd7005",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:02:09.6315748Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:02:09.9446204Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "de24fb0b-be04-4b5c-a3e0-827a1b1dd6e4",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:02:37.2105657Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:02:37.5227368Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "c9cd4ecb-254f-43d6-82bd-d543e90f2516",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:03:05.1183133Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:03:05.4914810Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "ba8678fd-4095-4ad4-8782-00746cb8c5c6",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:03:32.9000647Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:03:33.1946004Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "f374fd85-dc6c-47d1-ad79-4f54bea84271",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:00.5425502Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:00.8508433Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "db46fe32-972f-4404-95c2-0536c70b3c8d",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:28.0752367Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:28.3664582Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "ca31ad72-836d-435b-83a4-afda1ecb579f",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:55.5313556Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:04:55.8195815Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "6b7a5bfb-d358-4b36-a381-e7bf1bb825e1",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:05:23.0966704Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:05:23.3820782Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "3ae4b200-91bb-46fa-a3a1-0dbbbdaf4d27",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:05:50.6196975Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:05:50.9133245Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "ae007609-4fc8-494c-8292-2284a88a3b20",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:06:18.2712043Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:06:18.6320671Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "42c9e9e4-c0d7-4251-bbd0-5a9b0b75ea9f",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:06:46.0993319Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:06:46.3664399Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "d1a54612-261b-4f98-ac54-c8d6c0cf2f9d",
+                  "PSShowComputerName": true
+                },
+                {
+                  "computer": "PS1-DEV",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:07:13.5708776Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "identity": "mayyhem\\domainadmin",
+                  "kind": "setup administrator machine-policy acceleration",
+                  "utc": "2026-10-29T19:07:13.8508143Z",
+                  "requests": [
+                    {
+                      "ReturnValue": null
+                    },
+                    {
+                      "ReturnValue": null
+                    }
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "07a2523e-076a-48cf-aab9-3a9575834d79",
+                  "PSShowComputerName": true
+                }
+              ],
+              "expectedObserved": false,
+              "clients": [
+                {
+                  "computer": "PS1-DEV",
+                  "observedUTC": "2026-10-29T19:07:30.1665645Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [],
+                  "recipientProfilePresent": false,
+                  "recipientUserPolicyNamespacePresent": false,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser                                1  Disc           15  10/23/2026 4:52 PM\r\n",
+                    ">domainadmin                               3  Disc      3+01:47  10/23/2026 3:16 PM\r\n"
+                  ]
+                },
+                {
+                  "computer": "PS1-DP",
+                  "observedUTC": "2026-10-29T19:07:30.5070580Z",
+                  "markers": [],
+                  "markerCount": 0,
+                  "assignments": [],
+                  "recipientProfilePresent": false,
+                  "recipientUserPolicyNamespacePresent": false,
+                  "sessions": [
+                    " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                    " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                  ],
+                  "PSComputerName": "ps1-dp.mayyhem.com",
+                  "RunspaceId": "5e01be06-2f12-442b-a9c4-8e23fee616c2",
+                  "PSShowComputerName": true
+                }
+              ],
+              "elapsedSeconds": 602.1
+            },
+            "name": "first-primary-no-session"
+          }
+        ],
+        "before": [
+          {
+            "computer": "PS1-DEV",
+            "observedUTC": "2026-10-29T18:55:42.8846181Z",
+            "markers": [],
+            "markerCount": 0,
+            "assignments": [],
+            "recipientProfilePresent": false,
+            "recipientUserPolicyNamespacePresent": false,
+            "sessions": [
+              " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+              " domainuser                                1  Disc            3  10/23/2026 4:52 PM\r\n",
+              ">domainadmin                               3  Disc      3+01:35  10/23/2026 3:16 PM\r\n"
+            ]
+          },
+          {
+            "computer": "PS1-DP",
+            "observedUTC": "2026-10-29T18:55:43.2571760Z",
+            "markers": [],
+            "markerCount": 0,
+            "assignments": [],
+            "recipientProfilePresent": false,
+            "recipientUserPolicyNamespacePresent": false,
+            "sessions": [
+              " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+              " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+            ],
+            "PSComputerName": "ps1-dp.mayyhem.com",
+            "RunspaceId": "43f12375-a646-4ee0-81e7-16d4b6c823bb",
+            "PSShowComputerName": true
+          }
+        ],
+        "firstPrimary": {
+          "user": "MAYYHEM\\localuser",
+          "resourceID": 16777228,
+          "computer": "PS1-DP",
+          "active": true,
+          "types": [
+            1
+          ],
+          "sources": [
+            2
+          ]
+        },
+        "assignment": {
+          "Name": "CMBP-PERM-d032bdeb no-session-predeployment_CMBP-PERM-d032bdeb one user_Install",
+          "ID": 16777267,
+          "DeadlineUTC": "2026-10-29T18:50:00.0000000Z"
+        },
+        "initialOfferFlags": 0,
+        "savedOfferFlags": 1,
+        "savedPreDeploy": true,
+        "predeploymentEnabledUTC": "2026-10-29T18:57:33.4701763Z"
+      }
+    ],
+    "cleanupComplete": true,
+    "recipient": "MAYYHEM\\domainuser",
+    "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+    "selection": "Predeployment",
+    "machinePolicyIsSetupAcceleration": true,
+    "sessionsBefore": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser                                1  Disc            3  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      3+01:34  10/23/2026 3:16 PM"
+    ],
+    "freshRecipient": {
+      "credentialsPassedToClients": false,
+      "sid": "S-1-5-21-2685035784-114219579-2457378813-1000",
+      "name": "MAYYHEM\\localuser",
+      "preexisting": true
+    },
+    "updatedUTC": "2026-10-29T19:07:44.9169994Z",
+    "error": {
+      "message": "No-session primary predeployment was not observed.",
+      "type": "System.Management.Automation.RuntimeException"
+    },
+    "finishedUTC": "2026-10-29T19:07:44.9169994Z"
+  },
+  "predeploymentClientObservation": {
+    "utc": "2026-10-29T18:59:34.6634255Z",
+    "affinities": [],
+    "logs": {
+      "UserAffinity.log": [
+        "<![LOG[Retrieving user minutes map...]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:850\">",
+        "<![LOG[Loading approved and pending user affinities...]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:853\">",
+        "<![LOG[Checking if any pending affinity is approved...]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:873\">",
+        "<![LOG[User 'mayyhem\\domainuser' in pending affinity is not approved yet]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:880\">",
+        "<![LOG[Checking usage minutes per user against current minutes threshold...]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:919\">",
+        "<![LOG[User 'mayyhem\\domainadmin' has 0 usage minutes]LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:922\">",
+        "<![LOG[Unsetting auto affinity for user 'mayyhem\\domainadmin']LOG]!><time=\"16:55:18.772+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:712\">",
+        "<![LOG[Found same state message existing. (was sent before) Skip sending same state message for user 'mayyhem\\domainadmin'..]LOG]!><time=\"16:55:18.803+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:615\">",
+        "<![LOG[User 'mayyhem\\domainuser' has 7202 usage minutes]LOG]!><time=\"16:55:18.803+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:922\">",
+        "<![LOG[Setting auto affinity for user 'mayyhem\\domainuser'.]LOG]!><time=\"16:55:18.803+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:708\">",
+        "<![LOG[Found same state message existing. (was sent before) Skip sending same state message for user 'mayyhem\\domainuser'..]LOG]!><time=\"16:55:18.819+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:615\">",
+        "<![LOG[>>>>>>Finished processing user affinity usage task<<<<<<]LOG]!><time=\"16:55:18.819+240\" date=\"10-28-2026\" component=\"UserAffinity\" context=\"\" type=\"1\" thread=\"4748\" file=\"affinityagent.cpp:936\">"
+      ],
+      "PolicyAgent.log": [
+        "\tPolicyPath = \"CCM_Policy_Policy5.PolicyID=\\\"{0100000C}-{PS1}\\\",PolicyVersion=\\\"14.00\\\",PolicySource=\\\"SMS:PS1\\\"\";",
+        "\tDownloadSource = \"http://<mp>/SMS_MP/.sms_pol?{0100000C}-{PS1}.14_00\";",
+        "\tPolicyPath = \"CCM_Policy_Policy5.PolicyID=\\\"{0100000C}-{PS1}\\\",PolicyVersion=\\\"14.00\\\",PolicySource=\\\"SMS:PS1\\\"\";",
+        "<![LOG[Revoking policy '{0100000C}-{PS1}' version '13.00' on '\\\\.\\ROOT\\ccm\\policy\\Machine\\RequestedConfig']LOG]!><time=\"14:58:01.694+240\" date=\"10-29-2026\" component=\"PolicyAgent\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:4430\">",
+        "\tDateTime = \"20261029185801.710000+000\";",
+        "\tPolicyID = \"{0100000C}-{PS1}\";",
+        "\tRuleID = \"{Rule_{0100000C}-{PS1}}\";",
+        "<![LOG[Deleting policy '{0100000C}-{PS1}' version '13.00']LOG]!><time=\"14:58:01.710+240\" date=\"10-29-2026\" component=\"PolicyAgent\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:544\">",
+        "<![LOG[Evaluating and applying policy 'CCM_Policy_Policy5.PolicyID=\"{0100000C}-{PS1}\",PolicyVersion=\"14.00\",PolicySource=\"SMS:PS1\"' to '\\\\.\\ROOT\\ccm\\policy\\Machine\\RequestedConfig']LOG]!><time=\"14:58:01.710+240\" date=\"10-29-2026\" component=\"PolicyAgent\" context=\"\" type=\"1\" thread=\"412\" file=\"policyobject.cpp:570\">",
+        "<![LOG[Applying policy {0100000C}-{PS1}]LOG]!><time=\"14:58:01.710+240\" date=\"10-29-2026\" component=\"PolicyAgent\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:4630\">",
+        "\tDateTime = \"20261029185801.710000+000\";",
+        "\tPolicyPath = \"CCM_Policy_Policy5.PolicyID=\\\"{0100000C}-{PS1}\\\",PolicyVersion=\\\"14.00\\\",PolicySource=\\\"SMS:PS1\\\"\";"
+      ],
+      "PolicyEvaluator.log": [
+        "<![LOG[Applying policy SCE10000]LOG]!><time=\"14:58:29.007+240\" date=\"10-29-2026\" component=\"PolicyAgent_PolicyEvaluator\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:4630\">",
+        "<![LOG[Applying policy SRC10000]LOG]!><time=\"14:58:29.007+240\" date=\"10-29-2026\" component=\"PolicyAgent_PolicyEvaluator\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:4630\">",
+        "<![LOG[Applying policy {0100000C}-{PS1}]LOG]!><time=\"14:58:29.007+240\" date=\"10-29-2026\" component=\"PolicyAgent_PolicyEvaluator\" context=\"\" type=\"1\" thread=\"412\" file=\"policyutil.cpp:4630\">",
+        "\tDateTime = \"20261029185829.241000+000\";",
+        "\tDateTime = \"20261029185829.241000+000\";"
+      ]
+    },
+    "PSComputerName": "ps1-dp.mayyhem.com",
+    "RunspaceId": "6ecac2cd-f902-4a74-8bf6-d9410a4f9041",
+    "PSShowComputerName": true
+  },
+  "predeploymentMachinePolicyLog": {
+    "utc": "2026-10-29T19:01:12.9602669Z",
+    "policyLog": "<![LOG[[Assignment Request] No new assignments for Machine PS1-DP]LOG]!><time=\"15:00:19.397+240\" date=\"10-29-2026\" component=\"PolicyAgent_RequestAssignments\" context=\"\" type=\"1\" thread=\"4448\" file=\"requestassignmentstask.cpp:1066\">\n<![LOG[Requesting Machine policy assignments from authority 'SMS:PS1']LOG]!><time=\"15:00:46.929+240\" date=\"10-29-2026\" component=\"PolicyAgent_RequestAssignments\" context=\"\" type=\"1\" thread=\"5844\" file=\"requestassignmentstask.cpp:1192\">\n<![LOG[Raising event:\n\ninstance of CCM_PolicyAgent_AssignmentsRequested\n{\n\tAuthorityName = \"SMS:PS1\";\n\tClientID = \"GUID:CB43FAA5-00D4-4E01-AA77-3A901F4FAF4B\";\n\tDateTime = \"20261029190046.960000+000\";\n\tProcessID = 2628;\n\tResourceName = \"PS1-DP\";\n\tResourceType = \"Machine\";\n\tThreadID = 5844;\n};\n]LOG]!><time=\"15:00:46.960+240\" date=\"10-29-2026\" component=\"PolicyAgent_RequestAssignments\" context=\"\" type=\"1\" thread=\"5844\" file=\"Event.cpp:843\">\n<![LOG[[Assignment Request] No new assignments for Machine PS1-DP]LOG]!><time=\"15:00:46.960+240\" date=\"10-29-2026\" component=\"PolicyAgent_RequestAssignments\" context=\"\" type=\"1\" thread=\"5844\" file=\"requestassignmentstask.cpp:1066\">",
+    "clientState": [
+      {
+        "ClientVersion": "5.00.9128.1007",
+        "ClientType": 1
+      }
+    ],
+    "affinity": [],
+    "PSComputerName": "ps1-dp.mayyhem.com",
+    "RunspaceId": "c3352f7e-5530-42d4-91e4-51bcfcdf89e6",
+    "PSShowComputerName": true
+  },
+  "predeploymentSavedSettings": {
+    "observedUTC": "2026-10-29T19:05:59.9932012Z",
+    "settings": [
+      "<Application AuthoringScopeId=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC\" LogicalName=\"Application_1c48de4a-ad94-4ad5-bba2-44e80c36b47d\" Version=\"2\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\"><DisplayInfo DefaultLanguage=\"en-US\"><Info Language=\"en-US\"><Title>CMBP-PERM-d032bdeb no-session-predeployment</Title></Info></DisplayInfo><DeploymentTypes><DeploymentType AuthoringScopeId=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC\" LogicalName=\"DeploymentType_7ab00e76-4bd2-4419-8fe3-6a937aae2492\" Version=\"1\" /></DeploymentTypes><Title ResourceId=\"Res_1877982520\">CMBP-PERM-d032bdeb no-session-predeployment</Title><Description ResourceId=\"Res_1311214429\">Harmless user/device deployment research</Description><Owners><User Qualifier=\"LogonName\" Id=\"domainadmin\" /></Owners><Contacts><User Qualifier=\"LogonName\" Id=\"domainadmin\" /></Contacts></Application>",
+      "<Owners xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\"><User Qualifier=\"LogonName\" Id=\"domainadmin\" /></Owners>",
+      "<User Qualifier=\"LogonName\" Id=\"domainadmin\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\" />",
+      "<Contacts xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\"><User Qualifier=\"LogonName\" Id=\"domainadmin\" /></Contacts>",
+      "<User Qualifier=\"LogonName\" Id=\"domainadmin\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\" />",
+      "<ExecutionContext xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">System</ExecutionContext>",
+      "<Arg Name=\"ExecutionContext\" Type=\"String\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">System</Arg>",
+      "<Arg Name=\"ExecutionContext\" Type=\"String\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">System</Arg>",
+      "<Arg Name=\"RequiresLogOn\" Type=\"String\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\" />",
+      "<Arg Name=\"RequiresUserInteraction\" Type=\"Boolean\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">false</Arg>",
+      "<Arg Name=\"UserInteractionMode\" Type=\"String\" xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">Hidden</Arg>",
+      "<UserInteractionMode xmlns=\"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest\">Hidden</UserInteractionMode>"
+    ],
+    "PSComputerName": "ps1-pss.mayyhem.com",
+    "RunspaceId": "7e6a1503-8124-4c80-88c6-6ddf6f14aa2c",
+    "PSShowComputerName": true
+  },
+  "primaryRequirementClientLog": {
+    "observedUTC": "2026-10-29T19:01:59.6008803Z",
+    "computer": "PS1-DP",
+    "caseApplication": "315b4918-3233-4862-a7e2-bef886054626",
+    "lines": "<![LOG[DT id = ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_315b4918-3233-4862-a7e2-bef886054626/3, technology = Script]LOG]!><time=\"14:45:52.741+240\" date=\"10-29-2026\" component=\"AppIntentEval\" context=\"\" type=\"1\" thread=\"5964\" file=\"appconstructs.cpp:4219\">\n<![LOG[ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_315b4918-3233-4862-a7e2-bef886054626/3 :- Current State = NotInstalled, Applicability = NotApplicable, ResolvedState = None, ConfigureState = NotNeeded, Title = CMBP-PERM-075a51c2 primary-requirement]LOG]!><time=\"14:45:52.741+240\" date=\"10-29-2026\" component=\"AppIntentEval\" context=\"\" type=\"1\" thread=\"5964\" file=\"appconstructs.cpp:3553\">\n<![LOG[ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_315b4918-3233-4862-a7e2-bef886054626/3 :- Current State = NonCompliant, Applicability = NotApplicable, ResolvedState = None, ConfigureState = NotNeeded, Title = ApplicationIntentPolicy]LOG]!><time=\"14:45:52.741+240\" date=\"10-29-2026\" component=\"AppIntentEval\" context=\"\" type=\"1\" thread=\"5964\" file=\"appconstructs.cpp:4529\">",
+    "PSComputerName": "ps1-dp.mayyhem.com",
+    "RunspaceId": "ae8f9939-628d-4e25-8ea8-7611b9a49955",
+    "PSShowComputerName": true
+  },
+  "originalRecipientAffinities": [
+    {
+      "user": "mayyhem\\domainuser",
+      "resourceID": 16777230,
+      "computer": "PS1-DEV",
+      "types": [],
+      "sources": [
+        4,
+        7,
+        9
+      ]
+    },
+    {
+      "user": "mayyhem\\domainuser",
+      "resourceID": 16777228,
+      "computer": "PS1-DP",
+      "types": [],
+      "sources": [
+        4,
+        9
+      ]
+    }
+  ],
+  "machinePolicyIsSetupAcceleration": true,
+  "excludedAttempts": [
+    {
+      "sourceDirectory": "all-first",
+      "reason": "The later predeployment case stopped on an incorrect console parameter. The two earlier propagation cases are retained separately as successful observations.",
+      "run": {
+        "runTag": "CMBP-PERM-07973253",
+        "startedUTC": "2026-10-29T18:27:45.9827839Z",
+        "records": [
+          {
+            "name": "no-session-predeployment",
+            "actor": "MAYYHEM\\cpr079732530004",
+            "behavior": "InstallForSystem",
+            "recipient": "MAYYHEM\\cpr079732530001",
+            "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1711",
+            "application": {
+              "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_ba80dd97-0194-4aa4-b58b-970eb407fbf3/1",
+              "Name": "CMBP-PERM-07973253 no-session-predeployment",
+              "ID": 16777939
+            },
+            "requestedMarker": {
+              "nonce": "86bc2899eb6846518ff866319676d4d6",
+              "path": "C:\\Windows\\Temp\\cup-86bc2899eb6846518ff866319676d4d6.jsonl"
+            },
+            "applicationMask": 1027,
+            "collectionMask": 1052673,
+            "phases": [
+              {
+                "result": {
+                  "requests": [
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:33:41.0851749Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:33:41.3820190Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "83bcfbdc-ad68-4cee-85f6-add8624e66c6",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:34:08.7620891Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:34:09.0382693Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "11b74f9b-f15f-4ca0-a98e-3cd0ba360c32",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:34:36.5156271Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:34:36.7882745Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "f240a8e3-b6a8-484c-8993-cb5de029d5fc",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:35:04.0032967Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:35:04.2726443Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "a2c05aab-c21d-435c-b42e-6705c6739f69",
+                      "PSShowComputerName": true
+                    }
+                  ],
+                  "expectedObserved": false,
+                  "clients": [
+                    {
+                      "computer": "PS1-DEV",
+                      "observedUTC": "2026-10-29T18:35:09.7532589Z",
+                      "markers": [],
+                      "markerCount": 0,
+                      "assignments": [],
+                      "recipientProfilePresent": false,
+                      "recipientUserPolicyNamespacePresent": false,
+                      "sessions": [
+                        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                        " domainuser            console             1  Active          7  10/23/2026 4:52 PM\r\n",
+                        ">domainadmin                               3  Disc      3+01:14  10/23/2026 3:16 PM\r\n"
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "observedUTC": "2026-10-29T18:35:10.0695178Z",
+                      "markers": [],
+                      "markerCount": 0,
+                      "assignments": [],
+                      "recipientProfilePresent": false,
+                      "recipientUserPolicyNamespacePresent": false,
+                      "sessions": [
+                        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                        " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "ec4f855f-0f2f-4b05-b14b-91635ed9fd61",
+                      "PSShowComputerName": true
+                    }
+                  ],
+                  "elapsedSeconds": 94.18
+                },
+                "name": "predeployment-disabled-no-session"
+              }
+            ],
+            "before": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:33:33.0220879Z",
+                "markers": [],
+                "markerCount": 0,
+                "assignments": [],
+                "recipientProfilePresent": false,
+                "recipientUserPolicyNamespacePresent": false,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active          5  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:13  10/23/2026 3:16 PM\r\n"
+                ]
+              },
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:33:33.3351432Z",
+                "markers": [],
+                "markerCount": 0,
+                "assignments": [],
+                "recipientProfilePresent": false,
+                "recipientUserPolicyNamespacePresent": false,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "bca58893-970b-40d1-8f2f-94bde56e4f63",
+                "PSShowComputerName": true
+              }
+            ],
+            "firstPrimary": {
+              "user": "MAYYHEM\\cpr079732530001",
+              "resourceID": 16777228,
+              "computer": "PS1-DP",
+              "active": true,
+              "types": [
+                1
+              ],
+              "sources": [
+                2
+              ]
+            },
+            "assignment": {
+              "Name": "CMBP-PERM-07973253 no-session-predeployment_CMBP-PERM-07973253 one user_Install",
+              "ID": 16777264,
+              "DeadlineUTC": "2026-10-29T18:28:00.0000000Z"
+            }
+          }
+        ],
+        "cleanupComplete": true,
+        "recipient": "MAYYHEM\\domainuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "selection": "All",
+        "machinePolicyIsSetupAcceleration": true,
+        "sessionsBefore": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc        16:49  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:07  10/23/2026 3:16 PM"
+        ],
+        "freshRecipient": {
+          "credentialsPassedToClients": false,
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1711",
+          "name": "MAYYHEM\\cpr079732530001"
+        },
+        "updatedUTC": "2026-10-29T18:35:43.1927879Z",
+        "recipientSessionConnected": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser            console             1  Active          .  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:07  10/23/2026 3:16 PM"
+        ],
+        "error": {
+          "message": "A parameter cannot be found that matches parameter name 'Name'.",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "restoredRecipientSession": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc            .  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:15  10/23/2026 3:16 PM"
+        ],
+        "finishedUTC": "2026-10-29T18:35:43.1927879Z"
+      }
+    },
+    {
+      "sourceDirectory": "predeployment-verified",
+      "reason": "Preparation stopped before a valid positive comparison: The temporary user collection never acquired its intended recipient.",
+      "run": {
+        "runTag": "CMBP-PERM-580e6df5",
+        "startedUTC": "2026-10-29T18:37:09.3501054Z",
+        "records": [],
+        "cleanupComplete": true,
+        "recipient": "MAYYHEM\\domainuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "selection": "Predeployment",
+        "machinePolicyIsSetupAcceleration": true,
+        "sessionsBefore": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc            1  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:16  10/23/2026 3:16 PM"
+        ],
+        "freshRecipient": {
+          "credentialsPassedToClients": false,
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1715",
+          "name": "MAYYHEM\\cpr580e6df50001"
+        },
+        "updatedUTC": "2026-10-29T18:39:09.4354854Z",
+        "error": {
+          "message": "The temporary user collection never acquired its intended recipient.",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "finishedUTC": "2026-10-29T18:39:09.4354854Z"
+      }
+    },
+    {
+      "sourceDirectory": "primary-requirement-verified",
+      "reason": "Preparation stopped before a valid positive comparison: Cannot validate argument on parameter 'AddRequirement'. The argument is null. Provide a valid value for the argument, and then try running the command again.",
+      "run": {
+        "runTag": "CMBP-PERM-0018ec48",
+        "startedUTC": "2026-10-29T18:40:07.3019876Z",
+        "records": [
+          {
+            "name": "primary-requirement",
+            "actor": "MAYYHEM\\cpr0018ec480001",
+            "application": {
+              "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_4630edc3-dede-49fc-9704-a1a105758d58/1",
+              "Name": "CMBP-PERM-0018ec48 primary-requirement",
+              "ID": 16777946
+            },
+            "behavior": "InstallForSystem",
+            "requestedMarker": {
+              "nonce": "6174d85296e042239a18357a481bce76",
+              "path": "C:\\Windows\\Temp\\cup-6174d85296e042239a18357a481bce76.jsonl"
+            },
+            "applicationMask": 1027,
+            "collectionMask": 1052673,
+            "phases": []
+          }
+        ],
+        "cleanupComplete": true,
+        "recipient": "MAYYHEM\\domainuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "selection": "PrimaryRequirement",
+        "machinePolicyIsSetupAcceleration": true,
+        "sessionsBefore": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc            4  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:19  10/23/2026 3:16 PM"
+        ],
+        "updatedUTC": "2026-10-29T18:40:49.6890632Z",
+        "recipientSessionConnected": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser            console             1  Active          .  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:19  10/23/2026 3:16 PM"
+        ],
+        "error": {
+          "message": "Cannot validate argument on parameter 'AddRequirement'. The argument is null. Provide a valid value for the argument, and then try running the command again.",
+          "type": "System.Management.Automation.RemoteException"
+        },
+        "restoredRecipientSession": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc            .  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:20  10/23/2026 3:16 PM"
+        ],
+        "finishedUTC": "2026-10-29T18:40:49.6890632Z"
+      }
+    },
+    {
+      "sourceDirectory": "predeployment-limiting-collection",
+      "reason": "Preparation stopped before a valid positive comparison: Fresh recipient did not enter its limiting collection.",
+      "run": {
+        "runTag": "CMBP-PERM-74bb0aec",
+        "startedUTC": "2026-10-29T18:44:19.0494342Z",
+        "records": [],
+        "cleanupComplete": true,
+        "recipient": "MAYYHEM\\domainuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "selection": "Predeployment",
+        "machinePolicyIsSetupAcceleration": true,
+        "sessionsBefore": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser                                1  Disc            3  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:23  10/23/2026 3:16 PM"
+        ],
+        "freshRecipient": {
+          "credentialsPassedToClients": false,
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1717",
+          "name": "MAYYHEM\\cpr74bb0aec0001"
+        },
+        "updatedUTC": "2026-10-29T18:49:14.7196656Z",
+        "error": {
+          "message": "Fresh recipient did not enter its limiting collection.",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "finishedUTC": "2026-10-29T18:49:14.7040465Z"
+      }
+    },
+    {
+      "sourceDirectory": "predeployment-existing-no-session",
+      "reason": "Observer read a nonexistent PreDeploy provider property. The correct setting is OfferFlags bit 1. The stopped comparison does not establish whether the saved option was enabled.",
+      "run": {
+        "runTag": "CMBP-PERM-7b5528ad",
+        "startedUTC": "2026-10-29T18:51:41.5260481Z",
+        "records": [
+          {
+            "name": "no-session-predeployment",
+            "actor": "MAYYHEM\\cpr7b5528ad0001",
+            "behavior": "InstallForSystem",
+            "recipient": "MAYYHEM\\localuser",
+            "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1000",
+            "application": {
+              "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_c7b82fcb-a86b-400d-990b-f1f987aeb36b/1",
+              "Name": "CMBP-PERM-7b5528ad no-session-predeployment",
+              "ID": 16777964
+            },
+            "requestedMarker": {
+              "nonce": "ae441258ad25460ea6f32868fa00036a",
+              "path": "C:\\Windows\\Temp\\cup-ae441258ad25460ea6f32868fa00036a.jsonl"
+            },
+            "applicationMask": 1027,
+            "collectionMask": 1052673,
+            "phases": [
+              {
+                "result": {
+                  "requests": [
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:52:26.6413852Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:52:27.0071481Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "f02bbf3a-64d5-43ea-8938-54f964fb244b",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:52:54.6110981Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:52:54.8821597Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "4f13d387-d08a-4d52-96cd-d8c7642c7714",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:53:22.1605892Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:53:22.4446807Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "8afc1701-f2e7-4459-97e0-a62c2facdafc",
+                      "PSShowComputerName": true
+                    },
+                    {
+                      "computer": "PS1-DEV",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:53:50.0677184Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "identity": "mayyhem\\domainadmin",
+                      "kind": "setup administrator machine-policy acceleration",
+                      "utc": "2026-10-29T18:53:50.3509320Z",
+                      "requests": [
+                        {
+                          "ReturnValue": null
+                        },
+                        {
+                          "ReturnValue": null
+                        }
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "cee093ae-25ae-478c-8661-f705deab64b1",
+                      "PSShowComputerName": true
+                    }
+                  ],
+                  "expectedObserved": false,
+                  "clients": [
+                    {
+                      "computer": "PS1-DEV",
+                      "observedUTC": "2026-10-29T18:53:55.8025539Z",
+                      "markers": [],
+                      "markerCount": 0,
+                      "assignments": [],
+                      "recipientProfilePresent": false,
+                      "recipientUserPolicyNamespacePresent": false,
+                      "sessions": [
+                        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                        " domainuser                                1  Disc            2  10/23/2026 4:52 PM\r\n",
+                        ">domainadmin                               3  Disc      3+01:33  10/23/2026 3:16 PM\r\n"
+                      ]
+                    },
+                    {
+                      "computer": "PS1-DP",
+                      "observedUTC": "2026-10-29T18:53:56.1321904Z",
+                      "markers": [],
+                      "markerCount": 0,
+                      "assignments": [],
+                      "recipientProfilePresent": false,
+                      "recipientUserPolicyNamespacePresent": false,
+                      "sessions": [
+                        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                        " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                      ],
+                      "PSComputerName": "ps1-dp.mayyhem.com",
+                      "RunspaceId": "c5b97eb2-e9ba-4932-8632-3d7c36363bd1",
+                      "PSShowComputerName": true
+                    }
+                  ],
+                  "elapsedSeconds": 94.68
+                },
+                "name": "predeployment-disabled-no-session"
+              }
+            ],
+            "before": [
+              {
+                "computer": "PS1-DEV",
+                "observedUTC": "2026-10-29T18:52:20.1722281Z",
+                "markers": [],
+                "markerCount": 0,
+                "assignments": [],
+                "recipientProfilePresent": false,
+                "recipientUserPolicyNamespacePresent": false,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser                                1  Disc            .  10/23/2026 4:52 PM\r\n",
+                  ">domainadmin                               3  Disc      3+01:31  10/23/2026 3:16 PM\r\n"
+                ]
+              },
+              {
+                "computer": "PS1-DP",
+                "observedUTC": "2026-10-29T18:52:20.5540283Z",
+                "markers": [],
+                "markerCount": 0,
+                "assignments": [],
+                "recipientProfilePresent": false,
+                "recipientUserPolicyNamespacePresent": false,
+                "sessions": [
+                  " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+                  " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+                ],
+                "PSComputerName": "ps1-dp.mayyhem.com",
+                "RunspaceId": "25680379-55a3-46c4-b118-f469ad93ce07",
+                "PSShowComputerName": true
+              }
+            ],
+            "firstPrimary": {
+              "user": "MAYYHEM\\localuser",
+              "resourceID": 16777228,
+              "computer": "PS1-DP",
+              "active": true,
+              "types": [
+                1
+              ],
+              "sources": [
+                2
+              ]
+            },
+            "assignment": {
+              "Name": "CMBP-PERM-7b5528ad no-session-predeployment_CMBP-PERM-7b5528ad one user_Install",
+              "ID": 16777266,
+              "DeadlineUTC": "2026-10-29T18:47:00.0000000Z"
+            },
+            "savedPreDeploy": null
+          }
+        ],
+        "cleanupComplete": true,
+        "recipient": "MAYYHEM\\domainuser",
+        "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "selection": "Predeployment",
+        "machinePolicyIsSetupAcceleration": true,
+        "sessionsBefore": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+          " domainuser            console             1  Active          6  10/23/2026 4:52 PM",
+          ">domainadmin                               3  Disc      3+01:31  10/23/2026 3:16 PM"
+        ],
+        "freshRecipient": {
+          "credentialsPassedToClients": false,
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1000",
+          "name": "MAYYHEM\\localuser",
+          "preexisting": true
+        },
+        "updatedUTC": "2026-10-29T18:54:12.1311017Z",
+        "error": {
+          "message": "The saved assignment does not enable predeployment.",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "finishedUTC": "2026-10-29T18:54:12.1311017Z"
+      }
+    }
+  ],
+  "cleanup": {
+    "timestampUTC": "2026-10-29T19:13:05.8130343Z",
+    "tags": [
+      "CMBP-PERM-0018ec48",
+      "CMBP-PERM-075a51c2",
+      "CMBP-PERM-07973253",
+      "CMBP-PERM-580e6df5",
+      "CMBP-PERM-74bb0aec",
+      "CMBP-PERM-7b5528ad",
+      "CMBP-PERM-d032bdeb",
+      "CMBP-PERM-d93391fe"
+    ],
+    "remainingObjects": {
+      "roles": 0,
+      "collections": 0,
+      "applications": 0,
+      "assignments": 0,
+      "administrators": 0,
+      "freshUserAffinities": 0,
+      "discoveredUsers": 0,
+      "domainAccounts": 0,
+      "preexistingRecipientPrimaryTypes": 0
+    },
+    "clients": [
+      {
+        "computer": "PS1-DB",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "PS1-DB.mayyhem.com",
+        "RunspaceId": "499dbc5c-d990-4fb2-a70b-9e64619199f3",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-PSS",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n",
+          " domainadmin                               2  Disc      3+01:52  10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "PS1-PSS.mayyhem.com",
+        "RunspaceId": "0807e957-b3b8-4c83-a2ff-268605f1fb59",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-SEC",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "PS1-SEC.mayyhem.com",
+        "RunspaceId": "79d86e7e-1500-40aa-9cc8-e653d1e7006e",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "CAS-SCP",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "CAS-SCP.mayyhem.com",
+        "RunspaceId": "363b3ab0-097d-4f96-ac13-aef7e5ad71f5",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-PSV",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "PS1-PSV.mayyhem.com",
+        "RunspaceId": "b715a725-8162-4185-89f5-95e23ec293f0",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-MP",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "PS1-MP.mayyhem.com",
+        "RunspaceId": "843d97b9-9d44-4b6e-ae91-96eb0faccef9",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "CAS-DB",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "CAS-DB.mayyhem.com",
+        "RunspaceId": "efa0738b-8c8b-4995-b29a-97177eb52f0a",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-LIB",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "PS1-LIB.mayyhem.com",
+        "RunspaceId": "6742dbef-3c45-45f4-8776-5afb0215f37c",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-SMS",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "PS1-SMS.mayyhem.com",
+        "RunspaceId": "2067c393-6fa6-42fa-bdc1-04c51d2c5e1f",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-DP",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:53 PM\r\n"
+        ],
+        "PSComputerName": "PS1-DP.mayyhem.com",
+        "RunspaceId": "9379be7c-9755-43ed-92d6-43f5603b3a18",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "CAS-PSS",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "CAS-PSS.mayyhem.com",
+        "RunspaceId": "4393caaf-71a8-451c-802e-5e8a70893bf4",
+        "PSShowComputerName": true
+      },
+      {
+        "computer": "PS1-DEV",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser                                1  Disc           21  10/23/2026 4:52 PM\r\n",
+          ">domainadmin                               3  Disc      3+01:52  10/23/2026 3:16 PM\r\n"
+        ]
+      },
+      {
+        "computer": "MONITOR",
+        "policiesBefore": 0,
+        "remainingPolicies": 0,
+        "remainingMarkers": 0,
+        "remainingTasks": 0,
+        "removedMarkers": [],
+        "sessions": [
+          " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\r\n",
+          " domainuser            console             1  Active      none   10/23/2026 4:52 PM\r\n"
+        ],
+        "PSComputerName": "MONITOR.mayyhem.com",
+        "RunspaceId": "dd8b3330-8c2e-4d77-8f72-50171467af4a",
+        "PSShowComputerName": true
+      }
+    ],
+    "remainingClientPolicies": 0,
+    "remainingMarkers": 0,
+    "remainingTasks": 0,
+    "originalRoleCount": 15,
+    "originalRolesUnchanged": true,
+    "originalAffinitiesRestored": true,
+    "removedDiscoveredUsers": []
+  },
+  "cleanupRepair": {
+    "utc": "2026-10-29T19:10:55.7928178Z",
+    "originalUser": "mayyhem\\domainuser",
+    "resourceID": 16777228,
+    "beforeSources": [],
+    "afterSources": [
+      4,
+      9
+    ],
+    "afterTypes": [],
+    "ownedInactiveRecordDeleted": true
+  },
+  "cleanupHelperProof": {
+    "runTag": "CMBP-PERM-d93391fe",
+    "cleanupComplete": true,
+    "records": [
+      {
+        "original": {
+          "resourceID": 16777228,
+          "originalTypes": [],
+          "user": "MAYYHEM\\domainuser",
+          "originalRelationshipExists": true,
+          "originalSources": [
+            4,
+            9
+          ]
+        },
+        "user": "MAYYHEM\\domainuser",
+        "primary": {
+          "user": "mayyhem\\domainuser",
+          "resourceID": 16777228,
+          "computer": "PS1-DP",
+          "active": true,
+          "types": [
+            1
+          ],
+          "sources": [
+            2,
+            4,
+            9
+          ]
+        },
+        "name": "affinity-cleanup",
+        "remainingRows": 1,
+        "restoredTypes": [],
+        "restoredSources": [
+          4,
+          9
+        ],
+        "resourceID": 16777228
+      },
+      {
+        "original": {
+          "resourceID": 16777230,
+          "originalTypes": [],
+          "user": "MAYYHEM\\localuser",
+          "originalRelationshipExists": false,
+          "originalSources": []
+        },
+        "user": "MAYYHEM\\localuser",
+        "primary": {
+          "user": "MAYYHEM\\localuser",
+          "resourceID": 16777230,
+          "computer": "PS1-DEV",
+          "active": true,
+          "types": [
+            1
+          ],
+          "sources": [
+            2
+          ]
+        },
+        "name": "affinity-cleanup",
+        "remainingRows": 0,
+        "restoredTypes": [],
+        "restoredSources": [],
+        "resourceID": 16777230
+      }
+    ],
+    "utc": "2026-10-29T19:12:22.3264240Z"
+  },
+  "allRunJournalsEmpty": true,
+  "recipientSessionRestored": true
+}

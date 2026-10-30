@@ -36,6 +36,7 @@ from typing import Any, Iterator, Optional
 from openhound_collector_common.clients.wmi import (
     _ImpacketBackend, _PyWin32Backend,
 )
+from openhound_collector_common.collection.errors import FatalCollectionError
 
 from ..log_context import get_logger
 from . import http_auth
@@ -172,6 +173,9 @@ class WmiClient:
         try:
             logger.verbose("WMI query on %s (%s): %s", self._target, namespace, wql)
             raw = self._open(namespace, wql)
+        except FatalCollectionError:
+            logger.error("WMI setup/cleanup failed fatally on %s", self._target)
+            raise
         except Exception as ex:  # noqa: BLE001 - one class failing must not abort the rest
             logger.warning("WMI query %s on %s failed: %s", class_name, self._target, ex)
             return
@@ -197,6 +201,9 @@ class WmiClient:
             # this entire object read, just as it does for streamed queries.
             logger.debug("WMI reading complete object %s through the selected provider", object_path)
             return self._backend.read_instance(namespace, object_path)
+        except FatalCollectionError:
+            logger.error("WMI complete-object cleanup failed on %s; the run must fail", self._target)
+            raise
         except Exception as error:  # One refused instance must not abort collection.
             logger.warning("WMI complete read of %s on %s failed: %s; details are incomplete",
                            object_path, self._target, error)
@@ -225,6 +232,9 @@ class WmiClient:
                 logger.verbose("WMI auth attempt on %s via %s", self._target, rung)
                 backend.connect()
                 raw = backend.execquery(namespace, wql)
+            except FatalCollectionError:
+                logger.error("WMI provider cleanup failed during authentication on %s", self._target)
+                raise
             except Exception as ex:  # noqa: BLE001 - this rung failed; try the next
                 logger.verbose("WMI %s rung failed on %s: %s", rung, self._target, ex)
                 backend.close()

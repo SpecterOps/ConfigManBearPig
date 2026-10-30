@@ -16,6 +16,7 @@ from openhound_sccm.clients import wmi as w
 # (SCCM's wmi now imports the backends from there), so test _normalize at its
 # new home. The WQL builder and the auth-ladder wrapper stay SCCM-local (w.*).
 from openhound_collector_common.clients import wmi as shared_wmi
+from openhound_collector_common.clients.operations import ClientCleanupError
 
 
 # --- WQL builder ----------------------------------------------------------
@@ -146,6 +147,38 @@ def _client(**kw):
     base = dict(target="ps1-sms.mayyhem.com", domain="mayyhem.com")
     base.update(kw)
     return w.WmiClient(**base)
+
+
+def test_cleanup_failure_during_authentication_cannot_try_another_identity(monkeypatch):
+    client = _client(username="example", password="illustrative")
+    original = ClientCleanupError("Unconfirmed cleanup")
+    backend = FakeBackend(open_error=original)
+    attempts = []
+
+    def build(rung):
+        attempts.append(rung)
+        return backend
+
+    monkeypatch.setattr(client, "_build_backend", build)
+    monkeypatch.setattr(w.http_auth, "choose_auth", lambda **kwargs: ["first", "second"])
+    with pytest.raises(ClientCleanupError) as captured:
+        list(client.query("root\\SMS", "SMS_Site"))
+    assert captured.value is original
+    assert attempts == ["first"]
+
+
+def test_complete_object_cleanup_failure_cannot_be_reported_as_missing_data():
+    client = _client()
+    original = ClientCleanupError("Unconfirmed complete-object cleanup")
+
+    class BrokenBackend:
+        def read_instance(self, namespace, path):
+            raise original
+
+    client._backend = BrokenBackend()
+    with pytest.raises(ClientCleanupError) as captured:
+        client.read_instance("root\\SMS", "SMS_Admin", "AdminID", 17)
+    assert captured.value is original
 
 
 def test_first_query_runs_ladder_then_streams(monkeypatch):

@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import quote
+from openhound_collector_common.collection.errors import FatalCollectionError
 
 from ..clients.http import ErrorClass, HttpClient
 from ..clients.http_auth import AuthMode
@@ -444,6 +445,9 @@ def _collect(run: _Run, target: str) -> Iterator[tuple[str, dict]]:
     for collection in _COLLECTIONS:
         try:
             yield from collection(run)
+        except FatalCollectionError:
+            logger.error("%s cleanup/cancellation requires the run to stop on %s", run.name, target)
+            raise
         except Exception as ex:  # noqa: BLE001 - one collection failing must not abort the rest
             logger.warning("%s %s failed on %s: %s", run.name, collection.__name__, target, ex)
     entry = run.ctx.target_hosts_by_hostname.get(target.lower())
@@ -469,7 +473,10 @@ def collect_adminservice(target: str, ctx: SourceContext) -> Iterable[tuple[str,
             return
         yield from _collect(_Run(_http_fetch(client), "AdminService", "eq", site_code, ctx,
                                  _http_read_instance(client)), target)
-    except Exception as ex:  # noqa: BLE001 - never crash the per-host worker
+    except FatalCollectionError:
+        logger.error("AdminService cleanup/cancellation failed on %s; stopping the run", target)
+        raise
+    except Exception as ex:  # noqa: BLE001 - ordinary target failures stay isolated
         logger.error("AdminService collection failed for %s: %s", target, ex)
     finally:
         client.close()
@@ -491,7 +498,10 @@ def collect_wmi(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str
         namespace = f"root\\SMS\\site_{site_code}"
         yield from _collect(_Run(_wmi_fetch(client, namespace), "WMI", "=", site_code, ctx,
                                  lambda cls, field, key: client.read_instance(namespace, cls, field, key)), target)
-    except Exception as ex:  # noqa: BLE001 - never crash the per-host worker
+    except FatalCollectionError:
+        logger.error("WMI cleanup/cancellation failed on %s; stopping the run", target)
+        raise
+    except Exception as ex:  # noqa: BLE001 - ordinary target failures stay isolated
         logger.error("WMI collection failed for %s: %s", target, ex)
     finally:
         client.close()

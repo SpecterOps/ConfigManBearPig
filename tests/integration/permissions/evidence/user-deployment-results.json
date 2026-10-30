@@ -1,0 +1,1607 @@
+{
+  "lab": "mayyhem.com / PS1 / PS1-DEV",
+  "date": "2026-10-28",
+  "reportTimezone": "America/New_York",
+  "siteVersion": "5.00.9128.1000",
+  "recipient": "MAYYHEM\\domainuser",
+  "recipientSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+  "method": "Fresh restricted SCCM actors, unique harmless identity markers, explicit recipient actions, and independent cleanup.",
+  "permissionComparisons": [
+    {
+      "group": "deployment-permissions",
+      "name": "read without deploy",
+      "targetType": "User",
+      "applicationMask": 1,
+      "collectionMask": 4097,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00001",
+      "assignedCollection": "PS100086",
+      "targetCollection": "PS100086",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "Invalid operation ",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy user identity",
+      "targetType": "User",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": true,
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00002",
+      "assignedCollection": "PS100086",
+      "targetCollection": "PS100086",
+      "behavior": "InstallForUser",
+      "assignmentID": 16777243,
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy system identity",
+      "targetType": "User",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": true,
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00003",
+      "assignedCollection": "PS100086",
+      "targetCollection": "PS100086",
+      "behavior": "InstallForSystem",
+      "assignmentID": 16777244,
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy without application read",
+      "targetType": "User",
+      "applicationMask": 0,
+      "collectionMask": 1052673,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00004",
+      "assignedCollection": "PS100086",
+      "targetCollection": "PS100086",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "No assignment ID was returned; deployment is unconfirmed.",
+        "type": "System.Management.Automation.RuntimeException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy outside assigned collection",
+      "targetType": "User",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00005",
+      "assignedCollection": "PS100087",
+      "targetCollection": "PS100086",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "Invalid operation ",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "read without deploy",
+      "targetType": "Device",
+      "applicationMask": 1,
+      "collectionMask": 4097,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00006",
+      "assignedCollection": "PS100087",
+      "targetCollection": "PS100087",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "Invalid operation ",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy user identity",
+      "targetType": "Device",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": true,
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00007",
+      "assignedCollection": "PS100087",
+      "targetCollection": "PS100087",
+      "behavior": "InstallForUser",
+      "assignmentID": 16777245,
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy system identity",
+      "targetType": "Device",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": true,
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00008",
+      "assignedCollection": "PS100087",
+      "targetCollection": "PS100087",
+      "behavior": "InstallForSystem",
+      "assignmentID": 16777246,
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy without application read",
+      "targetType": "Device",
+      "applicationMask": 0,
+      "collectionMask": 1052673,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00009",
+      "assignedCollection": "PS100087",
+      "targetCollection": "PS100087",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "No assignment ID was returned; deployment is unconfirmed.",
+        "type": "System.Management.Automation.RuntimeException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "deployment-permissions",
+      "name": "deploy outside assigned collection",
+      "targetType": "Device",
+      "applicationMask": 1,
+      "collectionMask": 1052673,
+      "expectedAllowed": false,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00010",
+      "assignedCollection": "PS100086",
+      "targetCollection": "PS100087",
+      "behavior": "InstallForSystem",
+      "error": {
+        "message": "Invalid operation ",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "matchesExpectation": true
+    },
+    {
+      "group": "context-permissions",
+      "applicationMask": 1,
+      "collectionMask": 0,
+      "initialBehavior": "InstallForUser",
+      "changedBehavior": "InstallForSystem",
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00011",
+      "error": {
+        "message": "Could not retrieve lock details for object 'SMS_ApplicationLatest.ModelName=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_a93299f1-8679-4e14-ab0c-4b119fe5c792\"'. Object may not be lockable.",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "saved": {
+        "Name": "CMBP-PERM-d97ccca0 context 76c83479",
+        "Contexts": [
+          "User"
+        ],
+        "Version": 2,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_a93299f1-8679-4e14-ab0c-4b119fe5c792/2",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "5721676d-1d8b-41bb-b8be-1c4986c47570",
+        "PSShowComputerName": true
+      }
+    },
+    {
+      "group": "context-permissions",
+      "applicationMask": 1,
+      "collectionMask": 0,
+      "initialBehavior": "InstallForSystem",
+      "changedBehavior": "InstallForUser",
+      "accepted": false,
+      "actor": "MAYYHEM\\cprd97ccca00012",
+      "error": {
+        "message": "Could not retrieve lock details for object 'SMS_ApplicationLatest.ModelName=\"ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_62bb6ebc-d747-49ff-9f8d-98867f962b54\"'. Object may not be lockable.",
+        "type": "System.Management.Automation.RemoteException"
+      },
+      "saved": {
+        "Name": "CMBP-PERM-d97ccca0 context 810b98c9",
+        "Contexts": [
+          "System"
+        ],
+        "Version": 2,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_62bb6ebc-d747-49ff-9f8d-98867f962b54/2",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "fdc91b72-20c0-4c04-ac5e-19637fb0587a",
+        "PSShowComputerName": true
+      }
+    },
+    {
+      "group": "context-permissions",
+      "applicationMask": 3,
+      "collectionMask": 0,
+      "initialBehavior": "InstallForUser",
+      "changedBehavior": "InstallForSystem",
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00013",
+      "saved": {
+        "Name": "CMBP-PERM-d97ccca0 context d7ee77de",
+        "Contexts": [
+          "System"
+        ],
+        "Version": 3,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_ccbf593e-13ec-4394-bfcc-664ba438d4b1/3",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "3a7f9625-1841-4064-a337-f421cc8a95a1",
+        "PSShowComputerName": true
+      }
+    },
+    {
+      "group": "context-permissions",
+      "applicationMask": 3,
+      "collectionMask": 0,
+      "initialBehavior": "InstallForSystem",
+      "changedBehavior": "InstallForUser",
+      "accepted": true,
+      "actor": "MAYYHEM\\cprd97ccca00014",
+      "saved": {
+        "Name": "CMBP-PERM-d97ccca0 context a68850b5",
+        "Contexts": [
+          "User"
+        ],
+        "Version": 3,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_f0d8be33-055a-4fe8-abc7-bac097388399/3",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "42f7fe03-c2e8-44d8-94a0-aca141481caa",
+        "PSShowComputerName": true
+      }
+    }
+  ],
+  "notificationComparisons": [
+    {
+      "group": "notification-permissions",
+      "targetType": "User",
+      "applicationMask": 0,
+      "collectionMask": 4097,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprb9d573180001",
+      "error": {
+        "message": "No object corresponds to the specified parameters.",
+        "type": "System.Management.Automation.RemoteException"
+      }
+    },
+    {
+      "group": "notification-permissions",
+      "targetType": "User",
+      "applicationMask": 0,
+      "collectionMask": 536875009,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprb9d573180002",
+      "error": {
+        "message": "No object corresponds to the specified parameters.",
+        "type": "System.Management.Automation.RemoteException"
+      }
+    },
+    {
+      "group": "notification-permissions",
+      "targetType": "Device",
+      "applicationMask": 0,
+      "collectionMask": 4097,
+      "accepted": false,
+      "actor": "MAYYHEM\\cprb9d573180003",
+      "error": {
+        "message": "Operation could not complete because the currently connected account does not have the required security rights to perform this operation.",
+        "type": "System.Management.Automation.RemoteException"
+      }
+    },
+    {
+      "group": "notification-permissions",
+      "targetType": "Device",
+      "applicationMask": 0,
+      "collectionMask": 536875009,
+      "accepted": true,
+      "actor": "MAYYHEM\\cprb9d573180004"
+    }
+  ],
+  "recipientVerification": {
+    "recipient": {
+      "identity": "mayyhem\\domainuser",
+      "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "action": "Inspect",
+      "utc": "2026-10-29T01:47:42.1044284Z",
+      "groupSIDs": [
+        "S-1-5-21-2685035784-114219579-2457378813-513",
+        "S-1-1-0",
+        "S-1-5-32-555",
+        "S-1-5-32-545",
+        "S-1-5-4",
+        "S-1-2-1",
+        "S-1-5-11",
+        "S-1-5-15",
+        "S-1-2-0",
+        "S-1-18-1"
+      ],
+      "isWindowsAdministrator": false,
+      "applications": []
+    },
+    "timestampUTC": "2026-10-29T01:47:47.3391980Z",
+    "matchingSccmAdministrators": [
+      {
+        "LogonName": "mayyhem\\domainuser",
+        "AdminSid": "S-1-5-21-2685035784-114219579-2457378813-1104"
+      }
+    ],
+    "existingRole": {
+      "name": "CMPivot Administrator",
+      "id": "SMS000IR",
+      "operations": [
+        {
+          "objectType": 1,
+          "actions": [
+            "Read",
+            "Modify",
+            "Delete",
+            "Run CMPivot",
+            "Create",
+            "Manage Folder Item",
+            "Manage Folder",
+            "Modify Collection Setting"
+          ],
+          "mask": 2237511
+        },
+        {
+          "objectType": 4,
+          "actions": [],
+          "mask": 1
+        },
+        {
+          "objectType": 6,
+          "actions": [
+            "Read"
+          ],
+          "mask": 1
+        },
+        {
+          "objectType": 27,
+          "actions": [
+            "Read",
+            "Modify",
+            "Delete",
+            "Create"
+          ],
+          "mask": 1031
+        },
+        {
+          "objectType": 28,
+          "actions": [
+            "Read",
+            "Modify",
+            "Remove",
+            "Add",
+            "Run Report",
+            "Modify Report"
+          ],
+          "mask": 805307399
+        },
+        {
+          "objectType": 29,
+          "actions": [],
+          "mask": 1031
+        },
+        {
+          "objectType": 44,
+          "actions": [],
+          "mask": 1
+        },
+        {
+          "objectType": 229,
+          "actions": [],
+          "mask": 1027
+        },
+        {
+          "objectType": 230,
+          "actions": [],
+          "mask": 1
+        }
+      ]
+    }
+  },
+  "executionCases": {
+    "user-required-as-user": {
+      "group": "execution",
+      "targetType": "User",
+      "behavior": "InstallForUser",
+      "purpose": "Required",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:19:28.7203734Z",
+      "actor": "MAYYHEM\\cprf19e3d150001",
+      "requestedMarker": {
+        "nonce": "09e305901ece4e48908821a4c8ce42e1",
+        "path": "C:\\Windows\\Temp\\cud-09e305901ece4e48908821a4c8ce42e1.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e81a5eaa-b0e7-4507-853b-e47baad0ef43/1",
+        "Name": "CMBP-PERM-f19e3d15 execution fafd2d20",
+        "ID": 16777862
+      },
+      "assignmentID": 16777253,
+      "assignedUTC": "2026-10-29T01:19:41.7075602Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:19:43.2856864Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:19:49.9575632Z",
+      "marker": {
+        "nonce": "09e305901ece4e48908821a4c8ce42e1",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "writtenUTC": "2026-10-29T01:20:14.1775268Z",
+        "elapsedSeconds": 25.9
+      },
+      "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:20:16.6562097Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-f19e3d15 execution fafd2d20",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e81a5eaa-b0e7-4507-853b-e47baad0ef43",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:20:07.3017173Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ]
+    },
+    "device-required-as-user": {
+      "group": "execution",
+      "targetType": "Device",
+      "behavior": "InstallForUser",
+      "purpose": "Required",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:24:08.1555790Z",
+      "actor": "MAYYHEM\\cpr112ee9030001",
+      "requestedMarker": {
+        "nonce": "da7b3fc735304900bc657c72db937ea6",
+        "path": "C:\\Windows\\Temp\\cud-da7b3fc735304900bc657c72db937ea6.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_d5d63af9-d06c-4c7a-a350-89735f472d18/1",
+        "Name": "CMBP-PERM-112ee903 execution b0480a43",
+        "ID": 16777883
+      },
+      "assignmentID": 16777256,
+      "assignedUTC": "2026-10-29T01:24:27.1876437Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "RetrieveMachine",
+        "utc": "2026-10-29T01:24:29.7970170Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:24:36.6563988Z",
+      "marker": {
+        "nonce": "da7b3fc735304900bc657c72db937ea6",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "writtenUTC": "2026-10-29T01:25:26.1501082Z",
+        "elapsedSeconds": 66.6
+      },
+      "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:25:44.5342760Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-112ee903 execution b0480a43",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_d5d63af9-d06c-4c7a-a350-89735f472d18",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "RetrieveMachine",
+          "utc": "2026-10-29T01:24:56.1888574Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        },
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "RetrieveMachine",
+          "utc": "2026-10-29T01:25:35.3105745Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ]
+    },
+    "user-required-as-system-disconnected": {
+      "group": "execution",
+      "targetType": "User",
+      "behavior": "InstallForSystem",
+      "purpose": "Required",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:39:40.5935293Z",
+      "sessionsBefore": [
+        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+        " domainuser                                1  Disc            1  10/23/2026 4:52 PM",
+        ">domainadmin                               3  Disc      2+08:19  10/23/2026 3:16 PM"
+      ],
+      "actor": "MAYYHEM\\cpr322c7fd10001",
+      "requestedMarker": {
+        "nonce": "c5026a8204c94be89ebd3f6c8aed78dd",
+        "path": "C:\\Windows\\Temp\\cud-c5026a8204c94be89ebd3f6c8aed78dd.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_ba9aa1e5-4b0b-4320-8e58-eef2f762a9c7/1",
+        "Name": "CMBP-PERM-322c7fd1 execution 032e6fd7",
+        "ID": 16777911
+      },
+      "assignmentID": 16777260,
+      "assignedUTC": "2026-10-29T01:40:01.1515306Z",
+      "enforcementDeadlineUTC": "2026-10-29T01:34:00.0000000Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:40:04.8095282Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:40:15.3805295Z",
+      "marker": {
+        "nonce": "c5026a8204c94be89ebd3f6c8aed78dd",
+        "sid": "S-1-5-18",
+        "writtenUTC": "2026-10-29T01:40:58.9765339Z",
+        "elapsedSeconds": 44.5
+      },
+      "expectedSID": "S-1-5-18",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:41:04.0475323Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-322c7fd1 execution 032e6fd7",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_ba9aa1e5-4b0b-4320-8e58-eef2f762a9c7",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:40:38.6715308Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ]
+    },
+    "device-required-as-system": {
+      "group": "execution",
+      "targetType": "Device",
+      "behavior": "InstallForSystem",
+      "purpose": "Required",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:40:15.5115321Z",
+      "sessionsBefore": [
+        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+        " domainuser                                1  Disc            1  10/23/2026 4:52 PM",
+        ">domainadmin                               3  Disc      2+08:19  10/23/2026 3:16 PM"
+      ],
+      "actor": "MAYYHEM\\cpr2064b49f0001",
+      "requestedMarker": {
+        "nonce": "cda8a029f0e94100bef79053cdeb69af",
+        "path": "C:\\Windows\\Temp\\cud-cda8a029f0e94100bef79053cdeb69af.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_6f23f29e-dd53-48bc-86e1-6c3b5b4e1c3d/1",
+        "Name": "CMBP-PERM-2064b49f execution 52472888",
+        "ID": 16777918
+      },
+      "assignmentID": 16777261,
+      "assignedUTC": "2026-10-29T01:40:30.1655294Z",
+      "enforcementDeadlineUTC": "2026-10-29T01:35:00.0000000Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "RetrieveMachine",
+        "utc": "2026-10-29T01:40:37.0205303Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:40:49.6205326Z",
+      "marker": {
+        "nonce": "cda8a029f0e94100bef79053cdeb69af",
+        "sid": "S-1-5-18",
+        "writtenUTC": "2026-10-29T01:41:29.9954707Z",
+        "elapsedSeconds": 41.9
+      },
+      "expectedSID": "S-1-5-18",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:41:34.1875938Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-2064b49f execution 52472888",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_6f23f29e-dd53-48bc-86e1-6c3b5b4e1c3d",
+            "Revision": "2",
+            "IsMachineTarget": true,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "RetrieveMachine",
+          "utc": "2026-10-29T01:41:10.2725314Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ]
+    },
+    "user-available-as-user": {
+      "group": "execution",
+      "targetType": "User",
+      "behavior": "InstallForUser",
+      "purpose": "Available",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:34:49.0293864Z",
+      "actor": "MAYYHEM\\cpr35e00bb10001",
+      "requestedMarker": {
+        "nonce": "89ff4e3001b74d2288beecc9b3346ca5",
+        "path": "C:\\Windows\\Temp\\cud-89ff4e3001b74d2288beecc9b3346ca5.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_606aea1c-53e6-4bfc-adf2-ffa79b81482c/1",
+        "Name": "CMBP-PERM-35e00bb1 execution 17b905d6",
+        "ID": 16777897
+      },
+      "assignmentID": 16777258,
+      "assignedUTC": "2026-10-29T01:35:12.0813831Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:35:15.7543854Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:35:21.7753836Z",
+      "beforeUserInstall": null,
+      "recipientBeforeInstall": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:35:59.3362650Z",
+        "applications": []
+      },
+      "savedDefinition": {
+        "Name": "CMBP-PERM-35e00bb1 execution 17b905d6",
+        "Contexts": [
+          "User"
+        ],
+        "Version": 2,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_606aea1c-53e6-4bfc-adf2-ffa79b81482c/2",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "198d3e1e-5f28-4fa4-9449-ef5a01aafa97",
+        "PSShowComputerName": true
+      },
+      "recipientInstall": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "SoftwareCenter",
+        "utc": "2026-10-29T01:36:15.7352650Z",
+        "softwareCenterProcess": 4124,
+        "softwareCenter": {
+          "exactApplicationTitlePresent": true,
+          "buttons": [
+            "Search",
+            "Search Erase",
+            "Install Selected",
+            "Multi Select Mode",
+            "Share",
+            "Install",
+            "Repair",
+            "Schedule",
+            "M 0 4 L 7 4 L 3.5 0 Z",
+            "",
+            "",
+            "M 0 0 L 3.5 4 L 7 0 Z",
+            "M 0 4 L 4 8 L 4 0 Z",
+            "",
+            "",
+            "M 0 0 L 0 8 L 4 4 Z"
+          ]
+        },
+        "install": {
+          "application": "CMBP-PERM-35e00bb1 execution 17b905d6",
+          "invoked": true
+        }
+      },
+      "installRequestedUTC": "2026-10-29T01:36:43.2202659Z",
+      "marker": {
+        "nonce": "89ff4e3001b74d2288beecc9b3346ca5",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "writtenUTC": "2026-10-29T01:36:55.6854098Z",
+        "elapsedSeconds": 14.2
+      },
+      "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:37:14.4780340Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-35e00bb1 execution 17b905d6",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_606aea1c-53e6-4bfc-adf2-ffa79b81482c",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": []
+    },
+    "user-available-as-system": {
+      "group": "execution",
+      "targetType": "User",
+      "behavior": "InstallForSystem",
+      "purpose": "Available",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:29:44.3967048Z",
+      "actor": "MAYYHEM\\cpr0f9df4dc0001",
+      "requestedMarker": {
+        "nonce": "063105fc6ff24b8ca87a825613d2e06f",
+        "path": "C:\\Windows\\Temp\\cud-063105fc6ff24b8ca87a825613d2e06f.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_142b310c-454d-44ba-a18a-2b52de4a1335/1",
+        "Name": "CMBP-PERM-0f9df4dc execution 8c6c264c",
+        "ID": 16777890
+      },
+      "assignmentID": 16777257,
+      "assignedUTC": "2026-10-29T01:30:05.4924978Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:30:41.3210250Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:30:45.9624611Z",
+      "beforeUserInstall": null,
+      "recipientBeforeInstall": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:31:39.9814201Z",
+        "applications": []
+      },
+      "savedDefinition": {
+        "Name": "CMBP-PERM-0f9df4dc execution 8c6c264c",
+        "Contexts": [
+          "System"
+        ],
+        "Version": 2,
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_142b310c-454d-44ba-a18a-2b52de4a1335/2",
+        "PSComputerName": "ps1-pss.mayyhem.com",
+        "RunspaceId": "65c5dea5-7371-42e4-ab1c-0f20f99c5167",
+        "PSShowComputerName": true
+      },
+      "availablePolicy": {
+        "Revision": "2",
+        "ApplicationID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_142b310c-454d-44ba-a18a-2b52de4a1335",
+        "PolicyID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_142b310c-454d-44ba-a18a-2b52de4a1335"
+      },
+      "recipientInstall": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "SoftwareCenter",
+        "utc": "2026-10-29T01:31:10.5572188Z",
+        "softwareCenterProcess": 13324,
+        "softwareCenter": {
+          "exactApplicationTitlePresent": true,
+          "buttons": [
+            "Search",
+            "Search Erase",
+            "Install Selected",
+            "Multi Select Mode",
+            "Share",
+            "Install",
+            "Repair",
+            "Schedule",
+            "M 0 4 L 7 4 L 3.5 0 Z",
+            "",
+            "",
+            "M 0 0 L 3.5 4 L 7 0 Z",
+            "M 0 4 L 4 8 L 4 0 Z",
+            "",
+            "",
+            "M 0 0 L 0 8 L 4 4 Z"
+          ]
+        },
+        "install": {
+          "application": "CMBP-PERM-0f9df4dc execution 8c6c264c",
+          "invoked": true
+        }
+      },
+      "installRequestedUTC": "2026-10-29T01:31:58.6232502Z",
+      "marker": {
+        "nonce": "063105fc6ff24b8ca87a825613d2e06f",
+        "sid": "S-1-5-18",
+        "writtenUTC": "2026-10-29T01:32:47.7575076Z",
+        "elapsedSeconds": 64.6
+      },
+      "expectedSID": "S-1-5-18",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:33:06.8845092Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-0f9df4dc execution 8c6c264c",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_142b310c-454d-44ba-a18a-2b52de4a1335",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:32:18.3441211Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        },
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:32:53.4887166Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ],
+      "queuedRequestBeforeSoftwareCenter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "ActivateAvailable",
+        "utc": "2026-10-29T01:31:54.9044990Z",
+        "install": {
+          "revision": "2",
+          "returnValue": 0,
+          "policyID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_142b310c-454d-44ba-a18a-2b52de4a1335"
+        }
+      },
+      "activationEvidence": "The separate recorded Software Center action invoked the exact application's Install button; the queued SDK request alone is not treated as execution proof."
+    },
+    "user-required-future-deadline": {
+      "group": "execution",
+      "targetType": "User",
+      "behavior": "InstallForSystem",
+      "purpose": "Required",
+      "applicationMask": 1027,
+      "collectionMask": 1052673,
+      "verified": true,
+      "startedUTC": "2026-10-29T01:35:59.2752636Z",
+      "sessionsBefore": [
+        " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+        " domainuser            console             1  Active         22  10/23/2026 4:52 PM",
+        ">domainadmin                               3  Disc      2+08:15  10/23/2026 3:16 PM"
+      ],
+      "actor": "MAYYHEM\\cpr388ee2b10001",
+      "requestedMarker": {
+        "nonce": "e5487c0c84f04357b9915b25f16cc7ab",
+        "path": "C:\\Windows\\Temp\\cud-e5487c0c84f04357b9915b25f16cc7ab.json"
+      },
+      "application": {
+        "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_b1ed1207-d98d-41f2-b9b9-2e62d5b969c8/1",
+        "Name": "CMBP-PERM-388ee2b1 execution 573b56c0",
+        "ID": 16777904
+      },
+      "assignmentID": 16777259,
+      "assignedUTC": "2026-10-29T01:36:14.3512672Z",
+      "enforcementDeadlineUTC": "2026-10-29T01:38:00.0000000Z",
+      "recipientRequest": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:36:23.1452679Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      "requestedUTC": "2026-10-29T01:36:30.3982674Z",
+      "beforeDeadlineMarker": null,
+      "beforeDeadlineObservedUTC": "2026-10-29T01:37:26.6290345Z",
+      "marker": {
+        "nonce": "e5487c0c84f04357b9915b25f16cc7ab",
+        "sid": "S-1-5-18",
+        "writtenUTC": "2026-10-29T01:38:06.6799695Z",
+        "elapsedSeconds": 41.8
+      },
+      "expectedSID": "S-1-5-18",
+      "recipientAfter": {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Inspect",
+        "utc": "2026-10-29T01:38:13.6102579Z",
+        "applications": [
+          {
+            "Name": "CMBP-PERM-388ee2b1 execution 573b56c0",
+            "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_b1ed1207-d98d-41f2-b9b9-2e62d5b969c8",
+            "Revision": "2",
+            "IsMachineTarget": false,
+            "InstallState": "Installed",
+            "EvaluationState": 1,
+            "AllowedActions": [
+              "Install"
+            ]
+          }
+        ]
+      },
+      "additionalRecipientRequests": [
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:37:05.7986327Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        },
+        {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:37:45.0480359Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        }
+      ]
+    }
+  },
+  "disconnectedUserObservation": {
+    "group": "execution",
+    "targetType": "User",
+    "behavior": "InstallForUser",
+    "purpose": "Required",
+    "applicationMask": 1027,
+    "collectionMask": 1052673,
+    "verified": false,
+    "startedUTC": "2026-10-29T01:08:24.9109152Z",
+    "actor": "MAYYHEM\\cpra0ec82ef0001",
+    "requestedMarker": {
+      "nonce": "fb7cbb3bea564c79b86e6fc0189a9248",
+      "path": "C:\\Windows\\Temp\\cud-fb7cbb3bea564c79b86e6fc0189a9248.json"
+    },
+    "application": {
+      "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e25c10e3-c3f9-4bec-8350-3325f5cb909b/1",
+      "Name": "CMBP-PERM-a0ec82ef execution bb5106d3",
+      "ID": 16777770
+    },
+    "assignmentID": 16777247,
+    "assignedUTC": "2026-10-29T01:08:42.5078503Z",
+    "recipientRequest": {
+      "identity": "mayyhem\\domainuser",
+      "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "action": "Retrieve",
+      "utc": "2026-10-29T01:08:45.1328508Z",
+      "policyRequest": {
+        "returnValue": 0
+      },
+      "applications": []
+    },
+    "requestedUTC": "2026-10-29T01:08:49.7899435Z",
+    "marker": null,
+    "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+    "recipientAfter": {
+      "identity": "mayyhem\\domainuser",
+      "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+      "action": "Inspect",
+      "utc": "2026-10-29T01:11:53.7000553Z",
+      "applications": [
+        {
+          "Name": "CMBP-PERM-a0ec82ef execution bb5106d3",
+          "Id": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e25c10e3-c3f9-4bec-8350-3325f5cb909b",
+          "Revision": "2",
+          "IsMachineTarget": false,
+          "InstallState": "NotInstalled",
+          "EvaluationState": 17,
+          "AllowedActions": [
+            "Install"
+          ]
+        }
+      ]
+    }
+  },
+  "sessionRestoration": {
+    "before": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser            console             1  Active         25  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      2+08:17  10/23/2026 3:16 PM"
+    ],
+    "disconnectRequestedUTC": "2026-10-29T01:38:19.7407706Z",
+    "after": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser                                1  Disc            .  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      2+08:17  10/23/2026 3:16 PM"
+    ],
+    "reconnections": [
+      {
+        "message": "Remote Desktop Services: Session reconnection succeeded:\r\n\r\nUser: mayyhem\\domainuser\r\nSession ID: 1\r\nSource Network Address: LOCAL",
+        "utc": "2026-10-29T01:13:10.5635959Z"
+      }
+    ]
+  },
+  "excludedAttempts": [
+    {
+      "source": "execution-first",
+      "reason": "Observer/output race or incomplete available activation; not a permission denial",
+      "record": {
+        "group": "execution",
+        "targetType": "Device",
+        "behavior": "InstallForUser",
+        "purpose": "Required",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": false,
+        "startedUTC": "2026-10-29T01:13:46.8658335Z",
+        "actor": "MAYYHEM\\cpra0ec82ef0003",
+        "requestedMarker": {
+          "nonce": "c942b8c5a4d04b97b253d67df402cb23",
+          "path": "C:\\Windows\\Temp\\cud-c942b8c5a4d04b97b253d67df402cb23.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_9b71b121-df24-48fd-9add-8b55c6e9d590/1",
+          "Name": "CMBP-PERM-a0ec82ef execution db0f81f4",
+          "ID": 16777834
+        },
+        "assignmentID": 16777249,
+        "assignedUTC": "2026-10-29T01:13:58.7110031Z",
+        "setupDevicePolicyRequests": [
+          null,
+          null
+        ],
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:13:59.3223665Z",
+          "policyRequest": {
+            "returnValue": 0
+          },
+          "applications": []
+        },
+        "requestedUTC": "2026-10-29T01:14:02.2713502Z",
+        "marker": null,
+        "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "error": {
+          "message": "The process cannot access the file 'C:\\Windows\\Temp\\CMBP-PERM-a0ec82ef-recipient-dba967a7.json' because it is being used by another process.",
+          "type": "System.IO.IOException"
+        }
+      }
+    },
+    {
+      "source": "execution-first",
+      "reason": "Observer/output race or incomplete available activation; not a permission denial",
+      "record": {
+        "group": "execution",
+        "targetType": "Device",
+        "behavior": "InstallForSystem",
+        "purpose": "Required",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": true,
+        "startedUTC": "2026-10-29T01:17:30.1094907Z",
+        "actor": "MAYYHEM\\cpra0ec82ef0004",
+        "requestedMarker": {
+          "nonce": "404d8c39fa364f86b0b7ca8e94f2899a",
+          "path": "C:\\Windows\\Temp\\cud-404d8c39fa364f86b0b7ca8e94f2899a.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_29f12919-3033-431e-8dd0-53076ade3f38/1",
+          "Name": "CMBP-PERM-a0ec82ef execution dc6ad70a",
+          "ID": 16777848
+        },
+        "assignmentID": 16777251,
+        "assignedUTC": "2026-10-29T01:17:45.1579847Z",
+        "setupDevicePolicyRequests": [
+          null,
+          null
+        ],
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:17:50.1741444Z",
+          "policyRequest": {
+            "returnValue": 0
+          },
+          "applications": []
+        },
+        "requestedUTC": "2026-10-29T01:17:55.5335198Z",
+        "marker": {
+          "nonce": "404d8c39fa364f86b0b7ca8e94f2899a",
+          "sid": "S-1-5-18",
+          "writtenUTC": "2026-10-29T01:18:24.5920905Z",
+          "elapsedSeconds": 30.3
+        },
+        "expectedSID": "S-1-5-18",
+        "error": {
+          "message": "Recipient action did not finish: 267009",
+          "type": "System.Management.Automation.RuntimeException"
+        }
+      }
+    },
+    {
+      "source": "execution-first",
+      "reason": "Observer/output race or incomplete available activation; not a permission denial",
+      "record": {
+        "group": "execution",
+        "targetType": "User",
+        "behavior": "InstallForUser",
+        "purpose": "Available",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": false,
+        "startedUTC": "2026-10-29T01:18:55.3727614Z",
+        "actor": "MAYYHEM\\cpra0ec82ef0005",
+        "requestedMarker": {
+          "nonce": "a64666620b984ddca22ac36dc163a826",
+          "path": "C:\\Windows\\Temp\\cud-a64666620b984ddca22ac36dc163a826.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_0b34f2a3-ce83-44b9-8536-58c8bfe037af/1",
+          "Name": "CMBP-PERM-a0ec82ef execution 37c97e29",
+          "ID": 16777855
+        },
+        "assignmentID": 16777252,
+        "assignedUTC": "2026-10-29T01:19:12.6101903Z",
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:19:15.5320660Z",
+          "policyRequest": {
+            "returnValue": 0
+          },
+          "applications": []
+        },
+        "requestedUTC": "2026-10-29T01:19:18.5168451Z",
+        "beforeUserInstall": null,
+        "recipientBeforeInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:19:51.1606916Z",
+          "applications": []
+        },
+        "recipientInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Install",
+          "utc": "2026-10-29T01:19:54.7544376Z",
+          "applications": [],
+          "error": "Expected exactly one application in the recipient client SDK."
+        },
+        "installRequestedUTC": "2026-10-29T01:19:59.2075591Z",
+        "marker": null,
+        "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "recipientAfter": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:23:03.4005625Z",
+          "applications": []
+        }
+      }
+    },
+    {
+      "source": "execution-first",
+      "reason": "Observer/output race or incomplete available activation; not a permission denial",
+      "record": {
+        "group": "execution",
+        "targetType": "User",
+        "behavior": "InstallForSystem",
+        "purpose": "Available",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": false,
+        "startedUTC": "2026-10-29T01:23:14.0890076Z",
+        "actor": "MAYYHEM\\cpra0ec82ef0006",
+        "requestedMarker": {
+          "nonce": "0212762254a443de93b63d85a13a9700",
+          "path": "C:\\Windows\\Temp\\cud-0212762254a443de93b63d85a13a9700.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_ea305944-993b-41c8-b215-4b2f72552a1f/1",
+          "Name": "CMBP-PERM-a0ec82ef execution 0b713cc0",
+          "ID": 16777876
+        },
+        "assignmentID": 16777255,
+        "assignedUTC": "2026-10-29T01:23:28.8710615Z",
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:23:31.4179378Z",
+          "policyRequest": {
+            "returnValue": 0
+          },
+          "applications": []
+        },
+        "requestedUTC": "2026-10-29T01:23:35.8714650Z",
+        "beforeUserInstall": null,
+        "recipientBeforeInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:24:09.9524581Z",
+          "applications": []
+        },
+        "recipientInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Install",
+          "utc": "2026-10-29T01:24:16.5934851Z",
+          "applications": [],
+          "error": "Expected exactly one application in the recipient client SDK."
+        },
+        "installRequestedUTC": "2026-10-29T01:24:20.3434855Z",
+        "marker": null,
+        "expectedSID": "S-1-5-18",
+        "recipientAfter": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:27:22.8618353Z",
+          "applications": []
+        }
+      }
+    },
+    {
+      "source": "required-user-active",
+      "reason": "Recipient observer timed out before collecting an execution result",
+      "record": {
+        "group": "execution",
+        "targetType": "User",
+        "behavior": "InstallForUser",
+        "purpose": "Required",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": false,
+        "startedUTC": "2026-10-29T01:15:57.4134978Z",
+        "actor": "MAYYHEM\\cpr596119760001",
+        "requestedMarker": {
+          "nonce": "6a1988d8be9344129e36145869b0aff3",
+          "path": "C:\\Windows\\Temp\\cud-6a1988d8be9344129e36145869b0aff3.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_48a2eb21-080b-4861-9456-bcf4590e65db/1",
+          "Name": "CMBP-PERM-59611976 execution 4874d2cd",
+          "ID": 16777841
+        },
+        "assignmentID": 16777250,
+        "assignedUTC": "2026-10-29T01:16:17.3836896Z",
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:16:24.2751170Z",
+          "policyRequest": {
+            "returnValue": 0
+          },
+          "applications": []
+        },
+        "requestedUTC": "2026-10-29T01:16:28.9630157Z",
+        "error": {
+          "message": "Recipient action did not finish: 267009",
+          "type": "System.Management.Automation.RuntimeException"
+        },
+        "additionalRecipientRequests": []
+      }
+    },
+    {
+      "source": "available-user-verified",
+      "reason": "Queue-only activation did not reproduce Software Center's full install flow",
+      "record": {
+        "group": "execution",
+        "targetType": "User",
+        "behavior": "InstallForUser",
+        "purpose": "Available",
+        "applicationMask": 1027,
+        "collectionMask": 1052673,
+        "verified": false,
+        "startedUTC": "2026-10-29T01:22:12.1621028Z",
+        "actor": "MAYYHEM\\cpr1ffe7ace0001",
+        "requestedMarker": {
+          "nonce": "a2b2bd7aef1a4f979b1f2bdc46fd6d7b",
+          "path": "C:\\Windows\\Temp\\cud-a2b2bd7aef1a4f979b1f2bdc46fd6d7b.json"
+        },
+        "application": {
+          "UniqueID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e6d34989-0b55-4d72-9f78-2a95c864d92d/1",
+          "Name": "CMBP-PERM-1ffe7ace execution 60afafd8",
+          "ID": 16777869
+        },
+        "assignmentID": 16777254,
+        "assignedUTC": "2026-10-29T01:22:25.1631263Z",
+        "recipientRequest": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Retrieve",
+          "utc": "2026-10-29T01:22:28.3037526Z",
+          "policyRequest": {
+            "returnValue": 0
+          }
+        },
+        "requestedUTC": "2026-10-29T01:22:38.5239326Z",
+        "beforeUserInstall": null,
+        "recipientBeforeInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:23:09.7760983Z",
+          "applications": []
+        },
+        "availablePolicy": {
+          "Revision": "1.00",
+          "ApplicationID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/Application_e6d34989-0b55-4d72-9f78-2a95c864d92d",
+          "PolicyID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_e6d34989-0b55-4d72-9f78-2a95c864d92d/VI/VS/U"
+        },
+        "recipientInstall": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "ActivateAvailable",
+          "utc": "2026-10-29T01:23:18.0265050Z",
+          "install": {
+            "revision": "1.00",
+            "returnValue": 0,
+            "policyID": "ScopeId_C512AD3D-A32E-450B-BCE7-45E528FF51BC/RequiredApplication_e6d34989-0b55-4d72-9f78-2a95c864d92d/VI/VS/U"
+          }
+        },
+        "installRequestedUTC": "2026-10-29T01:23:27.1679372Z",
+        "marker": null,
+        "expectedSID": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "recipientAfter": {
+          "identity": "mayyhem\\domainuser",
+          "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+          "action": "Inspect",
+          "utc": "2026-10-29T01:27:31.9247370Z",
+          "applications": []
+        },
+        "additionalRecipientRequests": [
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:23:44.3562459Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:24:10.0462054Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:24:36.4689022Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:25:11.3927996Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:25:40.6438996Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:26:07.0426425Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:26:32.7796391Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          },
+          {
+            "identity": "mayyhem\\domainuser",
+            "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+            "action": "Retrieve",
+            "utc": "2026-10-29T01:27:01.2800523Z",
+            "policyRequest": {
+              "returnValue": 0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "cleanup": {
+    "removedTasks": [],
+    "closedSoftwareCenterProcesses": [],
+    "sessions": [
+      " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME",
+      " domainuser                                1  Disc           14  10/23/2026 4:52 PM",
+      ">domainadmin                               3  Disc      2+08:31  10/23/2026 3:16 PM"
+    ],
+    "policyWithdrawal": [
+      {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "Retrieve",
+        "utc": "2026-10-29T01:52:09.3332650Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      },
+      {
+        "identity": "mayyhem\\domainuser",
+        "sid": "S-1-5-21-2685035784-114219579-2457378813-1104",
+        "action": "RetrieveMachine",
+        "utc": "2026-10-29T01:52:15.4426364Z",
+        "policyRequest": {
+          "returnValue": 0
+        }
+      }
+    ],
+    "remainingClientPolicies": 0,
+    "originalRoleCount": 15,
+    "remainingMarkers": 0,
+    "tags": [
+      "CMBP-PERM-0f9df4dc",
+      "CMBP-PERM-112ee903",
+      "CMBP-PERM-1ffe7ace",
+      "CMBP-PERM-2064b49f",
+      "CMBP-PERM-233f8e40",
+      "CMBP-PERM-322c7fd1",
+      "CMBP-PERM-35e00bb1",
+      "CMBP-PERM-388ee2b1",
+      "CMBP-PERM-59611976",
+      "CMBP-PERM-a0ec82ef",
+      "CMBP-PERM-b9d57318",
+      "CMBP-PERM-d97ccca0",
+      "CMBP-PERM-f19e3d15"
+    ],
+    "removedRequests": [],
+    "remainingObjects": {
+      "roles": 0,
+      "collections": 0,
+      "applications": 0,
+      "assignments": 0,
+      "administrators": 0,
+      "discoveredUsers": 0,
+      "domainAccounts": 0
+    },
+    "originalRolesUnchanged": true,
+    "removedFiles": [],
+    "remainingClientRequests": 0,
+    "timestampUTC": "2026-10-29T01:52:20.6613839Z",
+    "removedDiscoveredUsers": []
+  }
+}

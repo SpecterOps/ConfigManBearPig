@@ -10,12 +10,15 @@ import json
 import threading
 
 import dlt
+import pytest
 from dlt.destinations import filesystem
+from openhound_collector_common.clients.operations import ClientCleanupError
 
 from openhound_sccm import main as main_mod
 from openhound_sccm.context import SourceContext
 from tests.stub_per_host_phases import PER_HOST_PHASES, all_table_names
 from openhound_sccm.phased_pipeline import WorkQueue
+from openhound_sccm.phased_pipeline.engine import Phase
 
 
 def _isolated_pipeline(tmp_path, name):
@@ -80,6 +83,29 @@ def test_threads_option_defaults_to_10():
     param = inspect.signature(main_mod.collect_sccm).parameters["threads"]
     # typer.Option(...) returns an OptionInfo whose .default holds the value.
     assert param.default.default == 10
+
+
+def test_failed_worker_cannot_look_like_a_successful_dlt_drain(tmp_path, monkeypatch):
+    queue = WorkQueue()
+    queue.submit("hostA")
+    ctx = SourceContext(ad=None, domain="example.com", work_queue=queue, collection_methods="All")
+    pipeline = _isolated_pipeline(tmp_path, "failed_worker")
+    original = ClientCleanupError("Illustrative unconfirmed WMI cleanup")
+    emitted_principals = []
+
+    def phase(target, context):
+        yield "registry_sccm_components", {"name": target}
+        raise original
+
+    monkeypatch.setattr(main_mod, "_emit_resolved_principals", lambda *args: emitted_principals.append(True))
+    with pytest.raises(RuntimeError, match="saved data is incomplete") as captured:
+        main_mod._run_per_host_stage(
+            pipeline, queue, ctx, threads=2,
+            phases=[Phase("RemoteRegistry", ("registry_sccm_components",), phase)],
+        )
+    assert captured.value.__cause__ is original
+    assert not emitted_principals
+    assert queue.in_flight() == 0
 
 
 def test_run_per_host_stage_writes_all_stub_tables(tmp_path):

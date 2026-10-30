@@ -1,5 +1,7 @@
 # Recommendation: put SCCM WMI reads in an owned worker
 
+> Historical record: the owner approved in-process AD/WMI on October 27, 2026. Process-specific designs and verification below are superseded. Current WMI uses whole-read host isolation and cancellation requests with visible Windows timeout overruns; the Windows LDAP fallback uses the native API. See the current in-process WMI/LDAP change record in openhound-collector-common.
+
 Status: recommended for a separate owner review. SCCM's default has not changed.
 
 ## Problem and recommendation

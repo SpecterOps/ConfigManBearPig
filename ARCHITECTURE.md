@@ -170,6 +170,7 @@ became the shared one. What moved:
 | Windows auth ladders + token minters ([§6](#6-windows-authentication-across-five-protocols)) | `clients/auth` (`choose_auth`, `is_ip`, `KerberosToken`, `SspiClient`, NTLM type-1/3), `clients/ad` (`AdClient` + lockout-safe bind waterfall), `clients/wmi` (impacket + pywin32 backends), `clients/mssql` (`detect_epa`) | `clients/ad.py` `ADClient(AdClient)` subclass + SCCM attribute maps; `clients/wmi.py` `WmiClient` wrapper; `clients/http_auth.py` negotiators wrapping `KerberosToken`/`SspiClient`; `clients/mssql_epa.py` thin `test_epa` adapter over `detect_epa` |
 | Per-target/-phase/-resource logging ([§7](#7-enhanced-logging-and-diagnostics-for-blind-remote-environments)) | `logging/log_context` (the full superset: `[target][phase]` tagging, `with_log_context`, completion-callback registry, `VERBOSE`, the debug exc-info filter, `cached_with_log`, `trace_node/edge/...`) | `log_context.py` re-exports the shared machinery and binds the two collector-specific helpers (`cached_with_log`, `trace_*`) to SCCM's own logger names |
 | Push→pull streaming bridge ([§1](#1-pull-based-dlt-resources--a-push-based-per-host-phased-pipeline)) | `dlt/source_bridge` (`StreamBridge`, `DONE`, `build_streams`, `broadcast_done`, `extract_workers_for`) | `phased_pipeline/streams.py` re-exports `DONE`/`build_streams`/`broadcast_done`; `source.py` plants a `StreamBridge` and its emit resources delegate their drain to it |
+| Target indexes and scheduling ([§1](#1-pull-based-dlt-resources--a-push-based-per-host-phased-pipeline), [§3](#3-recursive-target-discovery-and-collection)) | `collection.registry`, `collection.work_queue`, `collection.scheduler`, `collection.engine` | `context.py` keeps SID/name merging, site/source evidence and allow-list expansion; `phased_pipeline/engine.py` and `work_queue.py` re-export shared machinery; `per_host_phases.py` keeps phase order and gates |
 | DNS resolution ([§5](#5-an-active-directory-cli-surface-and-context-auto-detection)) | `discovery/dns` (`make_resolver`) | `main.py::_resolve_dc_via_dns` calls the shared `make_resolver`, keeps the SCCM-specific SRV query |
 | End-to-end phase chaining ([§12](#12-one-command-end-to-end-a---run-all-flag-not-a-new-verb)) | `orchestration/run` (`run_end_to_end`, `derive_stage_paths`, `StagePaths`, `zip_graph_output`) | `main.py::_run_e2e_after_collect` maps `--progress` and delegates; the `--run-all` flag on `collect_sccm` triggers it, passing `configmanbearpig_collection_<ts>.zip` as `graph_zip_name` |
 | SOCKS5 pivot ([§13](#13-tunneling-all-collection-traffic-through-a-socks5-pivot)) | `proxy/patch.py` (process-wide `socket` interception), `proxy/socks.py` (dialer/handshake), `discovery/dns.py` (`force_tcp`) | `main.py` parse/validate (`_parse_proxy_or_exit`, `_require_dc_or_dns_for_proxy`) + the install-around-run wrap (`socks_proxy_installed`); the four proxy-aware DNS sites (`_resolve_dc_via_dns`, two sites in `collectors/dns.py`, `context.resolve_ip`) |
@@ -234,14 +235,15 @@ we'd lose the per-target ordering SCCM depends on.
 
 ### The add-on: a service-agnostic phased engine, bridged to DLT by streams
 
-The extension ships its own miniature collection engine under
-[`phased_pipeline/`](src/openhound_sccm/phased_pipeline/) — standard-library only, no DLT, no SCCM
-knowledge, so it's independently testable:
+The extension reaches the shared collection engine through thin adapters under
+[`phased_pipeline/`](src/openhound_sccm/phased_pipeline/). The engine uses standard
+library queues and threads plus shared logging; it imports neither the DLT
+library nor OpenHound or SCCM, so it is independently testable:
 
 | Piece | File | Role |
 |---|---|---|
 | `WorkQueue` | [`phased_pipeline/work_queue.py`](src/openhound_sccm/phased_pipeline/work_queue.py) | The to-do list of targets. Dedups, counts in-flight work, signals *quiescence* (see [§3](#3-recursive-target-discovery-and-collection)). |
-| `Phase` + `run_one_target` + `run_pipeline` | [`phased_pipeline/engine.py`](src/openhound_sccm/phased_pipeline/engine.py) | A `Phase` is `(name, output-stream-names, generator)`. `run_one_target` runs one host through its phases **in declaration order** ([engine.py:70-81](src/openhound_sccm/phased_pipeline/engine.py#L70-L81)); `run_pipeline` drives a `ThreadPoolExecutor` over the queue ([engine.py:84-136](src/openhound_sccm/phased_pipeline/engine.py#L84-L136)). |
+| `Phase` + `run_one_target` + `run_pipeline` | [`phased_pipeline/engine.py`](src/openhound_sccm/phased_pipeline/engine.py), re-exporting common's `collection.engine` | A `Phase` is `(name, output-stream-names, generator)`. Phases run in declaration order; common's `collection.scheduler.run_jobs` uses a fixed number of worker loops and checks every result before returning. |
 | `build_streams` / `DONE` / `broadcast_done` | [`phased_pipeline/streams.py`](src/openhound_sccm/phased_pipeline/streams.py) — a **re-export** of the shared `openhound_collector_common.dlt.source_bridge` primitives (see [Where this code lives](#where-this-code-lives-the-shared-collector-common-library)) | One **bounded** `queue.Queue` per output table. Bounded means a fast producer *blocks* until the consumer catches up — **backpressure** that keeps memory flat. `DONE` is the single end-of-stream sentinel. Re-exporting (not copying) means the engine broadcasts the *same* `DONE` object the shared bridge compares against — the marker is identity-compared, so producer and consumer must agree on one instance. |
 
 The hard part is making DLT — which insists on *pulling* — consume rows that are *pushed* by a separate
@@ -278,7 +280,7 @@ globals** planted just before each `pipeline.run` and cleared after —
 run-scoped `StreamBridge` the emit resources drain). It's a handshake, not elegance, but it's the only
 channel the injection model leaves open.
 
-Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py#L951).
+Finally, collection is explicitly **two-staged** in [`collect_sccm`](src/openhound_sccm/main.py).
 These are the two **collection** stages of the per-host collection framework plan,
 `docs/superpowers/plans/2026-06-03-per-host-collection-framework.md` — a different numbering from the
 graph-pipeline stages used in §9 and §11 (see the
@@ -326,7 +328,7 @@ thread** without the noise of a 10-way thread pool.
 ### The add-on: ordered phases + a runtime `should_run` gate + a standalone harness
 
 - **Ordering** is just the declaration order of [`PER_HOST_PHASES`](src/openhound_sccm/per_host_phases.py#L19-L89);
-  `run_one_target` honors it strictly ([engine.py:70-81](src/openhound_sccm/phased_pipeline/engine.py#L70-L81)).
+  `run_one_target` honors it strictly ([engine.py](src/openhound_sccm/phased_pipeline/engine.py)).
 - **Concurrency vs. sequence** are separated cleanly: the *engine* runs many targets at once
   (`max_workers = --threads`, default 10) but each target's phases run *in order* on a single worker.
 - **The fallback logic** lives in [`should_run_phase`](src/openhound_sccm/per_host_phases.py#L96-L121),
@@ -354,10 +356,15 @@ thread** without the noise of a 10-way thread pool.
 
 ### Trade-offs
 
-A phase that raises is **logged and skipped**, and the remaining phases still run
-([engine.py:77-81](src/openhound_sccm/phased_pipeline/engine.py#L77-L81)) — one flaky host or protocol
-never aborts the collection, but it does mean failures are surfaced through logs (see [§7](#7-enhanced-logging-and-diagnostics-for-blind-remote-environments))
-rather than by crashing.
+An ordinary phase error is **logged and skipped**, and the remaining phases run.
+`FatalCollectionError`, including a failed client cleanup or cancelled output,
+escapes that boundary. The shared scheduler stops pending targets and calls the
+bridge's cancellation callback, releasing writers blocked on full queues. It
+waits for active workers and preserves the first failure. `_run_per_host_stage`
+captures the producer thread's failure and raises after joining it, before
+emitting final resolved principals or chaining later stages. Output-consumer
+failure follows the same stop/join path. Native providers may delay this wait;
+the collector never abandons their threads or claims a hard stop.
 
 ---
 
@@ -384,27 +391,27 @@ phase, via the context) call `submit(host)`; the dispatcher calls `next()`/`comp
 is knowing **when collection is actually finished** when new work can appear at any moment. The queue
 tracks *in-flight* work (handed out but not completed) and declares **quiescence** — `next()` returns
 `None` — only when *nothing is pending and nothing is in flight*
-([work_queue.py:55-68](src/openhound_sccm/phased_pipeline/work_queue.py#L55-L68)).
+([work_queue.py](src/openhound_sccm/phased_pipeline/work_queue.py)).
 
-The race-free guarantee rests on an **ordering contract** spelled out in the module docstring
-([work_queue.py:15-21](src/openhound_sccm/phased_pipeline/work_queue.py#L15-L21)) and enforced in the
-engine's worker: a worker that discovers a new target must `submit` it *before* the discovering target's
+The race-free guarantee rests on an **ordering contract** spelled out in common's
+`collection.work_queue` module and enforced by `collection.scheduler`: a worker
+that discovers a new target must `submit` it *before* the discovering target's
 slot is released. `run_pipeline`'s worker calls `on_target_complete` (and any submits) **while the target
-is still counted in flight**, then calls `complete` last ([engine.py:110-123](src/openhound_sccm/phased_pipeline/engine.py#L110-L123)).
+is still counted in flight**, then calls `complete` last.
 Because of that ordering, the dispatcher can never observe "empty and idle" while a discovery is mid-flight,
 so it can't stop early.
 
 Two more pieces wire discovery into this loop:
 
-- [`SourceContext.register_target`](src/openhound_sccm/context.py#L357-L457) is the single funnel every
+- [`SourceContext.register_target`](src/openhound_sccm/context.py) is the single funnel every
   discovery path calls. It resolves the identifier against AD (best-effort), applies the allow-list (see
   [§4](#4-targeted-collection-an-include-only-allow-list)), dedups by SID then hostname (with an FQDN
   upgrade path), merges sources/site-codes onto an existing `TargetEntry`, and — for a genuinely new host —
-  calls `work_queue.submit(...)` ([context.py:455](src/openhound_sccm/context.py#L455)). Both
+  calls `work_queue.submit(...)` ([context.py](src/openhound_sccm/context.py)). Both
   Stage-1 discovery resources (which call it from inside `collectors/*`) and the CLI's `--computers`
   seeds ([main.py](src/openhound_sccm/main.py)) go through this *same* funnel, so dedup
   and filtering are identical.
-- [`target_hosts_snapshot`](src/openhound_sccm/context.py#L460-L472) lets phases read the *current* target
+- [`target_hosts_snapshot`](src/openhound_sccm/context.py) lets phases read the *current* target
   set at iteration time, so a host discovered after a phase started is still picked up — the OpenHound
   equivalent of CMBP's "iterate the updated list."
   When a short hostname is upgraded to an FQDN, the old name remains an index alias for a queued worker,
@@ -461,10 +468,10 @@ be decoupled.
   an FQDN or a NetBIOS name. The lowercased, short-name-expanded set is assembled at
   [source.py:278-285](src/openhound_sccm/source.py#L278-L285) and handed to `SourceContext.allowed_targets`
   ([source.py:303](src/openhound_sccm/source.py#L303)).
-- [`_is_allowed_target`](src/openhound_sccm/context.py#L336-L355) (CMBP's `Test-AllowedTarget`) is checked
+- [`_is_allowed_target`](src/openhound_sccm/context.py) (CMBP's `Test-AllowedTarget`) is checked
   inside `register_target`: an **empty** allow-list means *allow all* (pure discovery mode), and a
   non-empty one rejects any host whose candidate name forms don't intersect it — logging the skip rather
-  than silently dropping it ([context.py:392-394](src/openhound_sccm/context.py#L392-L394)).
+  than silently dropping it ([context.py](src/openhound_sccm/context.py)).
 
 Because the gate sits at the single registration funnel, the same filter governs LDAP-discovered hosts,
 DNS-discovered hosts, mid-run HTTP-discovered siblings, and CLI seeds alike. `--computers` therefore does
@@ -510,7 +517,7 @@ PowerShell tool does — rather than demanding flags. None of that fits a one-to
 ### The add-on: a hand-registered Typer command + a flag→env bridge + context discovery
 
 Rather than use `@app.collect()`, [`main.py`](src/openhound_sccm/main.py) registers
-[`collect_sccm`](src/openhound_sccm/main.py#L951) **directly on the framework's public Typer group**
+[`collect_sccm`](src/openhound_sccm/main.py) **directly on the framework's public Typer group**
 (`from openhound.cli.collect import collect as _collect_typer`) so it can expose the full CMBP flag surface
 ([main.py](src/openhound_sccm/main.py)). It then assigns `app.collector = collect_sccm`
 ([main.py](src/openhound_sccm/main.py)) so the framework's import-time
@@ -519,13 +526,20 @@ Rather than use `@app.collect()`, [`main.py`](src/openhound_sccm/main.py) regist
 The command **maps CLI flags to scoped env vars** before the DLT source is built. Most source
 settings use config injection; `http_proxy` is passed explicitly after validation:
 
-- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py#L145) maps each flag to its `SOURCES__SCCM__*` name;
-  [`_apply_env_overrides`](src/openhound_sccm/main.py#L304) sets them last (so an explicit flag wins
-  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py#L180)
+- [`_FLAG_TO_ENV`](src/openhound_sccm/main.py) maps each flag to its `SOURCES__SCCM__*` name;
+  [`_apply_env_overrides`](src/openhound_sccm/main.py) sets them last (so an explicit flag wins
+  over an env/`.env` value), and [`_drop_empty_dlt_env_values`](src/openhound_sccm/main.py)
   removes empties so an unset flag can't clobber a higher-priority source.
-- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py#L245) catches a real foot-gun:
+- [`_suspicious_cli_argument_warnings`](src/openhound_sccm/main.py) catches a real foot-gun:
   Click parses `-dc 10.0.0.1` as `-d c` (because `-d` takes a value), silently turning the intended DC
   into a stray positional. The collector warns on these, masking sensitive values.
+  Its warning construction now delegates to common's `orchestration.arguments`;
+  SCCM still supplies the same option names and sensitive-value rules. The helper
+  changes neither Click's parsing nor the collector's logging policy.
+- [`SourceContext.method_enabled`](src/openhound_sccm/context.py) delegates comma
+  splitting and case normalization to common's `collection.methods`. SCCM retains
+  its own method names, All/default behavior, and permissive handling of unknown
+  names. SQL validates its different names and dependencies in its own collector.
 - **Context auto-detection** mirrors CMBP's order: [`_detect_windows_domain`](src/openhound_sccm/main.py)
   reads `USERDNSDOMAIN` then the FQDN suffix (Windows only); [`_resolve_dc_via_dns`](src/openhound_sccm/main.py)
   finds a DC via the `_ldap._tcp.dc._msdcs.<domain>` SRV record (cross-platform), building its resolver
@@ -549,6 +563,39 @@ settings use config injection; `http_proxy` is passed explicitly after validatio
 ---
 
 ## 6. Windows authentication across five protocols
+
+**Shared rejected-password recognition, October 29, 2026.** The owner-approved
+common fix makes spacing in `Invalid Credentials` irrelevant to the existing
+known rejected-account stop rule. CMBP's AD subclass inherits this check without
+adapter changes. A rejected client refuses later submissions; other connection
+failures retain their permitted retries. Adopt it in the planned reviewed common
+release alongside the EPA/hash fixes. No new dependency, process, option or lab
+setting is introduced. Common's `docs/changes/2026-10-29-ldap-rejected-password.md`
+records the checks and limits.
+
+**Shared EPA isolation, October 29, 2026.** The approved common working-tree fix
+keeps the missing-service probe's NTLM change inside its own login. It removes a
+provider-global test flag that could interfere with ordinary SQL/WMI/HTTP logins.
+The timestamp, client nonce and channel binding stay intact; the existing provider
+functions update the proof/session keys before the final MIC. CMBP's adapter and
+credential choices are unchanged. Its 46 affected EPA/auth/AD/WMI tests and real
+password EPA/concurrent SQL reads passed; its adapter still reports `Off` for the
+lab server. Adopt this fix in the planned reviewed common release. The separate
+hash-input fix was subsequently approved and passed 535 common tests, the 46
+CMBP checks, and actual hash-based concurrent logins and CMBP EPA. Only NTLM
+decodes hashes to bytes; Kerberos's text contract stays intact. Full acceptance
+and common publication remain pending; see common's
+`docs/changes/2026-10-29-ntlm-probe-isolation.md`.
+
+**Shared setup controls, October 29, 2026.** Common now offers opt-in DNS and
+Kerberos ticket-connection limits inherited from an owned read. Its scoped
+impacket adapter preserves each thread's sockets and restores the original
+provider reference; it introduces no child process or authentication rewrite.
+SCCM's existing adapters do not opt into these new controls and retain their
+authentication choices and timeout defaults. The affected SCCM auth/DNS/WMI/EPA
+and real DLT selection passed 75 checks. Adopting these limits in SCCM would be a
+separate behavior change; see common's
+`docs/changes/2026-10-29-connection-setup-limits.md`.
 
 ### The framework baseline
 
@@ -585,7 +632,7 @@ then current-user SSO, then (where the protocol allows) anonymous.*
 | Family | Where the ladder lives | Schemes (in precedence order) | Key libraries |
 |---|---|---|---|
 | **HTTP / AdminService** | shared `choose_auth` in [`clients/http_auth.py:134-168`](src/openhound_sccm/clients/http_auth.py#L134-L168), driven by [`clients/http.py`](src/openhound_sccm/clients/http.py) | pass-the-ticket → explicit (Kerberos→NTLM) → current-user SSPI → **anonymous** | `impacket` (krb5/ntlm/spnego), `pywin32` (SSPI), `requests` |
-| **WMI (AdminService fallback)** | reuses the **same** `choose_auth` ([`clients/wmi.py:333-353`](src/openhound_sccm/clients/wmi.py#L333-L353)) | pass-the-ticket → explicit (Kerberos→NTLM) → current-user SSPI → ~~anonymous~~ (skipped — DCOM requires auth) | `impacket` (DCOM), `pywin32` (`win32com`) |
+| **WMI (AdminService fallback)** | reuses the **same** `choose_auth` ([`clients/wmi.py`](src/openhound_sccm/clients/wmi.py)) | pass-the-ticket → explicit (Kerberos→NTLM) → current-user SSPI → ~~anonymous~~ (skipped — DCOM requires auth) | `impacket` (DCOM), `pywin32` (`win32com`) |
 | **LDAP / AD** | attempt plan in [`clients/ad.py`](src/openhound_sccm/clients/ad.py) (`_build_attempt_plan`), credential precedence in the shared `AdClient._select_auth_modes` | pass-the-ticket (connection-local Kerberos) → pass-the-hash (`ntlm_hash`, ldap3 `LM:NT`) → explicit NTLM → integrated Kerberos (GSSAPI) → current-user SSPI-NTLM → anonymous — each over an auto-detected transport | `ldap3`, `impacket` (krb5 ccache), `pywin32` (SSPI), `winkerberos`/`gssapi` |
 | **SMB (RemoteRegistry + SMB phases)** | inline ladder in `connect_smb` ([`clients/smb_sso.py:215-279`](src/openhound_sccm/clients/smb_sso.py#L215-L279)) | pass-the-ticket → pass-the-hash → explicit password → current-user SSPI Negotiate → null session | `impacket` (SMBConnection, krb5 CCache), `pywin32` (SSPI) |
 | **MSSQL EPA probe** | `impacket_prober` / `sspi_prober` in [`clients/mssql_epa.py`](src/openhound_sccm/clients/mssql_epa.py) | explicit creds (incl. pass-the-hash) → current Windows user (SSPI); a **ticket-only** credential yields a WARNING+skip — pass-the-ticket can't forge the channel-binding AV pairs the probe needs | `impacket` (tds/ntlm), `pywin32` (SSPI) |
@@ -804,7 +851,7 @@ filters/handlers and mutating live handler instances at runtime:
     logger so other impacket CRITICALs survive. `clients/wmi.py` logs its own verbose line in its place
     so the log still explains itself. Installed and removed per run, alongside the file handlers.
 - **Runtime tidy-ups of the framework's Rich handler** ([`install_filter`](src/openhound_sccm/log_context.py#L253-L292)
-  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py#L468)): turn off Rich markup
+  and [`_strip_version_suffix_from_handlers`](src/openhound_sccm/main.py)): turn off Rich markup
   parsing (so `[mayyhem.com]` isn't eaten as a malformed tag), drop the `file.py:line` column, and swap
   out the formatter that appends `(openhound_version=…)` — all by writing attributes on the *existing*
   handler instances, never by editing core.
@@ -827,9 +874,9 @@ A stock REST collector on Linux CI never meets any of these.
   **both** the root and `dlt` loggers, pointed at the *same* file. The first record after midnight (or past
   the size cap) triggers a rollover that `os.rename`s the open log — which **fails on Windows** because the
   sibling handler still holds the file open. The extension can't edit core, so
-  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py#L559) (run once at import) mutates
+  [`_make_core_rotation_windows_safe`](src/openhound_sccm/main.py) (run once at import) mutates
   the live handler instances: it repoints each to a **per-run timestamped file** and replaces `doRollover`
-  with [`_copytruncate_rollover`](src/openhound_sccm/main.py#L533) — *copy the file to a dated sibling,
+  with [`_copytruncate_rollover`](src/openhound_sccm/main.py) — *copy the file to a dated sibling,
   then truncate in place* — so rotation never needs exclusive access to the open handle. It's a no-op off
   Windows, where rename-based rotation works.
 - **dlt's pipeline storage gets locked under the user profile (WinError 32, again).** A *second* WinError 32,
@@ -853,7 +900,7 @@ A stock REST collector on Linux CI never meets any of these.
   `libcrypto` without the `OPENSSL_Applink` cross-CRT shim — which aborts the process mid-handshake on
   Windows. Harmless on Linux, but on Windows the collector deliberately prefers an official/system Python.
 - **Single-label (NetBIOS) domains have no valid LDAP naming context.** `DC=MAYYHEM` doesn't exist, so AD
-  answers with a referral that ldap3 chases into "invalid server address." [`_ldap_resolve`](src/openhound_sccm/context.py#L265-L299)
+  answers with a referral that ldap3 chases into "invalid server address." [`_ldap_resolve`](src/openhound_sccm/context.py)
   detects the dot-less domain and skips it, deferring to an FQDN domain in the try-list — which is why only
   NetBIOS-prefixed principals (NAA, `sccm_push`) ever hit that path.
 - **Dependency pins that exist only for Windows auth:** `ldap3>=2.10.2rc4` is the first release exporting
@@ -1516,13 +1563,13 @@ alongside the SCCM-specific properties already emitted. No new AD collector was 
 extension reuses AD-resolution work the collector was already doing for other reasons.
 
 Every phase that needs to turn a name/SID/DN into an AD object calls
-`SourceContext.resolve_principal` ([context.py:188](src/openhound_sccm/context.py#L188)) — LDAP
+`SourceContext.resolve_principal` ([context.py](src/openhound_sccm/context.py)) — LDAP
 discovery resolving admins, RemoteRegistry resolving current users, AdminService/WMI resolving
 device-referenced principals, and so on. `resolve_principal` already caches every lookup in
 `ad_resolution_cache` (hits *and* misses, keyed by lookup string — see
 [Where this code lives](#where-this-code-lives-the-shared-collector-common-library) for the
 "AD-resolution cache" reference in §1) to avoid repeat LDAP round-trips. It now *also* calls
-`_record_resolved_principal` ([context.py:301](src/openhound_sccm/context.py#L301)) on every fresh
+`_record_resolved_principal` ([context.py](src/openhound_sccm/context.py)) on every fresh
 (non-cache-hit) success, deduping by SID into a second, purely-successful accumulator,
 `SourceContext.resolved_principals`.
 
@@ -2236,7 +2283,9 @@ took a separate, manual step outside `openhound collect sccm`.
   `run_all = True` before the pipeline starts, since there is nothing to test or diff without a completed
   convert:
   - `--run-integration-tests` calls `run_integration_tests` once convert finishes, writing
-    `integration_results-<ts>.json`.
+    `integration_results-<ts>.json` and a self-contained HTML case table with the
+    same name. Common's `integration_testing.reports` owns the escaped HTML/JSON
+    presentation; SCCM still owns its fixtures and privilege selection.
   - `--integration-privilege auto|high|low` selects which fixture set is asserted. It describes the
     **collection**, not the fixtures. `auto` — the default — derives the verdict from whether any
     `adminservice_*` / `wmi_*` table returned rows this run (`_detect_privileged`, prefix-matched so the
@@ -2248,8 +2297,12 @@ took a separate, manual step outside `openhound collect sccm`.
   - `--compare-to-zip <path>` calls `compare_to_zip` against an arbitrary node/edge payload — a CMBP zip
     or another OpenHound run — writing `compare-<ts>.json`.
   - **Exit code.** Both testing flags run to completion before either decides the result, so an operator
-    who passed both always gets both reports; `_combined_testing_exit_code` then returns non-zero if
-    *either* failed. This replaces the earlier contract in which `--compare-to-zip` always exited `0`.
+    who passed both gets both report attempts. `_run_graph_checks` supplies the
+    existing choices and names to common's `run_requested_checks`, which attempts
+    the second check even if the first raises, and fails on a missing/broken report.
+    Existing reports are preserved rather than accepted as this run's results.
+    Either failed check returns non-zero. This replaces the earlier contract in
+    which `--compare-to-zip` always exited `0`.
   - Both reuse `_ts`, the same run timestamp already used for the collect logs, so every artifact from one
     invocation shares a suffix.
 - **No new framework extension point.** This reuses exactly the pattern [§12](#12-one-command-end-to-end-a---run-all-flag-not-a-new-verb)
@@ -2283,6 +2336,38 @@ took a separate, manual step outside `openhound collect sccm`.
 ---
 
 ## Changelog
+
+- **2026-10-29:** Recommended adopting common's approved rejected-password
+  recognition fix in the planned reviewed release. Spaces in the error label no
+  longer bypass the known rejected-account stop rule. The existing AD subclass
+  inherits it; no SCCM collection, graph, timeout or credential choice changed.
+
+- **2026-10-29:** Verified the approved shared per-login EPA isolation and NTLM
+  hash conversion with the unchanged SCCM adapter. The affected 46 tests and real
+  password/hash lab logins passed; adopt both fixes in the planned common release.
+
+- **2026-10-29:** Adopted shared requested-check orchestration and HTML/JSON
+  reports. Comparison exceptions no longer prevent the requested fixture suite;
+  absent/broken reports fail visibly. SCCM fixture and privilege policies stay
+  local. No graph builders, schema, collection defaults or authentication changed.
+- **2026-10-29:** Delegated generic method parsing and suspicious argument hints
+  to common. SCCM retains its own method names, phase policy, option maps, masking
+  rules and permissive unknown-name handling; no new SQL method rules apply here.
+
+- **2026-10-29:** Documented common's opt-in Kerberos/DNS setup controls and
+  verified current consumer behavior. SCCM defaults and graph output are unchanged.
+
+- **2026-10-27:** Adopted the approved shared target indexes, queue and scheduler.
+  SCCM keeps its SID/name merging, allowed-target expansion, phase gates and
+  recursive discovery. Every worker result is checked; failed cleanup or cancelled
+  output now fails the command after active workers finish. The producer thread
+  is joined and its error cannot be hidden by a successful DLT load.
+
+- **2026-10-27:** Kept WMI in process with the approved shared same-host session
+  protection. Complete-object reads now use the same shared cleanup boundary.
+  The earlier owned-worker recommendation is superseded; SCCM's authentication
+  ladder and timeout policy remain unchanged. Live SMS Provider query, lazy
+  permissions and namespace reopening passed with current-user/password auth.
 
 - **2026-10-26:** Documented shared connection-local LDAP ticket authentication,
   without an OS ticket-cache environment change. Recorded the separately reviewed
