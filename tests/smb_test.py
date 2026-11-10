@@ -13,6 +13,8 @@ monkeypatched, so no network is touched.
 """
 import struct
 
+import pytest
+
 from openhound_sccm.clients import smb as smb_client
 from openhound_sccm.collectors import smb
 from openhound_sccm.collectors.smb import _classify_shares
@@ -188,9 +190,13 @@ def test_collect_forwards_full_credential_set_to_connect_smb(monkeypatch):
 # --- signing detection (clients/smb.py): server SecurityMode, NOT RequireSigning
 
 def _smb2_reply(security_mode: int) -> bytes:
-    """A minimal SMB2 NEGOTIATE reply carrying *security_mode* at offset 70."""
-    data = bytearray(72)
+    """A complete fixed NEGOTIATE response, with a server header and framing."""
+    data = bytearray(132)
+    struct.pack_into(">I", data, 0, len(data) - 4)
     data[4:8] = b"\xfeSMB"
+    struct.pack_into("<H", data, 8, 64)  # SMB2 header size.
+    struct.pack_into("<I", data, 20, 1)  # Server-to-client response flag.
+    struct.pack_into("<H", data, 68, 65)  # NEGOTIATE response structure size.
     struct.pack_into("<H", data, smb_client._SECURITY_MODE_OFFSET, security_mode)
     return bytes(data)
 
@@ -205,6 +211,24 @@ def test_parse_security_mode_rejects_short_or_non_smb2():
     bad = bytearray(_smb2_reply(0x0003))
     bad[4:8] = b"\xffSMB"
     assert smb_client._parse_security_mode(bytes(bad)) is None            # not SMB2
+
+
+@pytest.mark.parametrize("offset,format_,value", [
+    (12, "<I", 0xC00000BB),  # STATUS_NOT_SUPPORTED is not a successful negotiation.
+    (16, "<H", 1),           # A different command's body has different fields.
+    (20, "<I", 0),           # A request must not be read as a server reply.
+    (8, "<H", 63),           # Invalid header structure size.
+    (68, "<H", 9),           # SMB2 ERROR body, not a NEGOTIATE body.
+    (0, ">I", 68),           # Framing too short for the fixed response body.
+])
+def test_error_or_unrelated_smb_reply_never_means_signing_disabled(offset, format_, value):
+    reply = bytearray(_smb2_reply(1))
+    struct.pack_into(format_, reply, offset, value)
+    assert smb_client._parse_security_mode(bytes(reply)) is None
+
+
+def test_truncated_negotiate_body_is_unknown():
+    assert smb_client._parse_security_mode(_smb2_reply(1)[:72]) is None
 
 
 def test_build_smb2_negotiate_is_wellformed():

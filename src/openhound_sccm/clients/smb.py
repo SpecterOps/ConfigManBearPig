@@ -41,6 +41,8 @@ _PROBE_DIALECTS = (0x0202, 0x0210, 0x0300, 0x0302, 0x0311)
 # Absolute byte offset of SecurityMode in the response: 4 (NetBIOS) + 64 (SMB2
 # header) + 2 (NEGOTIATE response StructureSize) = 70. (PS1 reads the same offset.)
 _SECURITY_MODE_OFFSET = 70
+# A 64-byte SMB2 header and 64 fixed NEGOTIATE response bytes, plus framing.
+_NEGOTIATE_RESPONSE_SIZE = 132
 
 
 def _build_smb2_negotiate() -> bytes:
@@ -87,11 +89,33 @@ def _build_smb2_negotiate() -> bytes:
 def _parse_security_mode(data: bytes) -> Optional[bool]:
     """Return whether the SMB2 NEGOTIATE *response* requires signing, or None.
 
-    None when the buffer is too short or is not an SMB2 reply (PS1's
-    undetermined path)."""
-    if len(data) < _SECURITY_MODE_OFFSET + 2:
+    Errors and other commands have different bodies. Validate the successful
+    server response before treating any bytes as signing policy (MS-SMB2 2.2.4).
+    """
+    if len(data) < _NEGOTIATE_RESPONSE_SIZE:
+        logger.debug("SMB signing unknown: truncated NEGOTIATE response")
         return None
-    if data[4:8] != b"\xfeSMB":  # SMB2 protocol id at offset 4
+    if data[0] != 0 or data[4:8] != b"\xfeSMB":
+        logger.debug("SMB signing unknown: reply is not a framed SMB2 session message")
+        return None
+    frame_length = int.from_bytes(data[1:4], "big")
+    header_size = struct.unpack_from("<H", data, 8)[0]
+    status = struct.unpack_from("<I", data, 12)[0]
+    command = struct.unpack_from("<H", data, 16)[0]
+    flags = struct.unpack_from("<I", data, 20)[0]
+    body_size = struct.unpack_from("<H", data, 68)[0]
+    if (
+        frame_length < _NEGOTIATE_RESPONSE_SIZE - 4
+        or header_size != 64
+        or status != 0
+        or command != 0
+        or not flags & 1
+        or body_size != 65
+    ):
+        logger.debug(
+            "SMB signing unknown: invalid NEGOTIATE reply (status=0x%08x, command=%d)",
+            status, command,
+        )
         return None
     security_mode = struct.unpack_from("<H", data, _SECURITY_MODE_OFFSET)[0]
     return bool(security_mode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
@@ -111,7 +135,7 @@ def check_smb_signing(hostname: str, timeout: int = 2) -> Optional[bool]:
             sock.settimeout(timeout)
             sock.sendall(_build_smb2_negotiate())
             data = b""
-            while len(data) < _SECURITY_MODE_OFFSET + 2:
+            while len(data) < _NEGOTIATE_RESPONSE_SIZE:
                 chunk = sock.recv(2048)
                 if not chunk:
                     break

@@ -3,11 +3,40 @@
 import logging
 import os
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
 from openhound_collector_common.logging.files import DiagnosticFileHandler, GroupedFileHandler
 from openhound_sccm import main
+
+
+@pytest.mark.parametrize("no_full", [True, False])
+@pytest.mark.parametrize("no_issues", [True, False])
+@pytest.mark.parametrize("silent", [True, False])
+def test_cli_log_choices_preserve_failure_and_hide_disabled_paths(
+    monkeypatch, tmp_path, no_full, no_issues, silent,
+):
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    monkeypatch.setattr(main, "_apply_log_level", lambda *args: None)
+
+    def fail_before_discovery():
+        raise RuntimeError("illustrative failure with file choices")
+
+    monkeypatch.setattr(main, "_warn_for_suspicious_cli_arguments", fail_before_discovery)
+    cli = typer.Typer()
+    cli.command()(main.collect_sccm)
+    arguments = [str(tmp_path)]
+    if no_full:
+        arguments.append("--no-full-log")
+    if no_issues:
+        arguments.append("--no-issues-log")
+    if silent:
+        arguments.append("--silent")
+    result = CliRunner().invoke(cli, arguments)
+    assert result.exit_code == 1
+    assert bool(list(tmp_path.glob("collect_full_*.log"))) is not no_full
+    assert bool(list(tmp_path.glob("collect_issues_*.log"))) is not no_issues
 
 
 def test_collection_failure_closes_diagnostics_and_preserves_redacted_exception(monkeypatch, tmp_path):

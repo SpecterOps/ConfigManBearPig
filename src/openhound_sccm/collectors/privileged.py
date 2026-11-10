@@ -2,7 +2,7 @@
 
 Both transports read the *same* SMS Provider classes — the AdminService REST API
 is a veneer over the SMS Provider's ``root\\SMS\\site_<code>`` WMI namespace — so
-they share one set of ten collection helpers and one orchestrator. The only
+they share one set of collection helpers and one orchestrator. The only
 differences are injected via a :class:`_Run`:
 
   * a ``fetch`` closure that knows the transport (OData GET + pagination, or a
@@ -21,10 +21,12 @@ beyond the site-server/SQL-server/reserved-account principal lookups the PS1 doe
 inline; node/edge construction is a deferred convert stage.
 """
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from time import monotonic
 from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import quote
 from openhound_collector_common.collection.errors import FatalCollectionError
+from openhound_collector_common.collection.outcomes import OperationResult
 
 from ..clients.http import ErrorClass, HttpClient
 from ..clients.http_auth import AuthMode
@@ -71,6 +73,7 @@ class _Run:
     site_code: str
     ctx: SourceContext
     read_instance: Callable[[str, str, int | str], dict[str, Any] | None] | None = None
+    incomplete_reads: set[str] = field(default_factory=set)
 
     def source(self, cls: str) -> str:
         """The ``source`` label for rows of *cls* (e.g. ``AdminService-SMS_Site``)."""
@@ -255,6 +258,7 @@ def _complete_objects(run: _Run, class_name: str, suffix: str, key_field: str,
             logger.debug("%s %s: using supplied details (no individual read available)", run.name, key)
         complete = isinstance(obj.get(detail_field), list)
         if not complete:
+            run.incomplete_reads.add(class_name)
             logger.warning("%s %s %s: %s was not retrieved; related graph results are incomplete",
                            run.name, class_name, key, detail_field)
         else:
@@ -382,7 +386,7 @@ def _http_fetch(client) -> Callable[..., Iterator[dict]]:
             if value is None:
                 logger.warning("AdminService %s: collection incomplete, stopped after %d row(s)",
                                class_name, yielded)
-                return
+                raise RuntimeError(f"AdminService {class_name} read did not complete")
             if not value:
                 return  # genuinely no (more) rows
             yield from value
@@ -436,27 +440,44 @@ def _wmi_identify(client) -> Optional[str]:
 # --- orchestrator + entry points ------------------------------------------
 
 def _collect(run: _Run, target: str) -> Iterator[tuple[str, dict]]:
-    """Run the ten collections in PS1 order, then mark the host complete.
-
-    The completion marker is set *after* the loop (PS1-faithful): a catastrophic
-    escape is caught by the entry point's outer ``except``, leaving the host
-    unmarked so the WMI fallback can retry it.
-    """
+    """Keep successful reads, record individual failures, and leave fallback available."""
+    entry = run.ctx.target_hosts_by_hostname.get(target.lower())
+    phase_complete = True
     for collection in _COLLECTIONS:
+        started = monotonic()
+        row_count = 0
+        failed = False
+        run.incomplete_reads.clear()
         try:
-            yield from collection(run)
+            for table, row in collection(run):
+                row_count += 1
+                yield table, row
         except FatalCollectionError:
             logger.error("%s cleanup/cancellation requires the run to stop on %s", run.name, target)
             raise
         except Exception as ex:  # noqa: BLE001 - one collection failing must not abort the rest
             logger.warning("%s %s failed on %s: %s", run.name, collection.__name__, target, ex)
-    entry = run.ctx.target_hosts_by_hostname.get(target.lower())
-    if entry is not None:
+            failed = True
+        if failed or run.incomplete_reads:
+            phase_complete = False
+            logger.warning("%s %s remains incomplete on %s", run.name, collection.__name__, target)
+        # Successful empty reads are completed operations, not missing data.
+        if entry is not None:
+            operation = f"{run.name}.{collection.__name__.lstrip('_')}"
+            entry.operation_results[operation] = OperationResult(
+                operation, "failed" if failed or run.incomplete_reads else "completed",
+                None if failed or run.incomplete_reads else row_count,
+                int((monotonic() - started) * 1000),
+                "provider_read_incomplete" if failed or run.incomplete_reads else None,
+            )
+        # Canned direct callers can omit registration; they still receive warnings.
+    if entry is not None and phase_complete:
         entry.completed_phases.add(run.name)
         logger.verbose("Marked %s complete on %s", run.name, target)
     else:
-        logger.debug("No TargetEntry for %s; phase-completion gating unavailable", target)
-    logger.info("%s collection completed for %s (site %s)", run.name, target, run.site_code)
+        logger.debug("%s on %s not marked complete; fallback remains available", run.name, target)
+    logger.info("%s collection %s for %s (site %s)", run.name,
+                "completed" if phase_complete else "incomplete", target, run.site_code)
 
 
 def collect_adminservice(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -478,6 +499,7 @@ def collect_adminservice(target: str, ctx: SourceContext) -> Iterable[tuple[str,
         raise
     except Exception as ex:  # noqa: BLE001 - ordinary target failures stay isolated
         logger.error("AdminService collection failed for %s: %s", target, ex)
+        raise  # The phase observer records failure; the engine continues other phases.
     finally:
         client.close()
 
@@ -503,5 +525,6 @@ def collect_wmi(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str
         raise
     except Exception as ex:  # noqa: BLE001 - ordinary target failures stay isolated
         logger.error("WMI collection failed for %s: %s", target, ex)
+        raise  # The phase observer records failure; the engine continues other phases.
     finally:
         client.close()

@@ -130,7 +130,10 @@ def _safe(con: duckdb.DuckDBPyConnection, label: str, sql: str) -> None:
     mirror + http/smb fallback-phase skip) and this module's logger so log
     records stay under `openhound_sccm.transforms`.
     """
-    safe_execute(con, label, sql, expected_miss=_sccm_expected_miss, logger=logger)
+    safe_execute(
+        con, label, sql, expected_miss=_sccm_expected_miss,
+        logger=logger, raise_on_error=True,
+    )
 
 
 def _ensure_columns(
@@ -147,7 +150,7 @@ def _ensure_columns(
     (e.g. ``_arr('sccm_site_system_roles')``, ``coalesce(sccm_infra, false)``);
     ``INSERT ... BY NAME`` only maps *output* aliases, so every referenced source
     column must physically exist or the whole SELECT fails to compile and ``_safe``
-    drops the source. Columns go missing when the source never emits them (e.g.
+    raises the error. Columns go missing when the source never emits them (e.g.
     ldap_cmrc_devices has no roles column) or dlt drops an all-NULL column.
     """
     ensure_columns(con, schema, table, coldefs, logger=logger)
@@ -218,6 +221,20 @@ def _principal_by_name(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     result is deduplicated with SIDs uppercased; names are stored in their
     original casing (callers must upper() both sides when joining on name).
     """
+    # A source can supply one name form while dlt omits the unused alternatives.
+    # Keep each collected form, and leave unavailable identifiers as NULL.
+    for transport in ("adminservice", "wmi"):
+        _ensure_columns(con, schema, f"{transport}_r_system", {"name": "VARCHAR", "sid": "VARCHAR"})
+        _ensure_columns(con, schema, f"{transport}_r_user", {
+            "name": "VARCHAR", "sid": "VARCHAR", "unique_user_name": "VARCHAR",
+            "full_user_name": "VARCHAR", "user_principal_name": "VARCHAR",
+        })
+        _ensure_columns(con, schema, f"{transport}_user_group", {
+            "unique_usergroup_name": "VARCHAR", "sid": "VARCHAR",
+        })
+        _ensure_columns(con, schema, f"{transport}_admins", {
+            "logon_name": "VARCHAR", "admin_sid": "VARCHAR",
+        })
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
     con.execute(f"CREATE OR REPLACE TABLE {schema}.principal_by_name (name VARCHAR, sid VARCHAR)")
 
@@ -2065,6 +2082,21 @@ def _node_group(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     (True wins), sccm_resource_ids are array-unioned, name and
     fallback_domain_sid use any_value (first non-null wins).
     """
+    # dlt omits fields that are absent or NULL in every collected row. Prepare
+    # only the raw fields this builder reads; existing values/types stay intact.
+    # An absent membership list supplies no group evidence, rather than a query error.
+    for transport in ("adminservice", "wmi"):
+        _ensure_columns(con, schema, f"{transport}_r_system", {
+            "sid": "VARCHAR", "security_group_name": "VARCHAR[]", "obsolete": "BOOLEAN",
+        })
+        _ensure_columns(con, schema, f"{transport}_r_user", {
+            "sid": "VARCHAR", "security_group_name": "VARCHAR[]",
+            "resource_id": "BIGINT", "source_site_code": "VARCHAR",
+        })
+        _ensure_columns(con, schema, f"{transport}_admins", {
+            "admin_sid": "VARCHAR", "logon_name": "VARCHAR", "is_group": "BOOLEAN",
+        })
+
     # Staging table: one raw row per source record before collapsing.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_group ("
@@ -3118,9 +3150,11 @@ def _enrich_client_device(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     con.execute("CREATE OR REPLACE TEMP TABLE _dev_sid (smsid VARCHAR, sid VARCHAR)")
     for _rs in ("adminservice_r_system", "wmi_r_system"):
         _ensure_columns(con, schema, _rs, {"sms_unique_identifier": "VARCHAR", "sid": "VARCHAR", "obsolete": "BOOLEAN"})
+        # A column containing only NULL can have an inferred numeric type in a
+        # cached table. Cast identifiers before uppercasing; NULL stays unknown.
         _safe(con, f"_dev_sid<-{_rs}",
               f"INSERT INTO _dev_sid "
-              f"SELECT upper(sms_unique_identifier), upper(sid) "
+              f"SELECT upper(CAST(sms_unique_identifier AS VARCHAR)), upper(CAST(sid AS VARCHAR)) "
               f"FROM {schema}.{_rs} "
               f"WHERE sms_unique_identifier IS NOT NULL AND sid IS NOT NULL "
               f"  AND NOT coalesce(obsolete, false)")
@@ -4818,6 +4852,11 @@ def _edge_has_session(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     from .kinds.edges import HAS_SESSION
 
     # (1) RemoteRegistry: host_object_sid -> the logged-on user's object_sid.
+    # The user can be resolved even when the host SID was unavailable. Keep that
+    # user, but require both observed SIDs before adding a session relationship.
+    _ensure_columns(con, schema, "remoteregistry_users", {
+        "host_object_sid": "VARCHAR", "object_sid": "VARCHAR",
+    })
     _safe(con, "edge_has_session<-remoteregistry_users",
           f"INSERT INTO {schema}.graph_edges BY NAME "
           f"SELECT upper(host_object_sid) AS start_id, upper(object_sid) AS end_id, "

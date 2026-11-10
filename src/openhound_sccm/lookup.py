@@ -8,7 +8,7 @@ reads. Cached point/list lookups (for edge resolution) are added in later stages
 import logging
 from collections.abc import Iterator
 
-from duckdb import DuckDBPyConnection
+from duckdb import DuckDBPyConnection, Error
 from openhound.core.lookup import LookupManager
 
 logger = logging.getLogger(__name__)
@@ -22,21 +22,20 @@ class SCCMLookup(LookupManager):
     def table_rows(self, table: str) -> Iterator[dict]:
         """Yield each row of {schema}.{table} as a column-named dict.
 
-        Uses an independent cursor so this streaming scan never clobbers the active
-        result of other `self._lookup` queries that share the connection.
+        These are prepared tables: preprocessing creates them even when empty.
+        A missing or unreadable table is incomplete work and must reach the caller.
+        An independent cursor protects other scans and is closed on early exit.
         """
         try:
-            cur = self.client.cursor()
-            cur.execute(f"SELECT * FROM {self.schema}.{table}")
-        except Exception as err:
-            # Missing/!readable table — log and yield nothing so a not-yet-built table
-            # can't crash convert.
-            logger.warning("SCCMLookup.table_rows(%r) failed: %s", table, err)
-            return
-        cols = [c[0] for c in cur.description]
-        while True:
-            batch = cur.fetchmany(2000)
-            if not batch:
-                break
-            for row in batch:
-                yield dict(zip(cols, row))
+            with self.client.cursor() as cur:
+                cur.execute(f"SELECT * FROM {self.schema}.{table}")
+                cols = [c[0] for c in cur.description]
+                while True:
+                    batch = cur.fetchmany(2000)
+                    if not batch:
+                        break  # An exhausted successful query has no more rows.
+                    for row in batch:
+                        yield dict(zip(cols, row))
+        except Error as err:
+            logger.error("Required prepared table %r could not be read: %s", table, err)
+            raise

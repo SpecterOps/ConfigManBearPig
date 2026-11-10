@@ -1,5 +1,6 @@
 # src/openhound_sccm/lookup_test.py
 import duckdb
+import pytest
 from openhound_sccm.lookup import SCCMLookup
 
 
@@ -19,7 +20,16 @@ def test_table_rows_yields_dicts(tmp_path):
     assert rows == [{"id": "SPIKE-1", "name": "spike"}]
 
 
-def test_table_rows_missing_table_is_empty(tmp_path):
+def test_table_rows_missing_required_table_raises(tmp_path):
     client = duckdb.connect(_db(tmp_path), read_only=True)
     lookup = SCCMLookup(client)
-    assert list(lookup.table_rows("does_not_exist")) == []
+    with pytest.raises(duckdb.CatalogException):
+        list(lookup.table_rows("does_not_exist"))
+    client.close()
+
+
+def test_empty_prepared_table_is_a_successful_empty_result():
+    with duckdb.connect(":memory:") as client:
+        client.execute("CREATE SCHEMA sccm")
+        client.execute("CREATE TABLE sccm.node_site (id VARCHAR)")
+        assert list(SCCMLookup(client).table_rows("node_site")) == []

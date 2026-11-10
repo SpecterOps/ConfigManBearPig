@@ -24,6 +24,25 @@ from .log_context import get_logger
 
 logger = get_logger(__name__)
 
+SUPPORTED_COLLECTION_METHODS = (
+    "LDAP", "Local", "DNS", "RemoteRegistry", "MSSQL", "AdminService", "WMI", "HTTP", "SMB",
+)
+
+
+def validate_collection_methods(value: str | None) -> None:
+    """Reject unsupported requested methods before discovery or authentication."""
+    selection = parse_methods(value)
+    unknown = selection.names - {"all", *(name.casefold() for name in SUPPORTED_COLLECTION_METHODS)}
+    if unknown or (not selection.is_all and not selection.names):
+        message = (
+            f"Unsupported collection method(s): {', '.join(sorted(unknown))}. "
+            if unknown else "No collection method was selected. "
+        )
+        message += "Choose All or " + ", ".join(SUPPORTED_COLLECTION_METHODS)
+        logger.error(message)
+        raise ValueError(message)
+    logger.debug("Collection methods validated: %s", value or "All")
+
 
 def _as_multivalued_list(value: Any) -> list:
     """Normalize an ``_entry_to_dict``-sourced multi-valued LDAP attribute
@@ -90,7 +109,6 @@ class SourceContext:
     # Behaviour flags persisted at collect time so preproc/convert can gate
     # "possible" nodes/edges without re-reading the CLI (separate runs).
     disable_possible_edges: bool = False
-    enable_bad_opsec: bool = False
 
     # Public, injectable — shared across the run via the module-level _shared_*
     # pattern in source.py. ``work_queue`` is the phased_pipeline.WorkQueue that
@@ -173,8 +191,8 @@ class SourceContext:
 
         The value is a comma-separated list of method names (case-insensitive),
         matching CMBP's ``-m`` flag. ``"All"`` (the default) enables every
-        method. Unknown method names are ignored so callers can pass in
-        arbitrary labels without crashing the pipeline.
+        method. The CLI and source validate the requested names before collection;
+        this method only checks whether a particular phase was selected.
         """
         return parse_methods(self.collection_methods).includes(method)
 

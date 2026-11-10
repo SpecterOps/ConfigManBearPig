@@ -25,6 +25,8 @@ from openhound_sccm.main import _FLAG_TO_ENV, collect_sccm
 # re-adding one makes these tests fail loudly, which is the reminder to also file it
 # into a panel.
 REMOVED_PARAMS = [
+    "enable_bad_opsec",
+    "show_cleartext_passwords",
     # The six inert CRED-2 / machine-account flags dropped during the --help reorg.
     "machine_name",
     "machine_pass",
@@ -65,7 +67,6 @@ EXPECTED_PANEL = {
     "socks_proxy": "Collection",
     "http_proxy": "Collection",
     "dns_resolver": "Collection",
-    "enable_bad_opsec": "Collection",
     # Performance
     "threads": "Performance",
     # Output — what the run produces / how the graph + console present it.
@@ -74,7 +75,6 @@ EXPECTED_PANEL = {
     "progress": "Output",
     "version": "Output",
     "disable_possible_edges": "Output",
-    "show_cleartext_passwords": "Output",
     "tables": "Output",
     "columns": "Output",
     "data_type": "Output",
@@ -85,6 +85,8 @@ EXPECTED_PANEL = {
     # Logging
     "verbose": "Logging",
     "silent": "Logging",
+    "no_full_log": "Logging",
+    "no_issues_log": "Logging",
     "debug": "Logging",
 }
 
@@ -182,6 +184,8 @@ def test_help_renders_all_panels():
 def test_help_omits_removed_flags():
     out = _help_output()
     for flag in (
+        "--enable-bad-opsec",
+        "--show-cleartext-passwords",
         "--machine-name",
         "--machine-pass",
         "--client-name",

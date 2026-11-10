@@ -37,12 +37,6 @@ credentials:
   - name: ticket
     description: "Base64-encoded Kerberos ticket (.kirbi) for pass-the-ticket authentication (--ticket)."
     required: false
-  - name: machine-pass
-    description: "Machine account password for authenticating as the collector's computer account (--machine-pass)."
-    required: false
-  - name: bloodhound-token
-    description: "BloodHound CE API token for direct upload (-B/--bloodhound, or --token-id/--token-key and their BLOODHOUND_* env vars)."
-    required: false
 
 parameters:
   - name: domain

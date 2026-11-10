@@ -12,6 +12,14 @@ priority: 2
 
 Five areas to address:
 
+**2026-11-09 review:** The requested read-only review is complete. Its seven
+confirmed findings, evidence, and required fixes are recorded in
+[the completion plan](../docs/superpowers/plans/2026-11-09-sccm-extension-completion.md).
+Implementation is not complete; keep this ticket in progress. The review passed
+283 focused tests, Ruff, and mypy using the sibling common-library source. Live
+Windows/WSL and BloodHound acceptance remain undone. Avoid a broad unrelated
+rewrite; improve readability and branch diagnostics within the approved work.
+
 1. Conditional logging: every non-trivial 'if' branch that skips a record, returns, or falls through should have an 'else'/'elif' (or inline) log statement explaining why. Use debug for optional/missing fields, warning for unexpected/degraded conditions, verbose for noisy per-entry paths. Skip pure entry guard clauses and tight inner loops that would flood output.
 
 2. Exception handling: ensure exceptions are caught and handled at appropriate boundaries. No bare 'except:' clauses; catch specific exceptions, log them with context, and avoid swallowing errors silently. A per-record failure should log and continue rather than abort the whole collection.

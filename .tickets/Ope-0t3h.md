@@ -12,6 +12,16 @@ tags: [sccm, cred-1, elevate-1, client-push, credentials]
 
 # Client Push Installation Issues (CRED-1 / ELEVATE-1)
 
+## Current completion scope (2026-11-09)
+
+[The completion plan](../docs/superpowers/plans/2026-11-09-sccm-extension-completion.md)
+includes configuration analysis and configured account identities only. No password
+recovery, installation trigger, or authentication coercion is included. Leave paths
+out until actual settings are checked; unavailable settings mean unassessed. Verify
+the fields, prerequisites, and graph design before implementation. This supersedes
+the historical API fields, placeholder relationships, and secret-recovery acceptance
+criteria below.
+
 Collect and model client push installation configuration to surface NTLM coercion and credential exposure risks. Client push causes site servers to authenticate outbound to target computers, enabling NTLM relay (CRED-1). Automatic site-wide client push lets any new domain computer trigger outbound auth. Client push accounts are stored credentials in the site control file (ELEVATE-1).
 
 ## Design

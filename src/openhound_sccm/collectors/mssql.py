@@ -8,7 +8,7 @@ Checks MSSQL database servers for:
 import logging
 from typing import Any, Iterable
 
-from ..clients.mssql_epa import test_epa
+from ..clients.mssql_epa import EPAPrereqError, test_epa
 from ..context import SourceContext
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,7 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
         logger.info("MSSQL port %d is open", port)
 
     epa_result = None
+    epa_error: EPAPrereqError | None = None
     credential_guard = getattr(ctx, "credential_guard", None)
     if port_open and credential_guard is not None and credential_guard.is_rejected:
         # Each EPA probe is a sign-in. Once the run's password was rejected,
@@ -134,17 +135,22 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
         # Probe EPA enforcement using the credential ladder (explicit creds -> SSPI ->
         # ticket-only WARNING+skip -> skip). Skipped when the port is closed -- there
         # is nothing listening to probe.
-        epa_result = test_epa(
-            target=target,
-            port=port,
-            remote_name=target,
-            domain=ctx.domain,
-            username=ctx.username,
-            password=ctx.password,
-            nt_hash=ctx.nt_hash,
-            kerberos_ticket=ctx.kerberos_ticket,
-            spns=spns,
-        )
+        try:
+            epa_result = test_epa(
+                target=target,
+                port=port,
+                remote_name=target,
+                domain=ctx.domain,
+                username=ctx.username,
+                password=ctx.password,
+                nt_hash=ctx.nt_hash,
+                kerberos_ticket=ctx.kerberos_ticket,
+                spns=spns,
+            )
+        except EPAPrereqError as error:
+            # Save independent host/SPN evidence before reporting the failed read.
+            logger.warning("EPA measurement incomplete for %s:%d: %s", target, port, error)
+            epa_error = error
 
     force_encryption = None
     extended_protection = None
@@ -183,4 +189,7 @@ def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[s
         "service_account_name": service_account_name,
     }
 
+    if epa_error is not None:
+        logger.error("SQL host facts saved for %s:%d; EPA measurement remains incomplete", target, port)
+        raise epa_error
     logger.info("MSSQL collection completed for %s:%d", target, port)

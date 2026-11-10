@@ -12,6 +12,15 @@ tags: [sccm, adminservice, rbac, permissions]
 
 # Individual Permissions (Port from PowerShell)
 
+## Current completion scope (2026-11-09)
+
+[The completion plan](../docs/superpowers/plans/2026-11-09-sccm-extension-completion.md)
+includes custom-role permission analysis again, superseding the earlier deferral.
+Keep the built-in role shortcuts and role-specific relationships. New permission
+relationships must remain separate and include supporting permissions and scopes.
+Exact routes, names, and schema still need review. Historical placeholder edge
+names below are not approved implementation instructions.
+
 Port granular SCCM RBAC permission collection from ConfigManBearPig.ps1 to the Python/OpenHound implementation. The PS1 script collects which AD principals have which SCCM security roles on which collections, mapping to SMS_Admin, SMS_Role, SMS_SecuredCategory, and SMS_Collection. The OpenHound model includes SCCM_AdminUser, SCCM_SecurityRole, SCCM_Collection node kinds but no RBAC edge collection.
 
 ## Design

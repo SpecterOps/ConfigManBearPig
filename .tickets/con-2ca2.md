@@ -1,6 +1,6 @@
 ---
 id: con-2ca2
-status: open
+status: in_progress
 deps: []
 links: [con-be15]
 created: 2026-07-31T19:37:56Z
@@ -10,6 +10,24 @@ tags: [preproc, diagnostics, transforms, testing]
 ---
 
 # _safe silently swallows BinderException, turning transform bugs into no-ops
+
+## Current completion scope (2026-11-09)
+
+Implementation now opts into genuine SQL-error propagation. Focused tests pass,
+but broader testing exposed an existing missing-field assumption in `_node_group`:
+`adminservice_r_system.security_group_name` may be absent. The owner approved
+related missing-field corrections on 2026-11-10. The corrections pass 53 focused
+checks and the 179 combined foundation checks; full completion acceptance remains
+open. See
+`docs/changes/2026-11-09-completion-foundation.md` for the reproducer and evidence.
+
+The owner resolved the policy decision: unexpected incomplete requested results
+must produce nonzero final status after usable output is saved. Genuine SQL errors
+already log at ERROR; the remaining defect is success status despite missing work.
+[The completion plan](../docs/superpowers/plans/2026-11-09-sccm-extension-completion.md)
+proposes opt-in shared error propagation and local required-table checks, preserving
+expected optional-source handling. The owner has now approved the concrete
+shared proposal and instructed implementation to begin; final validation remains.
 
 _safe() (transforms.py:91, over the shared safe_execute) exists so a transform whose SOURCE TABLE is missing logs and skips instead of failing the run -- legitimate, since privilege level determines which tables exist. But it treats a genuine SQL coding error the same way: a BinderException from a column TYPE mismatch is swallowed and the transform silently becomes a no-op.\nThis is not hypothetical -- it shipped a broken fix during con-be15. A new gate used list_filter() on remoteregistry_computers.sccm_site_system_roles, which dlt lands as JSON rather than VARCHAR[]. list_filter cannot bind on JSON, so the statement raised BinderException, _safe swallowed it, and the gate did nothing in production while its unit tests (whose fixture wrongly declared VARCHAR[]) all passed. Nothing in the collect_full log even named the transform -- grepping the label returned zero hits -- so there was no trail to follow.\nWhy it matters beyond that one bug: every transform in this module is wrapped in _safe, so ANY type-mismatch typo anywhere in preprocess degrades to missing graph data with a green test suite and a silent log. The failure mode is invisible by construction.\nFIX DIRECTION: distinguish 'source table/column absent' (expected, keep skipping and logging as today) from 'statement failed to bind or execute for any other reason' (a bug -- log at ERROR naming the transform and the exception, and consider re-raising outside the expected-miss set). At minimum the label must appear in the log so the skip is greppable.
 

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from openhound_collector_common.collection.outcomes import OperationResult
+
 
 @dataclass
 class TargetEntry:
@@ -23,3 +25,8 @@ class TargetEntry:
     # single worker running this target's phase sequence writes it (phases run
     # back-to-back in one thread), so no lock is needed.
     completed_phases: set = field(default_factory=set)
+    # One worker owns a computer's phase sequence. Keep completed and failed
+    # attempts separately so WMI can recover an AdminService read without erasing
+    # the account of what happened. These records contain fixed labels, not secrets.
+    operation_results: dict[str, OperationResult] = field(default_factory=dict)
+    saved_row_count: int = 0

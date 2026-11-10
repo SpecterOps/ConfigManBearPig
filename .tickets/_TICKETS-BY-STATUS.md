@@ -5,32 +5,34 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**152 tickets** — 6 in progress · 31 open · 115 closed
+**152 tickets** — 10 in progress · 27 open · 115 closed
 
-## In progress (6)
+## In progress (10)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
+| [`con-6f42`](con-6f42.md) | 1 | task | Complete the agreed SCCM extension scope | sccm, completion, planning, review |
 | [`ope-60fe`](ope-60fe.md) | 1 | task | Publish ConfigManBearPig 2.0 and openhound-collector-common to PyPI | publishing, packaging, sccm |
+| [`Ope-emhc`](Ope-emhc.md) | 1 | feature | Implement --enable-bad-opsec Gating | sccm, opsec |
 | [`Ope-liu7`](Ope-liu7.md) | 1 | feature | System Management Container Abuse | sccm, ldap, acl, takeover |
 | [`Ope-rhzx`](Ope-rhzx.md) | 1 | feature | Individual Permissions (Port from PowerShell) | sccm, adminservice, rbac, permissions |
+| [`con-2ca2`](con-2ca2.md) | 2 | bug | _safe silently swallows BinderException, turning transform bugs into no-ops | preproc, diagnostics, transforms, testing |
 | [`con-68c2`](con-68c2.md) | 2 | task | Standardize test filenames on *_test.py, pin the glob, retire docs-site scaffolding -type chore -priority 2 -tags tests,cleanup,naming,docs -descri... | — |
 | [`con-907c`](con-907c.md) | 2 | task | Rebaseline fixture expected values on the full lab + add host-level SEC assertions | testing, integration, fixtures, lab |
 | [`ope-1f0f`](ope-1f0f.md) | 2 | task | Code-Quality Pass: Conditional Logging, Exception Handling, Variable Scope, Linting & Cleanup -type chore -priority 2 -assignee Mayyhem -tags sccm,... | — |
+| [`ope-00df`](ope-00df.md) | 3 | task | Add --no-diagnostics-log / --no-collect-log to suppress on-disk logs individually | — |
 
-## Open (31)
+## Open (27)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
 | [`Ope-0t3h`](Ope-0t3h.md) | 1 | feature | Client Push Installation Issues (CRED-1 / ELEVATE-1) | sccm, cred-1, elevate-1, client-push, credentials |
-| [`Ope-emhc`](Ope-emhc.md) | 1 | feature | Implement --enable-bad-opsec Gating | sccm, opsec |
 | [`Ope-o6bh`](Ope-o6bh.md) | 1 | feature | DHCP Collection and PXE Credential Theft Chain (CRED-1) | sccm, dhcp, pxe, cred-1, credentials |
 | [`Ope-t7kv`](Ope-t7kv.md) | 1 | feature | CRED-2: Machine Account Registration and Policy Decryption (HTTP) | sccm, cred-2, http, credentials |
 | [`Ope-txs0`](Ope-txs0.md) | 1 | feature | Search Other Discovered Domains via LDAP | sccm, ldap, multi-domain |
 | [`Ope-zaja`](Ope-zaja.md) | 1 | feature | Relay to Management Point | sccm, http, relay, takeover |
 | [`con-0289`](con-0289.md) | 2 | bug | Integration fixtures cannot be gated on possible-edges, so low-priv + --disable-possible-edges reports 4 false failures | sccm, integration, fixtures, possible-edges |
 | [`con-0394`](con-0394.md) | 2 | task | Positively identify a secondary site or site server as a plain domain user | sccm, lowpriv, secondary, discovery |
-| [`con-2ca2`](con-2ca2.md) | 2 | bug | _safe silently swallows BinderException, turning transform bugs into no-ops | preproc, diagnostics, transforms, testing |
 | [`con-7b9e`](con-7b9e.md) | 2 | bug | Fix System Management ACL Full Control filtering in deprecated PowerShell collector | powershell, sccm, ldap, acl |
 | [`con-96e3`](con-96e3.md) | 2 | feature | Connect reported management points to clients and classify direct Tier Zero serving infrastructure | sccm, graph, management-point, distribution-point, tier-zero, privilege-zones, findings |
 | [`con-c542`](con-c542.md) | 2 | task | Tag fixture cases from measured privileged/unprivileged A/B | testing, integration, fixtures, lowpriv |
@@ -46,12 +48,10 @@ Regenerate after any status change rather than editing by hand.
 | [`Ope-pofz`](Ope-pofz.md) | 2 | feature | Add --skip-ad-enum option to suppress AD-derived object creation | — |
 | [`con-53eb`](con-53eb.md) | 3 | task | Emit BUILTIN\Administrators as sysadmin on an SCCM-installed Express secondary site database | sccm, mssql, secondary, bloodhound |
 | [`con-d061`](con-d061.md) | 3 | task | Investigate emitting SCCM default collections as soon as a site is known | sccm, graph, collections, design |
-| [`ope-00df`](ope-00df.md) | 3 | task | Add --no-diagnostics-log / --no-collect-log to suppress on-disk logs individually | — |
 | [`ope-6b93`](ope-6b93.md) | 3 | task | Local-only/low-priv collector host gets no SCCM_ClientDevice node (CMBP builds it via Local Upsert-Node) | sccm, clientdevice, lowpriv, collection |
 | [`ope-90fc`](ope-90fc.md) | 3 | task | Collapse duplicate cross-site SCCMResourceIDs to a root/parent-site-suffixed canonical entry | — |
 | [`ope-a214`](ope-a214.md) | 3 | task | SCCM edge Composition property + admin-user AssignAllPermissions gap | sccm, graph, edges, composition, entity-panel |
 | [`ope-e10b`](ope-e10b.md) | 3 | task | Emit SCCM_HasNetworkAccessAccount from Local collection (NAA from client WMI) | sccm, edge, local-collection, naa |
-| [`Ope-exvi`](Ope-exvi.md) | 3 | feature | Findings / Remediations | sccm, findings, reporting |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
 ## Closed (115)

@@ -1,7 +1,6 @@
 """The ordered SCCM per-host phases and the tables they write.
 
-For this framework build the phases point at stub collectors; each is replaced
-by a real collector in its own follow-up ticket. Phase names double as the
+The phases point at the implemented protocol collectors. Phase names double as the
 ``--collection-methods`` gating tokens (matching ConfigManBearPig.ps1's
 ``$script:PhasesPerHost``), so the engine's gate is simply
 ``ctx.method_enabled(phase.name)``.
@@ -48,7 +47,7 @@ PER_HOST_PHASES: tuple[Phase, ...] = (
         ), privileged.collect_adminservice,
     ),
     # WMI shares privileged.py's collection helpers (same collections, same
-    # order) over DCOM, and runs only when AdminService could not reach the host
+    # order) over DCOM, and runs when AdminService could not complete the host's reads
     # (see should_run_phase).
     Phase(
         "WMI", (
@@ -100,7 +99,7 @@ def should_run_phase(target: str, phase: Phase, ctx) -> bool:
     """Engine ``should_run`` hook: method gating plus the WMI-is-a-fallback rule.
 
     WMI mirrors AdminService over DCOM, so it only earns its keep when
-    AdminService could not be reached on this host. Skip it once AdminService has
+    AdminService could not complete this host's reads. Skip it once AdminService has
     completed here (recorded on the shared ``TargetEntry.completed_phases``).
     This is the pipeline-native place for the gate — the same hook that already
     enforces ``--collection-methods`` — so the collector stays a plain

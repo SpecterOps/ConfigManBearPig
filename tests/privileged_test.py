@@ -144,9 +144,14 @@ class _FakeHttp:
         if self.error_class is not ErrorClass.RESPONSE:
             return HttpResult(None, None, self.error_class)
         cls = path.split("wmi/", 1)[1].split("?", 1)[0]
-        rows = self.pages.get(cls)
+        base_class, separator, key = cls.partition("(")
+        rows = self.pages.get(base_class)
         if rows is None:
             return HttpResult(404, b"", ErrorClass.RESPONSE)
+        if separator:
+            key = key.rstrip(")").strip("'")
+            field = "RoleID" if base_class == "SMS_Role" else "AdminID"
+            rows = [row for row in rows if str(row.get(field)) == key]
         top = _qint(path, "$top")
         skip = _qint(path, "$skip") or 0
         page = rows[skip:skip + top] if top else rows
@@ -235,8 +240,9 @@ ALL_CLASSES = {
     "SMS_R_User": [{"Name": "u", "SID": "S-2"}],
     "SMS_Collection": [{"CollectionID": "C1", "Name": "All"}],
     "SMS_FullCollectionMembership": [{"CollectionID": "C1", "ResourceID": 1}],
-    "SMS_Role": [{"RoleID": "R1", "RoleName": "Full Admin"}],
-    "SMS_Admin": [{"AdminID": 1, "LogonName": "MAYYHEM\\a"}],
+    "SMS_Role": [{"RoleID": "R1", "RoleName": "Full Admin", "Operations": []}],
+    "SMS_Admin": [{"AdminID": 1, "LogonName": "MAYYHEM\\a", "Permissions": []}],
+    "SMS_R_UserGroup": [],
     "SMS_SCI_SysResUse": [{"NetworkOSPath": "\\\\ps1", "RoleName": "MP", "Props": []}],
 }
 EXPECT_AS = {f"adminservice_{s}" for s in ("sites", "site_definitions", "reserved_accounts",

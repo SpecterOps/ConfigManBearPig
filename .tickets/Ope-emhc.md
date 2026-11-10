@@ -1,6 +1,6 @@
 ---
 id: Ope-emhc
-status: open
+status: in_progress
 deps: []
 links: []
 created: 2026-05-28T13:28:55Z
@@ -11,6 +11,14 @@ tags: [sccm, opsec]
 ---
 
 # Implement --enable-bad-opsec Gating
+
+## Current completion scope (2026-11-09)
+
+The owner chose removal of inactive `--enable-bad-opsec` and
+`--show-cleartext-passwords` options and their unused settings. Secret-recovery
+features remain deferred. [The completion plan](../docs/superpowers/plans/2026-11-09-sccm-extension-completion.md)
+supersedes the historical implementation/gating design below; do not implement
+those deferred operations to make the options functional.
 
 Wire up the --enable-bad-opsec flag to gate operations that are detectable or disruptive. The flag is fully defined in the CLI and propagated into SourceContext but no code checks ctx.enable_bad_opsec. The flag help text mentions NAA decryption as an example but the gate is never evaluated.
 

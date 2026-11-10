@@ -271,7 +271,7 @@ glue that `StreamBridge` can't provide, in [`source.py`](src/openhound_sccm/sour
   [Where this code lives](#where-this-code-lives-the-shared-collector-common-library).)
 
 A second framework-shaped problem: DLT builds most scalar `source()` settings via **config injection**
-(`dlt.config.value` / `dlt.secrets.value`; see [source.py:237-261](src/openhound_sccm/source.py#L237-L261)).
+(`dlt.config.value` / `dlt.secrets.value`; see [source.py](src/openhound_sccm/source.py)).
 The HTTP proxy is passed explicitly so ambient `HTTP_PROXY` cannot bind it by accident.
 There is **no constructor** through which to hand the source live Python objects (the shared work
 queue, the AD-resolution cache, the stream registry). The extension threads them through **module-level
@@ -296,6 +296,24 @@ Stage 2 — Per-host (engine thread pool + emit-resource drain)
 
 Stage 1 is selected with `src.with_resources(*DISCOVERY_RESOURCE_NAMES)`
 ([main.py](src/openhound_sccm/main.py)); Stage 2 is the engine + emit pass.
+
+### Completion and fallback evidence
+
+`collection_status.observe_phase` wraps the existing phases with common
+`OperationResult` records; it does not change the shared scheduler. The target
+entry retains each attempt and the number of yielded rows, including rows saved
+before a later failure. The privileged collector also records each logical read.
+An HTTP page failure or unavailable role/assignment detail leaves that read
+incomplete and does not set the transport's completion marker, so WMI remains
+eligible. A completed matching WMI read recovers the AdminService failure; the
+original attempt remains in the record. Successful zero-row reads are complete.
+
+After collection, `save_run_status` writes `collection_status_<timestamp>.json`
+using common `RunResult` and `TargetResult`. It contains fixed operation labels
+and failure categories, not credentials, query text, or raw exception messages.
+The CLI runs requested later stages over usable data and then returns nonzero
+if requested reads remain missing. Fatal cleanup, cancellation, rejected
+credentials, or output-writer failures retain their existing stop behavior.
 
 ### Trade-offs
 
@@ -472,11 +490,19 @@ be decoupled.
 
 ### The add-on: an allow-list applied at the registration funnel
 
-- `--computers` and `--computer-file` feed [`_expand_allowed_targets`](src/openhound_sccm/source.py#L42-L59),
+An explicitly supplied computer file is validated before connection-context
+discovery in `main.py`, and again before source construction in `source.py`.
+`_read_computer_file` accepts UTF-8 with or without a Windows BOM, strips blank
+lines, and rejects missing, unreadable, undecodable, or empty files. An invalid
+file never becomes an empty restriction, even when `--computers` is also present.
+The validated seed names are reused after discovery. Omitting the file remains
+an intentional choice to use the other target inputs or unrestricted discovery.
+
+- `--computers` and `--computer-file` feed [`_expand_allowed_targets`](src/openhound_sccm/source.py),
   which lowercases each name **and** adds its short-name form so a host matches whether it's later seen as
   an FQDN or a NetBIOS name. The lowercased, short-name-expanded set is assembled at
-  [source.py:278-285](src/openhound_sccm/source.py#L278-L285) and handed to `SourceContext.allowed_targets`
-  ([source.py:303](src/openhound_sccm/source.py#L303)).
+  [source.py](src/openhound_sccm/source.py) and handed to `SourceContext.allowed_targets`
+  ([source.py](src/openhound_sccm/source.py)).
 - [`_is_allowed_target`](src/openhound_sccm/context.py) (CMBP's `Test-AllowedTarget`) is checked
   inside `register_target`: an **empty** allow-list means *allow all* (pure discovery mode), and a
   non-empty one rejects any host whose candidate name forms don't intersect it — logging the skip rather
@@ -611,6 +637,15 @@ and real DLT selection passed 75 checks. Adopting these limits in SCCM would be 
 separate behavior change; see common's
 `docs/changes/2026-10-29-connection-setup-limits.md`.
 
+**Explicit Windows boundaries.** Common's COM cancellation and native LDAP socket
+cancellation check `sys.platform` before loading a Windows library. Accidental
+direct use on another platform logs and raises a clear `RuntimeError`. Valid
+Windows calls retain their existing ownership, cleanup, and authentication
+behavior. The direct conditions also let Linux's code checker exclude those
+Windows-only calls. The owner approved these bounded shared corrections during
+WSL verification; six new selection tests and the 91 affected checks pass on both
+systems. See `docs/changes/2026-11-09-completion-foundation.md` for evidence.
+
 ### The framework baseline
 
 OpenHound's auth story is REST auth: attach an OAuth/bearer token (or basic auth) to an HTTPS request.
@@ -716,6 +751,14 @@ A few specifics worth calling out, because they show how much harder this is tha
 
 ## 7. Enhanced logging and diagnostics for blind remote environments
 
+The independent `--no-full-log` and `--no-issues-log` switches pass
+`write_full`/`write_issues` to common's `RunFileLogs`; both outputs default to on.
+With full output disabled there is no grouped handler, spool, or completion
+callback. With issues output disabled the existing diagnostics handler counts
+warnings/errors without formatting or writing records. Console silence remains
+independent. Disabled paths are omitted from final output summaries and from the
+shared run's owned-file list. Counts never decide whether collection succeeded.
+
 The full/issues handlers and their scoped lifecycle now live in common's
 `logging.files`, selected by `collect_sccm` through `RunFileLogs`. The default
 SCCM line layout, delayed issues file, warning/error counters, companion debug
@@ -738,6 +781,11 @@ collector uses the same helper. SCCM keeps its existing console formatter; the
 new common Go-style formatter is opt-in and is not selected here. This bounded
 extraction is part of the approved SQL completion initiative and awaits the
 combined consumer checks before release.
+
+Common's terminal-color helper likewise uses a direct `sys.platform` condition
+before Windows console setup. Other terminals need no Windows console API. This
+keeps platform-specific code checks accurate while retaining the selected
+formatter's behavior.
 
 ### The framework baseline
 
@@ -1056,6 +1104,12 @@ checks that changing the file helper does not change SCCM's graph.
 
 ## 10. dlt loads whatever the data contains; our SQL expects fixed columns
 
+`transforms._safe` opts into common's `raise_on_error=True`. A missing optional
+raw table keeps its existing logged skip; a genuine SQL error is logged and
+raised to the command. Prepared conversion tables are required, even when empty:
+`SCCMLookup.table_rows` logs and raises a database failure rather than converting
+it to zero rows, and closes its separate cursor on normal or interrupted scans.
+
 ### The framework baseline
 
 In `preproc`, **dlt** is the piece that turns the collected JSONL files into DuckDB tables. It does this
@@ -1084,9 +1138,10 @@ SCCM data is the opposite of uniform. It is **sparse and irregular**:
 Meanwhile our `preproc` coalesce SQL (the queries that merge many source tables into one
 `node_*` row) is written the **opposite way**: it asks for a **fixed, known list of columns by name**
 (`SELECT sid, sccm_site_system_roles, disable_loopback_check, …`). When the real data is missing one of
-those columns, the SQL **can't even compile** — it fails before reading a single row. And because every
-source-load is wrapped in `_safe` (which logs the error and moves on), one missing column **silently drops
-the entire source**, so the finished graph is quietly incomplete.
+those columns, the SQL **can't even compile** — it fails before reading a single row.
+`_safe` skips absent source tables, but logs and raises genuine query errors. The
+builder must therefore prepare the optional fields it reads rather than letting
+a normal absence become a failed command.
 
 Put simply: **dlt hands us "whatever the data happened to contain," but our SQL demands "exactly this set
 of columns."** On real SCCM data those two expectations collide constantly.
@@ -1094,24 +1149,30 @@ of columns."** On real SCCM data those two expectations collide constantly.
 ### The add-on: three small defenses that make the SQL tolerant
 
 All three live in [`transforms.py`](src/openhound_sccm/transforms.py) and run during `preproc`, *after* dlt
-has loaded the tables. The easy way to remember them: **`_safe` keeps the pipeline alive, `_ensure_columns`
-makes the columns exist, `_arr` makes the values the right shape.**
+has loaded the tables. **`_safe` distinguishes absent sources from query errors,
+`_ensure_columns` makes optional columns exist, and `_arr` makes list values usable.**
 
-1. **`_safe` — the safety net** ([transforms.py:90](src/openhound_sccm/transforms.py#L92)). Each "load
-   source X into table Y" step runs as its own statement. If it fails, `_safe` **logs it and keeps going**
-   instead of aborting the whole preproc. This is what lets a run that used only some collection methods
-   still build a graph from whatever *was* collected. It mainly catches the missing-*table* case (a table
-   that doesn't exist at all).
+1. **`_safe` — classify statement failures** ([transforms.py](src/openhound_sccm/transforms.py)).
+   Each source contribution runs as its own statement. An absent raw source table
+   is logged and skipped, allowing collection with only selected methods. Genuine
+   SQL errors are logged and raised; they must not silently remove graph data.
 
-2. **`_ensure_columns` — fill the gaps** ([transforms.py:101](src/openhound_sccm/transforms.py#L103)). Right
+2. **`_ensure_columns` — fill the gaps** ([transforms.py](src/openhound_sccm/transforms.py)). Right
    before each coalesce, it looks at the source table and **adds any missing columns the SQL needs as empty
    (NULL) columns**. So whether a column vanished because dlt dropped it (all-NULL) or because that source
    never had it, the column now exists and the SQL compiles. Adding a column the SQL doesn't actually read
-   is harmless; a column that's already there keeps its real values. This is the piece that stops `_safe`
-   from silently dropping a source just because one optional column went missing.
+   is harmless; a column that's already there keeps its real values and type.
+   `_principal_by_name` prepares alternative name/SID fields, and `_node_group`
+   prepares group lists and their supporting identifiers before reading them.
+   An unknown group list supplies no membership evidence; existing JSON lists
+   remain untouched. `_edge_has_session` likewise prepares the two optional
+   RemoteRegistry SIDs and requires both before emitting a session. The client
+   SID lookup casts identifiers to text before uppercasing, so an all-NULL field
+   inferred as numeric stays unknown without breaking the query. Prepared tables
+   are still required rather than manufactured when missing.
 
 3. **`_arr` (and `CAST(... AS VARCHAR[])`) — fix the shapes**
-   ([transforms.py:124](src/openhound_sccm/transforms.py#L126)). List-like columns arrive in several shapes:
+   ([transforms.py](src/openhound_sccm/transforms.py)). List-like columns arrive in several shapes:
    a native list, a JSON array, JSON-array *text* inside a plain column, or a single scalar string. `_arr`
    turns **all of them into a real list** so DuckDB operations like `UNNEST` and array-union work. Without
    it, `UNNEST` on a JSON value errors out with "requires a single list as input." (The specific role-column
@@ -1131,8 +1192,9 @@ dlt's "freeze" rule **crashed the whole collect** instead of adapting (the `ldap
 So there is a real fork in the road, and we chose the tolerant side:
 
 - **Pin at load** → strict and tidy, but any unexpected real-world shape is a **hard crash**.
-- **Defend in the SQL** (our choice) → flexible; an unexpected shape becomes a **logged, survivable skip**
-  — or, with `_ensure_columns`, no problem at all.
+- **Defend in the SQL** (our choice) → prepare known optional fields and list
+  shapes where they are read. Absent sources are logged and skipped; other SQL
+  errors stop preprocessing rather than silently dropping data.
 
 Given how much SCCM environments vary, the tolerant approach is the safer default.
 
@@ -1140,9 +1202,11 @@ Given how much SCCM environments vary, the tolerant approach is the safer defaul
 
 - The defenses are **spread across every coalesce**. Each new node/edge stage must remember to list its
   optional columns for `_ensure_columns` and route every list column through `_arr`. Forget one and a source
-  can silently drop on some future data. This is guarded by tests and by the log lines below.
-- **`_safe` is a double-edged sword.** It keeps the run alive, but it can also *hide* a real problem by
-  dropping a source. `_ensure_columns` exists largely to stop `_safe` from catching things it shouldn't.
+  can fail on some future data. Tests and error propagation make that visible.
+- **Optional data and query errors need different treatment.** `_ensure_columns`
+  handles known optional fields explicitly; `_safe` does not turn a broken query
+  into a successful run. Adding NULLs to arbitrary misspelled fields would hide
+  bugs, so each builder names only the actual optional raw fields it reads.
 - **Reading the log is the diagnostic.** `WARNING … skipped (missing source)` means a table that was never
   collected — usually a method you simply didn't run, which is normal. `ERROR … failed` means a table that
   *was* collected but still didn't load — that's the one worth chasing.
@@ -1285,7 +1349,7 @@ A final dedup pass (`_graph_edges_dedup`) in the `graph_edges` preproc query gro
 
 Stage 4 adds two new edge kinds and a pre-edge dedup pass, all of which interact closely with the `node_client_device` table built by Stages 2–3.
 
-**`_dedup_client_device` — merge real+inferred twins before edges are built.** After `_enrich_client_device` resolves `ad_domain_sid` on real clients (from `SMS_R_System`) and inferred clients carry it from the CmRcService SPN's `object_sid`, the table can contain two rows for the same physical host: a real client (`is_confirmed_active_client = True`, id = SMSID) and its inferred twin (`is_confirmed_active_client = False`, id = `<SID>@root`). `_dedup_client_device` ([transforms.py:1531](src/openhound_sccm/transforms.py#L1533)) groups by `ad_domain_sid` (with a NULL-isolation guard so unresolved real clients are never grouped together), ranks the real client first, and keeps only the top-ranked row. Array columns (`collection_ids`, `collection_names`) are unioned across the group before the inferred row is discarded, so no data is lost. Critically, this runs **before** `_graph_edges_init` and all edge builders — so every edge is built from the deduped table and references only survivors, with no `graph_edges` rewrite needed afterward. This is a deliberate divergence from CMBP's order, where the merge happens after edges are built (`ps1:2269-2311`).
+**`_dedup_client_device` — merge real+inferred twins before edges are built.** After `_enrich_client_device` resolves `ad_domain_sid` on real clients (from `SMS_R_System`) and inferred clients carry it from the CmRcService SPN's `object_sid`, the table can contain two rows for the same physical host: a real client (`is_confirmed_active_client = True`, id = SMSID) and its inferred twin (`is_confirmed_active_client = False`, id = `<SID>@root`). `_dedup_client_device` ([transforms.py](src/openhound_sccm/transforms.py)) groups by `ad_domain_sid` (with a NULL-isolation guard so unresolved real clients are never grouped together), ranks the real client first, and keeps only the top-ranked row. Array columns (`collection_ids`, `collection_names`) are unioned across the group before the inferred row is discarded, so no data is lost. Critically, this runs **before** `_graph_edges_init` and all edge builders — so every edge is built from the deduped table and references only survivors, with no `graph_edges` rewrite needed afterward. This is a deliberate divergence from CMBP's order, where the merge happens after edges are built (`ps1:2269-2311`).
 
 **`_edge_same_host` — bidirectional Computer ↔ SCCM_ClientDevice.** After dedup, each surviving `SCCM_ClientDevice` row whose `ad_domain_sid` matches a `Computer` node's `sid` gets two `SCCM_SameHostAs` edges (one in each direction). This gives BloodHound paths in both directions (CMBP `ps1:2314-2320`). Because dedup runs first, the edge builder always sees the canonical survivor, never the discarded inferred twin.
 
@@ -1548,7 +1612,7 @@ probe in this file.
   ([`_CCMSETUP_VERSION_RE`](src/openhound_sccm/collectors/http.py#L147-L151)) matching the
   `5.XX.XXXX.XXXX` pattern SCCMVersionGuesser uses; a hit is emitted as one row to a new raw table,
   `http_site_versions` (`site_code`, `sccm_version`, `source="HTTP-ccmsetup"`, `mp_host`).
-- `preprocess`'s [`_coalesce_http_site_version`](src/openhound_sccm/transforms.py#L1226-L1243) LEFT
+- `preprocess`'s [`_coalesce_http_site_version`](src/openhound_sccm/transforms.py) LEFT
   JOINs this table onto `node_site` and coalesces **privileged-first**
   (`coalesce(ns.version, hv.http_version)`) — AdminService/WMI's `version` always wins when both are
   known; the HTTP fingerprint only fills sites that yielded no privileged version. This must run as
@@ -1557,7 +1621,7 @@ probe in this file.
   ([models/sccm_site.py](src/openhound_sccm/models/sccm_site.py)) calls
   `cve_table.lookup_cves(version)` to populate the new `SCCM_Site.versionCVEs` property (the
   SCCMVersionGuesser build/CVE map, `cve_table.BUILD_MAP` / `CVE_MAP`), and
-  [`_edge_coerce_relay_adminservice`](src/openhound_sccm/transforms.py#L2882-L2898) reads the same
+  [`_edge_coerce_relay_adminservice`](src/openhound_sccm/transforms.py) reads the same
   version to **suppress** the `SCCM_CoerceAndRelayToAdminService` edge on sites confirmed to be SCCM 2509+
   (build ≥ `cve_table.ADMINSERVICE_NTLM_MIN_BUILD` = 9141 — the build where the AdminService starts
   rejecting NTLM). An unknown/unparseable version fails **open**: the edge is kept as a possible edge
@@ -1603,14 +1667,14 @@ device-referenced principals, and so on. `resolve_principal` already caches ever
 `SourceContext.resolved_principals`.
 
 At the end of the per-host stage, a new DLT resource, `ldap_resolved_principals`
-([source.py:227](src/openhound_sccm/source.py#L227)), drains that accumulator into a raw table — one
+([source.py](src/openhound_sccm/source.py)), drains that accumulator into a raw table — one
 row per uniquely-resolved AD object, regardless of which phase resolved it. `preprocess`'s
-`_derive_ad_props` ([transforms.py:267](src/openhound_sccm/transforms.py#L269)) builds a
+`_derive_ad_props` ([transforms.py](src/openhound_sccm/transforms.py)) builds a
 `sid -> AD-attribute` lookup table (`ad_props`) from it — deriving `Enabled` from the
 `userAccountControl` `ACCOUNTDISABLE` bit, `Type` from the last `objectClass` element (title-cased),
 and always setting `IsDomainPrincipal = True` (every row in this table was, by construction,
 actually resolved against AD) — and `_join_ad_props`
-([transforms.py:341](src/openhound_sccm/transforms.py#L343)) LEFT JOINs it onto `node_computer`,
+([transforms.py](src/openhound_sccm/transforms.py)) LEFT JOINs it onto `node_computer`,
 `node_user`, and `node_group` by SID, before those tables reach `convert`.
 
 > **CRITICAL: resolved-principals-only, not a domain-wide sweep.** This reaches only the principals
@@ -1624,7 +1688,7 @@ actually resolved against AD) — and `_join_ad_props`
 > every AD-native node in the graph carries them.
 
 **Trade-off.** `ldap_resolved_principals` is itself a best-effort finalization table whose own
-`pipeline.run` is allowed to fail without aborting the collect ([transforms.py:276](src/openhound_sccm/transforms.py#L278)),
+`pipeline.run` is allowed to fail without aborting the collect ([main._run_per_host_stage](src/openhound_sccm/main.py)),
 so it may be absent on some runs. `_derive_ad_props` treats it like any other optional source
 (`_ensure_columns` backfills missing/all-NULL columns, `_safe` logs and skips outright absence),
 leaving `ad_props` created-but-empty rather than raising, so `_join_ad_props`'s LEFT JOINs always
@@ -2365,6 +2429,24 @@ took a separate, manual step outside `openhound collect sccm`.
 ---
 
 ## Changelog
+
+- **2026-11-10:** Corrected the optional-field assumptions exposed by strict
+  preprocessing errors. Principal/group builders prepare their known optional
+  raw fields, session construction requires both SIDs, and client SID lookup
+  handles an all-NULL identifier inferred as numeric. Existing collected values
+  are preserved; missing evidence does not create memberships or sessions.
+  WSL checks also led to approved shared Windows-only API conditions and a
+  numbered-file ordering correction in the graph-writer test. The 91 affected
+  shared checks, lint, and native type checks pass on Windows and Linux.
+
+- **2026-11-09:** Began the approved completion foundation. Explicit target files
+  fail validation before network discovery; unsupported collection methods fail
+  early and inactive secret-recovery flags are removed. SMB signing uses only a
+  successful NEGOTIATE response; common's SQL EPA classifier rejects inconclusive
+  probes. Added independent full/issues file choices, explicit per-read outcomes
+  with WMI recovery, and nonzero completion for unrecovered work. Genuine SQL
+  preprocessing errors and unreadable required conversion tables now propagate.
+  See `docs/changes/2026-11-09-completion-foundation.md` for scope and evidence.
 
 - **2026-10-30:** A computer the directory cannot confirm is visited once, by its full name,
   approved by the owner ("We shouldn't be visiting a computer by its short name if the fqdn is

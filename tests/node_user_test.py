@@ -44,6 +44,10 @@ def test_node_user_unions_r_user_and_remoteregistry():
     sid, name, rids = rows[0]
     assert sid == "S-1-5-21-1-2-3-1106"
     assert rids == ["9@PS1"]
+    # Knowing the user alone must not invent a host-to-user session.
+    assert con.execute(
+        "SELECT count(*) FROM sccm.graph_edges WHERE kind = 'HasSession'"
+    ).fetchone() == (0,)
 
 
 def test_node_user_sccm_infra_from_admins():

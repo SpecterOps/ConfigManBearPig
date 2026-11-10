@@ -232,7 +232,6 @@ def collection_settings_rows(ctx):
     gate possible nodes/edges without re-reading the CLI (the flags are collect-time)."""
     yield {
         "disable_possible_edges": bool(getattr(ctx, "disable_possible_edges", False)),
-        "enable_bad_opsec": bool(getattr(ctx, "enable_bad_opsec", False)),
     }
 
 

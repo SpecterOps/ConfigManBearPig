@@ -12,13 +12,17 @@ tags: [sccm, http, relay, takeover]
 
 # Relay to Management Point
 
-Model NTLM relay attack paths targeting the SCCM management point AdminService API. If NTLM is accepted on AdminService (https://<MP>/AdminService/) without Extended Protection, a relay from a coerced site server allows executing AdminService operations as the site server computer account, which typically has site admin rights. References: Misconfiguration Manager TAKEOVER-1, TAKEOVER-2.
+**Deferred by the owner on 2026-11-09.** This feature is outside the current SCCM extension completion effort. Keep the ticket open for future work; this decision does not authorize implementation or active testing.
 
-## Design
+## Corrected scope
 
-Collect AdminService NTLM/EPA configuration via HTTP: attempt anonymous OPTIONS request and parse WWW-Authenticate header for EPA token requirement. Collect IIS Extended Protection config on MP host via registry or WMI. Store in http_management_points preproc table: { ntlm_accepted, epa_required, https_enforced }. In transforms.py: emit EX_RelayToMP edge when site server has SMB signing disabled AND MP accepts NTLM without EPA. Add finding: AdminService accepts NTLM without Extended Protection -> CRITICAL.
+The intended technique is Garrett Foster's [I'd Like to Speak to Your Manager: Stealing Secrets with Management Point Relays](https://specterops.io/blog/2025/07/15/id-like-to-speak-to-your-manager-stealing-secrets-with-management-point-relays/), published July 15, 2025, with the related [mssqlkaren tool](https://github.com/garrettfoster13/mssqlkaren).
 
-## Acceptance Criteria
+The attack coerces authentication from a remote management point and relays it to the SCCM site database's SQL service. The management point's database permissions allow policy retrieval, potentially exposing network access account, task-sequence, and collection-settings secrets. The management point supplies the relayed identity; the site database is the relay destination.
 
-MP EPA status is collected and stored. Relay-feasible paths emitted as edges. Finding generated for unprotected MPs.
+This is separate from the existing `SCCM_CoerceAndRelayToAdminService` relationship, which models site-server authentication relayed to an SMS Provider's AdminService. The ticket's previous AdminService/IIS design, placeholder `EX_RelayToMP` edge, and acceptance criteria described the wrong technique and are superseded by this scope correction.
+
+## Before resuming
+
+Agree what the collector should detect and model, which prerequisites can be established from collected evidence, and the graph relationships and verification required. Modelled exposure and actual secret recovery need separate decisions; secret recovery is also deferred from the current effort. No new edge name, graph schema, finding, or implementation design is approved by this note.
 

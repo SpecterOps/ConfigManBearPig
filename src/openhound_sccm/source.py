@@ -8,7 +8,7 @@ from openhound_collector_common.clients.credential_guard import CredentialGuard
 from openhound_collector_common.dlt.source_bridge import StreamBridge
 
 from .clients.ad import ADClient, ADCredentials
-from .context import SourceContext
+from .context import SourceContext, validate_collection_methods
 from .main import app
 from .models.raw_table import raw_table_asset
 from .per_host_phases import PER_HOST_PHASES, all_table_names
@@ -38,6 +38,22 @@ logger = logging.getLogger(__name__)
 def _parse_csv_option(value: str | None) -> set[str]:
     """Return a stripped set of tokens from a comma-separated CLI value."""
     return {token for raw in (value or "").split(",") if (token := raw.strip())}
+
+
+def _read_computer_file(path: str | pathlib.Path) -> list[str]:
+    """Read an explicit target file, refusing to turn bad input into no restriction."""
+    try:
+        # utf-8-sig accepts ordinary UTF-8 and the BOM written by Windows editors.
+        lines = pathlib.Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeError) as error:
+        logger.error("Cannot read computer file %s: %s", path, error)
+        raise ValueError(f"Cannot read computer file {path}: {error}") from error
+    targets = [name for line in lines if (name := line.strip())]
+    if not targets:
+        logger.error("Computer file %s contains no computer targets", path)
+        raise ValueError(f"Computer file {path} contains no computer targets")
+    logger.debug("Read %d computer targets from %s", len(targets), path)
+    return targets
 
 
 def _expand_allowed_targets(names: Iterable[str]) -> set[str]:
@@ -252,9 +268,7 @@ def source(
     site_codes: str | None = dlt.config.value,
     # Behavior
     disable_possible_edges: bool | None = dlt.config.value,
-    enable_bad_opsec: bool | None = dlt.config.value,
     threads: int | None = dlt.config.value,
-    show_cleartext_passwords: bool | None = dlt.config.value,
     # Network
     http_proxy: str | None = None,
     # DNS
@@ -262,10 +276,9 @@ def source(
 ):
     # Normalize to handle None values and set defaults
     collection_methods = collection_methods or "All"
+    validate_collection_methods(collection_methods)
     disable_possible_edges = bool(disable_possible_edges)
-    enable_bad_opsec = bool(enable_bad_opsec)
     threads = threads if threads is not None else 1
-    show_cleartext_passwords = bool(show_cleartext_passwords)
     from .clients.http import parse_http_proxy
     try:
         http_proxy = parse_http_proxy(http_proxy)
@@ -278,11 +291,8 @@ def source(
     # matching works regardless of how a discovered host is later presented.
     allowed = _expand_allowed_targets(_parse_csv_option(computers))
     if computer_file:
-        p = pathlib.Path(computer_file)
-        if p.exists():
-            allowed |= _expand_allowed_targets(p.read_text().splitlines())
-        else:
-            logger.warning("Computer file not found, ignoring: %s", p)
+        allowed |= _expand_allowed_targets(_read_computer_file(computer_file))
+    # With no file, explicit computer names alone define the restriction.
 
     creds = ADCredentials(
         domain=domain,
@@ -313,7 +323,6 @@ def source(
         dns_resolver=dns_resolver,
         http_proxy=http_proxy,
         disable_possible_edges=disable_possible_edges,
-        enable_bad_opsec=enable_bad_opsec,
     )
 
     # Stash so collect_sccm can reuse this exact context for the per-host stage.

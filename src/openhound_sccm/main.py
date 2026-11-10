@@ -169,9 +169,7 @@ _FLAG_TO_ENV: dict[str, str] = {
     "site_codes": "SOURCES__SCCM__SITE_CODES",
     # Behavior
     "disable_possible_edges": "SOURCES__SCCM__DISABLE_POSSIBLE_EDGES",
-    "enable_bad_opsec": "SOURCES__SCCM__ENABLE_BAD_OPSEC",
     "threads": "SOURCES__SCCM__THREADS",
-    "show_cleartext_passwords": "SOURCES__SCCM__SHOW_CLEARTEXT_PASSWORDS",
     # Network
     "socks_proxy": "SOURCES__SCCM__SOCKS_PROXY",
     "http_proxy": "SOURCES__SCCM__HTTP_PROXY_CONFIG",
@@ -183,8 +181,6 @@ _TYPED_DLT_ENV = {
     "SOURCES__SCCM__LDAP_PORT",
     "SOURCES__SCCM__THREADS",
     "SOURCES__SCCM__DISABLE_POSSIBLE_EDGES",
-    "SOURCES__SCCM__ENABLE_BAD_OPSEC",
-    "SOURCES__SCCM__SHOW_CLEARTEXT_PASSWORDS",
 }
 
 
@@ -754,13 +750,14 @@ class _ImpacketNoiseFilter(logging.Filter):
 
 def _cli_seed_targets(computers: Optional[str], computer_file) -> list[str]:
     """Hostnames given on the command line, to seed onto the work queue."""
+    from .source import _read_computer_file
+
     hosts: list[str] = []
     if computers:
         hosts.extend(token.strip() for token in computers.split(",") if token.strip())
     if computer_file:
-        p = pathlib.Path(computer_file)
-        if p.exists():
-            hosts.extend(line.strip() for line in p.read_text().splitlines() if line.strip())
+        hosts.extend(_read_computer_file(computer_file))
+    # An omitted file is intentional; supplied files must always be valid.
     return hosts
 
 
@@ -830,6 +827,7 @@ def _run_per_host_stage(pipeline, work_queue, ctx, threads, maxsize: int = 1000,
     from openhound_collector_common.dlt.source_bridge import StreamBridge, extract_workers_for
 
     from . import source as _source
+    from .collection_status import observe_phase
     from .log_context import fire_host_complete
     from .per_host_phases import PER_HOST_PHASES, all_table_names, should_run_phase
     from .phased_pipeline import run_pipeline
@@ -840,6 +838,7 @@ def _run_per_host_stage(pipeline, work_queue, ctx, threads, maxsize: int = 1000,
     if phases is None:
         phases = PER_HOST_PHASES
     table_names = all_table_names(phases)
+    phases = [observe_phase(phase) for phase in phases]
     # The shared StreamBridge owns this run's bounded per-table queues (the
     # backpressure bound) and the blocking drain. The engine pushes rows onto
     # bridge.streams; the emit resources (via source._drain_stream) drain them.
@@ -980,7 +979,7 @@ def collect_sccm(
     # ---- Collection ----
     collection_methods: Optional[str] = typer.Option(
         None, "-m", "--collection-methods", rich_help_panel="Collection",
-        help="Comma-separated methods: All, LDAP, Local, DNS, DHCP, RemoteRegistry, MSSQL, AdminService, WMI, HTTP, SMB.",
+        help="Comma-separated methods: All, LDAP, Local, DNS, RemoteRegistry, MSSQL, AdminService, WMI, HTTP, SMB.",
     ),
     computers: Optional[str] = typer.Option(None, "-c", "--computers", rich_help_panel="Collection", help="Comma-separated computer targets."),
     computer_file: Optional[pathlib.Path] = typer.Option(None, "--cf", "--computer-file", rich_help_panel="Collection", help="File with computer targets (one per line)."),
@@ -1005,7 +1004,6 @@ def collect_sccm(
              "A bare host uses port 80; other protocols stay direct.",
     ),
     dns_resolver: Optional[str] = typer.Option(None, "--dns", "--dns-resolver", rich_help_panel="Collection", help="DNS nameserver IP for all lookups (DC discovery, SRV probes). Omit to use system default."),
-    enable_bad_opsec: bool = typer.Option(False, "--enable-bad-opsec", rich_help_panel="Collection", help="Enable bad-opsec operations (NAA decryption, etc.)."),
     # ---- Performance ----
     threads: int = typer.Option(10, "-t", "--threads", rich_help_panel="Performance", help="Number of machines collected concurrently (per-host worker pool size; default 10)."),
     # ---- Output ----
@@ -1032,10 +1030,8 @@ def collect_sccm(
         False, "--version", callback=_show_version, is_eager=True, rich_help_panel="Output",
         help="Show the installed ConfigManBearPig version and exit.",
     ),
-    # --disable-possible-edges and --show-cleartext-passwords change what the
-    # graph/console shows, so they sit under Output alongside the dlt contracts.
+    # --disable-possible-edges changes the graph, so it belongs with Output.
     disable_possible_edges: bool = typer.Option(False, "--disable-possible-edges", rich_help_panel="Output", help="Disable uncertain/possible edges."),
-    show_cleartext_passwords: bool = typer.Option(False, "--show-cleartext-passwords", rich_help_panel="Output", help="Display cleartext passwords when discovered."),
     tables: Contract = typer.Option(Contract.evolve, rich_help_panel="Output", help="Contract for newly-seen resources/tables."),
     columns: Contract = typer.Option(Contract.evolve, rich_help_panel="Output", help="Contract for unknown fields."),
     data_type: Contract = typer.Option(Contract.freeze, rich_help_panel="Output", help="Contract for type mismatches."),
@@ -1062,11 +1058,13 @@ def collect_sccm(
         None, "--compare-to-zip", rich_help_panel="Testing",
         help="Implies --run-all, then deep-diff this run's graph (A) against an arbitrary node/edge "
              "payload B (a CMBP zip or another OpenHound run). Reports property-level differences and "
-             "writes compare-<ts>.json. Informational: always exits 0.",
+             "writes compare-<ts>.json. Exits nonzero when a regression is found.",
     ),
     # ---- Logging ----
     verbose: bool = typer.Option(False, "-v", "--verbose", rich_help_panel="Logging", help="Verbose console output (VERBOSE level: PS1 [Verbose] parity — per-resolution / per-node-add / per-edge dedupe traces). Default is INFO (step summaries)."),
-    silent: bool = typer.Option(False, "--silent", rich_help_panel="Logging", help="Silence all console output. The on-disk logs are still written: collect_full_* (always the complete DEBUG trace of the collector) and collect_issues_* (warnings/errors with tracebacks)."),
+    silent: bool = typer.Option(False, "--silent", rich_help_panel="Logging", help="Silence all console output. File logging is controlled separately by --no-full-log and --no-issues-log."),
+    no_full_log: bool = typer.Option(False, "--no-full-log", rich_help_panel="Logging", help="Disable the full DEBUG log and its temporary spool. Full logging is on by default."),
+    no_issues_log: bool = typer.Option(False, "--no-issues-log", rich_help_panel="Logging", help="Disable the warnings/errors file; counts and failure status remain. Issues logging is on by default."),
     debug: bool = typer.Option(False, "--debug", rich_help_panel="Logging", help="Debug console output (DEBUG level; very chatty, includes dlt and ldap3 internals)."),
 ) -> Optional[LoadInfo]:
     # --dc-only forces LDAP+DNS and skips per-host probing. Resolve it first so a
@@ -1086,6 +1084,7 @@ def collect_sccm(
     # so mypy's possibly-undefined check (enabled in pyproject) is satisfied on every
     # path, including the one where collection raises before any counts exist.
     collect_counts: dict[str, int] = {}
+    incomplete_collection = False
 
     _ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1094,7 +1093,10 @@ def collect_sccm(
     _parameters = locals().copy()
     _log_secrets = tuple(value for name, value in _parameters.items() if is_secret_field(name) and isinstance(value, str) and value)
     _log_secrets += tuple(value for name, value in os.environ.items() if name.startswith("SOURCES__SCCM__") and is_secret_field(name) and value)
-    with RunFileLogs(output_path, run_id=_ts, namespaces=("openhound_sccm", "openhound_collector_common"), secrets=_log_secrets) as _file_logs:
+    with RunFileLogs(
+        output_path, run_id=_ts, namespaces=("openhound_sccm", "openhound_collector_common"),
+        secrets=_log_secrets, write_full=not no_full_log, write_issues=not no_issues_log,
+    ) as _file_logs:
         log_path = _file_logs.issues_path
         _ordered_log_path = _file_logs.full_path
         _diag = _file_logs.issues
@@ -1116,6 +1118,23 @@ def collect_sccm(
             flag_kwargs["kerberos_ticket"] = flag_kwargs.pop("ticket", None)
             _apply_env_overrides(flag_kwargs)
             _drop_empty_dlt_env_values()
+            from .context import validate_collection_methods
+
+            try:
+                validate_collection_methods(os.environ.get("SOURCES__SCCM__COLLECTION_METHODS"))
+            except ValueError as error:
+                logger.error("Invalid collection methods: %s", error)
+                raise typer.Exit(2) from error
+            # Validate explicit target files before even DNS/DC discovery. Keep
+            # these seeds so the file is not silently ignored later in the run.
+            try:
+                cli_targets = _cli_seed_targets(
+                    os.environ.get("SOURCES__SCCM__COMPUTERS"),
+                    os.environ.get("SOURCES__SCCM__COMPUTER_FILE"),
+                )
+            except ValueError as error:
+                logger.error("Invalid collection targets: %s", error)
+                raise typer.Exit(2) from error
             # Parse + validate the proxy BEFORE connection-context auto-detect, so
             # the --dc/--dns check sees the user's flags (not an auto-filled DC) and
             # so DC discovery itself runs inside the tunnel.
@@ -1195,7 +1214,7 @@ def collect_sccm(
                 # Seed CLI-specified targets through the same register_target path, so
                 # the allow-list / resolution / dedup is identical for them.
                 if per_host_ctx is not None:
-                    for host in _cli_seed_targets(computers, computer_file):
+                    for host in cli_targets:
                         per_host_ctx.register_target(host, source="CLI")
 
                 # Stage 2 — per-host collection: a worker pool runs each target's phases
@@ -1231,6 +1250,12 @@ def collect_sccm(
             # Keep the merged counts for --integration-privilege auto below; the summary
             # above merges the same two dicts for display, this keeps them for a decision.
             collect_counts = _merge_row_counts(discovery_counts, per_host_counts)
+            if per_host_ctx is not None:
+                from .collection_status import save_run_status
+
+                result = save_run_status(per_host_ctx, output_path, _ts)
+                incomplete_collection = result.has_incomplete_work
+            # Without a source context there are no per-host outcomes to record.
         except typer.Exit:
             raise  # Preserve intentional command statuses.
         except Exception as error:
@@ -1246,7 +1271,7 @@ def collect_sccm(
             # It stays attached across preprocess/convert so their WARNING/ERROR records
             # reach collect_issues_*.log (con-2ca2). The grouped full log finishes: its job
             # is the collect phase's host/resource bucketing, which has no meaning here.
-            if _ordered_log_path.exists():
+            if not no_full_log and _ordered_log_path.exists():
                 logger.info("Full log: %s", _ordered_log_path)
             if _diag.warning_count or _diag.error_count:
                 w, e = _diag.warning_count, _diag.error_count
@@ -1256,7 +1281,7 @@ def collect_sccm(
                 if e:
                     parts.append(f"{e} ERROR{'s' if e != 1 else ''}")
                 detail = ", ".join(parts)
-                if log_path.exists():
+                if not no_issues_log and log_path.exists():
                     logger.warning(
                         "%s detected. Traceback details available in: %s",
                         detail, log_path,
@@ -1293,7 +1318,9 @@ def collect_sccm(
                 # operator doesn't have to scroll back through the collect/preproc/convert
                 # logs to find where each output landed.
                 _log_all_output_locations(
-                    output_path, _paths, _ordered_log_path, log_path,
+                    output_path, _paths,
+                    _ordered_log_path if not no_full_log else None,
+                    log_path if not no_issues_log else None,
                     _diag.warning_count + _diag.error_count,
                 )
                 # --compare-to-zip and --run-integration-tests both need the graph convert
@@ -1311,9 +1338,13 @@ def collect_sccm(
                             integration_privilege, collect_counts
                         ) if run_integration_tests else None,
                     )
-                    raise typer.Exit(code=code)
+                    raise typer.Exit(code=max(code, int(incomplete_collection)))
             else:
                 logger.debug("--run-all not set; leaving preprocess/convert to the operator.")
+            if incomplete_collection:
+                logger.error("Usable output was saved, but requested collection work remains incomplete")
+                raise typer.Exit(code=1)
+            # A complete collection and successful requested later stages exit normally.
         except typer.Exit:
             raise  # Preserve the combined comparison/integration status.
         except Exception as error:
@@ -1642,8 +1673,8 @@ def _run_e2e_after_collect(
 def _log_all_output_locations(
     output_path: pathlib.Path,
     paths: "StagePaths",
-    collect_log_path: pathlib.Path,
-    collect_diag_path: pathlib.Path,
+    collect_log_path: pathlib.Path | None,
+    collect_diag_path: pathlib.Path | None,
     diag_issue_count: int,
 ) -> None:
     """Log a consolidated list of every artifact a ``--run-all`` run produced.
@@ -1673,11 +1704,11 @@ def _log_all_output_locations(
     # if collection produced records, and the diagnostics file (delay=True) only
     # if a WARNING+ was emitted — so a clean run has no diagnostics file to list.
     # Each line is therefore guarded on existence.
-    if collect_log_path.exists():
+    if collect_log_path is not None and collect_log_path.exists():
         logger.info("    Full log:            %s", collect_log_path)
     else:
         logger.debug("Full log not found at %s; omitting from summary.", collect_log_path)
-    if collect_diag_path.exists():
+    if collect_diag_path is not None and collect_diag_path.exists():
         note = (
             f"{diag_issue_count} warning(s)/error(s), with tracebacks"
             if diag_issue_count
