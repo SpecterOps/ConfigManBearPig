@@ -89,14 +89,116 @@ success, and the failed sign-in counter stayed at 0.
 
 ## Manual verification
 
+Last run exactly as written: November 4, 2026, on ps1-dev as
+`MAYYHEM\domainadmin`. The commands were copied from this section and run in
+order in one fresh PowerShell session. Every result matched what is shown here.
+Step 5 took about 20 seconds.
+
+### Before you start
+
+- Use ps1-dev, signed in to Windows as `MAYYHEM\domainadmin`, and open a new
+  PowerShell window. Paste the steps in order into that one window, because
+  later steps reuse what earlier steps saved, such as `$out`.
+- The collection runs as `MAYYHEM\lowpriv`, first with a wrong password. The
+  lab domain never locks accounts, so this is safe. The counter checks run as
+  you, `domainadmin`.
+- Every `uv run` command includes
+  `--with-editable C:\Users\domainadmin\openhound-collector-common`. That tells
+  uv to use your local copy of the shared library for that one command. This
+  change needs shared-library code that hasn't been published yet. Without it,
+  uv uses the published copy, and the commands fail with
+  `ModuleNotFoundError: No module named 'openhound_collector_common. ...'`.
+  Once the shared library is published with these changes, that part can be
+  dropped.
+- Each run saves its results in a new folder in your Windows temp folder, named
+  with the time. So runs never mix, and nothing is added to the repository.
+
+### Step 1: Run the wrong-password tests
+
 ```powershell
-uv run pytest tests/credential_stop_test.py tests/ad_rejection_test.py tests/principal_resolution_referral_test.py -q
-# In the lab: one failed sign-in and exit code 1.
-uv run openhound collect sccm .\out-wrong -d mayyhem.com --dc dc.mayyhem.com -u "MAYYHEM\lowpriv" -p "deliberately-wrong" -c ps1-sms.mayyhem.com
-$LASTEXITCODE
+Set-Location C:\Users\domainadmin\ConfigManBearPig
+uv run --locked --with-editable C:\Users\domainadmin\openhound-collector-common pytest tests\credential_stop_test.py tests\ad_rejection_test.py tests\principal_resolution_referral_test.py -q
 ```
 
-Evidence in the private feature work folder: `sccm-wrong-password-run-count-lab.txt`
-(before), `sccm-wrong-password-run-count-after-fix-lab.txt` (after) and
-`correct-password-run-check-lab.txt`, from `tests/sccm_wrong_password_run_count.ps1`
-and `tests/correct_password_run_check.ps1`.
+**You should see** `19 passed` on the last line.
+
+### Step 2: Start lowpriv's failed sign-in count at 0
+
+This signs in once as `lowpriv` with the correct password, which resets the
+domain controller's count.
+
+```powershell
+.\tests\scripts\reset_failed_sign_in_count.ps1 -Account lowpriv -Password password
+```
+
+**You should see** `Failed sign-ins counted for lowpriv: 0`.
+
+### Step 3: Collect two computers with a wrong password
+
+```powershell
+$out = "$env:TEMP\openhound-checks\sccm-wrong-password-$(Get-Date -Format yyyyMMdd-HHmmss)"
+uv run --locked --with-editable C:\Users\domainadmin\openhound-collector-common openhound collect sccm $out -d mayyhem.com --dc dc.mayyhem.com -u "MAYYHEM\lowpriv" -p "deliberately-wrong" -c ps1-sms.mayyhem.com,ps1-mp.mayyhem.com
+$LASTEXITCODE
+Select-String -Path "$out\collect_full_*.log" -Pattern 'rejected' | ForEach-Object { $_.Line -replace '^.*msg=', '' }
+```
+
+**You should see** `1`, meaning the run failed, and then these lines from the
+run's log:
+
+```text
+The LDAP bind was rejected
+The domain controller dc.mayyhem.com rejected the supplied sign-in details; stopping the whole run so the account is not tried again
+Stopping target scheduling: The supplied sign-in details were rejected; no further sign-ins were attempted
+The sign-in details were rejected before any computer was visited
+The supplied sign-in details were rejected or could not be used. Nothing was collected and no other sign-in was attempted. Check the user name and password, then run again.
+```
+
+### Step 4: Count the failed sign-ins
+
+```powershell
+.\tests\scripts\get_failed_sign_in_count.ps1 -Account lowpriv
+```
+
+**You should see** `Failed sign-ins counted for lowpriv: 1`. Before this
+change, the same run cost 82: every collection method on both computers tried
+the wrong password.
+
+### Step 5: With the correct password, nothing is stopped and nothing is counted
+
+This collects one computer for real, so it takes longer than step 3.
+
+```powershell
+.\tests\scripts\reset_failed_sign_in_count.ps1 -Account lowpriv -Password password
+$out = "$env:TEMP\openhound-checks\sccm-correct-password-$(Get-Date -Format yyyyMMdd-HHmmss)"
+uv run --locked --with-editable C:\Users\domainadmin\openhound-collector-common openhound collect sccm $out -d mayyhem.com --dc dc.mayyhem.com -u "MAYYHEM\lowpriv" -p "password" -c ps1-sms.mayyhem.com
+$LASTEXITCODE
+.\tests\scripts\get_failed_sign_in_count.ps1 -Account lowpriv
+```
+
+**You should see:**
+
+- `Failed sign-ins counted for lowpriv: 0` after the reset;
+- `0` when the collection finishes, meaning it succeeded;
+- `Failed sign-ins counted for lowpriv: 0` again.
+
+### What these steps prove
+
+- **One wrong password costs one failed sign-in per run, however many
+  computers and collection methods there are.** Step 4 shows 1 where there
+  used to be 82.
+- **The run reports failure.** Step 3 ends with `1`.
+- **A correct password is not mistaken for a wrong one.** In step 5, the run
+  finishes and the count stays at 0.
+
+### Clean up
+
+Step 5 already left the count at 0. To delete the saved check results:
+
+```powershell
+Remove-Item "$env:TEMP\openhound-checks" -Recurse -Force
+```
+
+Earlier lab evidence, from before these steps existed, is in the private
+feature work folder: `sccm-wrong-password-run-count-lab.txt` (before),
+`sccm-wrong-password-run-count-after-fix-lab.txt` (after) and
+`correct-password-run-check-lab.txt`.
