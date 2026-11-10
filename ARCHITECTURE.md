@@ -411,6 +411,15 @@ Two more pieces wire discovery into this loop:
   Stage-1 discovery resources (which call it from inside `collectors/*`) and the CLI's `--computers`
   seeds ([main.py](src/openhound_sccm/main.py)) go through this *same* funnel, so dedup
   and filtering are identical.
+  When the directory cannot confirm a name (for example, the domain controller is unreachable),
+  there is no SID to merge on, and "ps1-mp" and "ps1-mp.mayyhem.com" used to become two targets,
+  each visited and signed in to. Since October 30, 2026 a short name joins the one registered full
+  name it matches (`_registered_full_name_for`), or gets the run's domain added
+  (`_full_name_for_short_name`) when that full name is in DNS; otherwise the short name is kept as
+  given. Either way the short name stays an index alias of that one entry. SIDs, `DOMAIN\name`,
+  distinguished names and IP addresses are never given a domain (`_is_short_computer_name`).
+  Limit: a short name kept because its full name was not in DNS is not merged with a different full
+  name registered later.
 - [`target_hosts_snapshot`](src/openhound_sccm/context.py) lets phases read the *current* target
   set at iteration time, so a host discovered after a phase started is still picked up — the OpenHound
   equivalent of CMBP's "iterate the updated list."
@@ -2356,6 +2365,12 @@ took a separate, manual step outside `openhound collect sccm`.
 ---
 
 ## Changelog
+
+- **2026-10-30:** A computer the directory cannot confirm is visited once, by its full name,
+  approved by the owner ("We shouldn't be visiting a computer by its short name if the fqdn is
+  successful"). `register_target` merges an unconfirmed short name into the one registered full name
+  it matches, or adds the run's domain when that full name is in DNS. Lab: with the domain controller unreachable, ps1-mp was visited once as `ps1-mp.mayyhem.com`
+  instead of twice. See `docs/changes/2026-10-30-one-visit-per-computer.md`.
 
 - **2026-10-30:** One rejected sign-in now stops the whole run, approved by the
   owner after a lab check. SCCM checks the password with one directory sign-in

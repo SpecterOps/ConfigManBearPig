@@ -760,6 +760,12 @@ lack host AD identity. The collector still writes the registry values it can rea
 a host SID cannot support identity-based edges such as `HasSession`. A short hostname that is later
 resolved to an FQDN stays indexed under both names, so normal discovery retains that identity.
 
+Each computer is visited once. When the domain controller cannot confirm a name, a short name such
+as `ps1-mp` is matched to an already-known full name such as `ps1-mp.mayyhem.com`, or the run's
+domain is added to it, so it is never visited a second time by its short name. The short name is
+used only when its full name is not in DNS. The log says which happened, for
+example: `Treating 'ps1-mp' as 'ps1-mp.mayyhem.com': it matches that computer's full name`.
+
 #### What a low-privilege run looks like
 
 Collecting as a plain domain user is a supported, first-class mode — see
@@ -2642,6 +2648,15 @@ independently on two computers, as either SYSTEM or the recipient. It lists the
 evidence needed for a path to a particular computer and separates confirmed
 execution from primary-device routes still needing validation.
 
+Lab check scripts for the manual verification steps in `docs/changes` live in
+[`tests/scripts/`](tests/scripts/):
+
+- read and reset an account's failed sign-in count;
+- list the computers a run visited, from its log.
+
+Each one refuses to contact a computer outside 10.10.10.0/24 and 10.10.11.0/24.
+They are not automatic tests, and pytest does not run them.
+
 ## Set up a development environment
 
 You need a **system Python 3.13 or 3.14 on `PATH`**, plus [`uv`](https://docs.astral.sh/uv/).
@@ -2658,7 +2673,14 @@ git config merge.ours.driver true    # once per clone -- see below
 uv sync --group dev
 ```
 
-That is the whole setup. The shared library resolves from PyPI, and **no `--prerelease=allow` is
+Until the shared library is published with its October 30, 2026 changes, the
+published copy is missing code this collector now uses. So `uv run` commands
+fail with `ModuleNotFoundError: No module named 'openhound_collector_common. ...'`.
+Add `--with-editable C:\Users\domainadmin\openhound-collector-common` after
+`uv run --locked`. That uses your local copy of the shared library for that one
+command, without changing any project file.
+
+Otherwise, that is the whole setup. The shared library resolves from PyPI, and **no `--prerelease=allow` is
 needed here** even though the collector requires `ldap3>=2.10.2rc4`: a project is allowed its own
 declared pre-release. That flag is only for `uv tool install` / `uv run --with`, which resolve
 outside a project context.

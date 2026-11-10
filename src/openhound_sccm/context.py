@@ -5,6 +5,7 @@
 provides the lazy-loaded caches that every ``@app.resource`` in
 ``collectors/*`` shares:
 """
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from collections.abc import Mapping
@@ -48,6 +49,21 @@ def _as_multivalued_list(value: Any) -> list:
     if isinstance(value, list):
         return value
     return [value]
+
+
+_SHORT_COMPUTER_NAME = re.compile(r"^[a-z0-9_-]+$", re.IGNORECASE)
+
+
+def _is_short_computer_name(identifier: str) -> bool:
+    """True for a bare computer name such as "ps1-mp".
+
+    False for a full name, an IP address, a SID ("S-1-5-..."), a "DOMAIN\\name"
+    or a distinguished name: none of those may have a domain added.
+    """
+    text = identifier.strip()
+    if not _SHORT_COMPUTER_NAME.match(text) or text.isdigit():
+        return False
+    return not text.lower().startswith("s-1-")
 
 
 def _domain_from_dn(dn: str) -> str | None:
@@ -427,20 +443,42 @@ class SourceContext:
         sid = ad_object.get("object_sid") if ad_object else None
         # `sid` can only be set when ad_object exists, but testing both makes that
         # dependency visible instead of implied one line up.
+        short_name_match: TargetEntry | None = None
         if ad_object and sid:
             canonical = ad_object.get("dns_host_name") or ad_object.get("name") or identifier
         else:
-            canonical = identifier
             logger.warning(
                 "Could not resolve %r to a domain object; adding target by name", identifier
             )
+            # Without a directory ID, "ps1-mp" and "ps1-mp.mayyhem.com" would be
+            # two computers and each would be visited and signed in to. Owner
+            # rule: never visit a computer by its short name when its full name
+            # works. A short name joins the one registered full name it matches,
+            # or gets the run's domain added.
+            canonical = identifier
+            if _is_short_computer_name(identifier):
+                short_name_match = self._registered_full_name_for(identifier)
+                if short_name_match is None:
+                    canonical = self._full_name_for_short_name(identifier)
         canonical_lower = canonical.lower()
 
         with self._targets.lock:
             # Step 4: Find existing entry — SID index first, hostname fallback
             existing = self._targets.find(sid, canonical_lower)
+            if existing is None and short_name_match is not None:
+                existing = short_name_match
+                logger.verbose(
+                    "Treating %r as %r: it matches that computer's full name",
+                    identifier, existing.hostname,
+                )
+            # A short name the directory could not confirm stays a known name for
+            # the computer it joined or was expanded to, so a later lookup by
+            # either name finds the same entry.
+            remember_short_name = not sid and _is_short_computer_name(identifier)
 
             if existing is not None:
+                if remember_short_name:
+                    self._targets.bind_alias(identifier.lower(), existing)
                 logger.verbose(f"Already registered target: {existing.ad_object.get('dns_host_name') if existing.ad_object else existing.hostname}")
                 # Keep the queued short name as an alias when upgrading to an FQDN.
                 # A worker may still receive that name after this entry is upgraded.
@@ -477,6 +515,8 @@ class SourceContext:
                 is_new=True,
             )
             self._targets.bind_alias(canonical_lower, entry)
+            if remember_short_name:
+                self._targets.bind_alias(identifier.lower(), entry)
             if sid:
                 self._targets.bind_identity(sid, entry)
             if self.work_queue is not None:
@@ -484,6 +524,49 @@ class SourceContext:
             logger.info("Added collection target: %r from %r", canonical, source)
             return entry
 
+
+    def _registered_full_name_for(self, short_name: str) -> TargetEntry | None:
+        """Return the one registered computer whose full name starts with *short_name*.
+
+        Returns None when there is no match, or when several different computers
+        match (for example sql.mayyhem.com and sql.child.mayyhem.com), because
+        then the short name alone cannot say which one it is.
+        """
+        prefix = short_name.lower() + "."
+        with self._targets.lock:
+            matches = {
+                id(entry): entry
+                for name, entry in self._targets.aliases.items()
+                if name.startswith(prefix)
+            }
+        if len(matches) == 1:
+            return next(iter(matches.values()))
+        if matches:
+            logger.verbose(
+                "Short name %r matches %d registered computers; using the run's domain",
+                short_name, len(matches),
+            )
+        return None  # No registered full name settles it; the caller adds a domain.
+
+    def _full_name_for_short_name(self, short_name: str) -> str:
+        """Add the run's domain to a short name the directory could not confirm.
+
+        The full name is used when it is in DNS. Otherwise the short name is
+        kept as given: it may belong to another domain, and a full name that is
+        not in DNS could not be visited anyway. Without a known domain the short
+        name stays.
+        """
+        if not self.domain:
+            logger.verbose("No domain is known, so %r stays a short name", short_name)
+            return short_name
+        full_name = f"{short_name}.{self.domain}"
+        if self.resolve_ip(full_name):
+            logger.verbose("Using the full name %r for %r", full_name, short_name)
+            return full_name
+        logger.verbose(
+            "%r is not in DNS, so %r keeps its short name", full_name, short_name
+        )
+        return short_name
 
     def target_hosts_snapshot(self) -> list:
         """Return each current probe target once, even when it has a short-name alias.

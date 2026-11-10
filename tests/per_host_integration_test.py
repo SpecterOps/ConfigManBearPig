@@ -21,6 +21,17 @@ from openhound_sccm.phased_pipeline import WorkQueue
 from openhound_sccm.phased_pipeline.engine import Phase
 
 
+@pytest.fixture(autouse=True)
+def no_dns_for_made_up_hosts(monkeypatch):
+    """These hosts are made up and the directory is absent, so never look them up.
+
+    Since October 30, 2026, register_target asks DNS whether a short name's full
+    name exists before adding the run's domain. "Not in DNS" keeps the name as
+    given, which is what these tests expect, without a real network lookup.
+    """
+    monkeypatch.setattr(SourceContext, "resolve_ip", lambda self, name: None)
+
+
 def _isolated_pipeline(tmp_path, name):
     return dlt.pipeline(
         pipeline_name=name,
