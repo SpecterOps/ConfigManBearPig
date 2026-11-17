@@ -5,7 +5,7 @@ Regenerate after any status change rather than editing by hand.
 `.gitattributes` marks this file `merge=ours`, which needs a one-time
 `git config merge.ours.driver true` per clone.
 
-**152 tickets** — 10 in progress · 27 open · 115 closed
+**152 tickets** — 10 in progress · 26 open · 116 closed
 
 ## In progress (10)
 
@@ -22,7 +22,7 @@ Regenerate after any status change rather than editing by hand.
 | [`ope-1f0f`](ope-1f0f.md) | 2 | task | Code-Quality Pass: Conditional Logging, Exception Handling, Variable Scope, Linting & Cleanup -type chore -priority 2 -assignee Mayyhem -tags sccm,... | — |
 | [`ope-00df`](ope-00df.md) | 3 | task | Add --no-diagnostics-log / --no-collect-log to suppress on-disk logs individually | — |
 
-## Open (27)
+## Open (26)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -37,7 +37,6 @@ Regenerate after any status change rather than editing by hand.
 | [`con-96e3`](con-96e3.md) | 2 | feature | Connect reported management points to clients and classify direct Tier Zero serving infrastructure | sccm, graph, management-point, distribution-point, tier-zero, privilege-zones, findings |
 | [`con-c542`](con-c542.md) | 2 | task | Tag fixture cases from measured privileged/unprivileged A/B | testing, integration, fixtures, lowpriv |
 | [`con-d857`](con-d857.md) | 2 | task | Add TAKEOVER from parent CAS to child primary as possible/assumed edge | — |
-| [`ope-1172`](ope-1172.md) | 2 | task | Test different port / named instance | — |
 | [`ope-7da1`](ope-7da1.md) | 2 | task | Wire --socks-proxy in MSSQL collector via shared proxy interception | mssql, proxy |
 | [`ope-961c`](ope-961c.md) | 2 | task | Flesh out disableLoopbackCheck and add an NTLM-reflection relay edge | sccm, edge, relay, cred |
 | [`ope-ad1c`](ope-ad1c.md) | 2 | task | AdminService/WMI (privileged.py) do not identify Distribution Point roles or client-certificate-required status; only HTTP does, so the HTTP skip-g... | sccm, http, distribution-point |
@@ -54,7 +53,7 @@ Regenerate after any status change rather than editing by hand.
 | [`ope-e10b`](ope-e10b.md) | 3 | task | Emit SCCM_HasNetworkAccessAccount from Local collection (NAA from client WMI) | sccm, edge, local-collection, naa |
 | [`ope-4ba1`](ope-4ba1.md) | 4 | task | Make shared AdClient credential-summary warning flag-name-agnostic (do not name collector-specific CLI flags) | shared-lib, openhound-collector-common, ldap, logging, auth |
 
-## Closed (115)
+## Closed (116)
 
 | Ticket | P | Type | Title | Tags |
 |---|---|---|---|---|
@@ -112,6 +111,7 @@ Regenerate after any status change rather than editing by hand.
 | [`ope-065f`](ope-065f.md) | 2 | task | Port test-epa-matrix as live EPA validation harness (impacket rrp+scmr) | sccm, mssql, epa, validation, matrix, impacket |
 | [`ope-0947`](ope-0947.md) | 2 | task | Wire collected-but-unread site-code and role sources into preprocess (site_hierarchy D5 + node_computer orphaned roles) | sccm, lowpriv, preprocess, collection |
 | [`ope-0f66`](ope-0f66.md) | 2 | task | local.py mypy 31->0: cross-resource state on SourceContext + unresolved-target guards + typed logger | sccm, local, typing, tech-debt |
+| [`ope-1172`](ope-1172.md) | 2 | task | Test different port / named instance | — |
 | [`ope-140f`](ope-140f.md) | 2 | task | Collect summary prints real next-step commands instead of placeholders | — |
 | [`ope-1d06`](ope-1d06.md) | 2 | bug | AdminService read timeout silently reported as 'Collected 0' | logging, adminservice, sccm |
 | [`ope-215a`](ope-215a.md) | 2 | task | Return single fsp_hostname from _parse_mp_capabilities -type chore -priority 2 -tags sccm,ldap,fsp -assignee cthompson -description Change _parse_m... | — |

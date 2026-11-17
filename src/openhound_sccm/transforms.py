@@ -15,6 +15,7 @@ import duckdb
 from openhound_collector_common.dlt.duckdb_safe import arr_sql, ensure_columns, safe_execute
 
 from .role_assignments import build_collection_coverage, build_role_assignments
+from .site_database import resolve_site_databases
 
 logger = logging.getLogger(__name__)
 
@@ -2318,7 +2319,8 @@ def _node_site(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         "distinguished_name VARCHAR, "
         "source_forest VARCHAR, "
         "sql_server_fqdn VARCHAR, "       # SMS_SCI_SiteDefinition Props "SQLServerFQDN"
-        "sql_service_port VARCHAR"        # SMS_SCI_SiteDefinition Props "SQLServicePort"
+        "sql_service_port VARCHAR, "     # SMS_SCI_SiteDefinition Props "SQLServicePort"
+        "sql_resolved_service_port VARCHAR"
         ")"
     )
 
@@ -2345,6 +2347,7 @@ def _node_site(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         "source_forest": "VARCHAR",         # ldap_sites (mSSMSSourceForest)
         "sql_server_fqdn": "VARCHAR",       # site_definitions (Props SQLServerFQDN)
         "sql_service_port": "VARCHAR",      # site_definitions (Props SQLServicePort)
+        "sql_resolved_service_port": "VARCHAR",
     }
     for _src in (
         "adminservice_sites", "wmi_sites",
@@ -2388,7 +2391,8 @@ def _node_site(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"parent_site_code, TRY_CAST(site_type AS INTEGER) AS site_type, "
         f"site_guid, sql_server_name, sql_database_name, "
         f"NULL AS version, NULL AS build_number, NULL AS install_dir, "
-        f"sql_server_fqdn, CAST(sql_service_port AS VARCHAR) AS sql_service_port "
+        f"sql_server_fqdn, CAST(sql_service_port AS VARCHAR) AS sql_service_port, "
+        f"CAST(sql_resolved_service_port AS VARCHAR) AS sql_resolved_service_port "
         f"FROM {schema}.adminservice_site_definitions WHERE site_code IS NOT NULL",
     )
 
@@ -2401,7 +2405,8 @@ def _node_site(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"parent_site_code, TRY_CAST(site_type AS INTEGER) AS site_type, "
         f"site_guid, sql_server_name, sql_database_name, "
         f"NULL AS version, NULL AS build_number, NULL AS install_dir, "
-        f"sql_server_fqdn, CAST(sql_service_port AS VARCHAR) AS sql_service_port "
+        f"sql_server_fqdn, CAST(sql_service_port AS VARCHAR) AS sql_service_port, "
+        f"CAST(sql_resolved_service_port AS VARCHAR) AS sql_resolved_service_port "
         f"FROM {schema}.wmi_site_definitions WHERE site_code IS NOT NULL",
     )
 
@@ -2438,7 +2443,8 @@ def _node_site(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         f"  any_value(distinguished_name) AS distinguished_name, "
         f"  any_value(source_forest) AS source_forest, "
         f"  any_value(sql_server_fqdn) AS sql_server_fqdn, "
-        f"  any_value(sql_service_port) AS sql_service_port "
+        f"  any_value(sql_service_port) AS sql_service_port, "
+        f"  any_value(sql_resolved_service_port) AS sql_resolved_service_port "
         f"FROM {schema}.node_site "
         f"WHERE site_code IS NOT NULL "
         f"GROUP BY upper(site_code)"
@@ -2709,18 +2715,8 @@ def _read_disable_possible(con: duckdb.DuckDBPyConnection, schema: str) -> bool:
 # ---------------------------------------------------------------------------
 # Provenance stamp for assumed (unconfirmed) nodes/edges (D3)
 # ---------------------------------------------------------------------------
-# Shared strings so every SQL builder that stamps an assumed row (Tasks 4/5 below)
-# uses the exact same wording instead of retyping it, and so the wording never
-# drifts from what `_mark_assumed` would produce for the same concept.
-ASSUMED_SITE_DB_BASIS = (
-    "site DB inferred from MSSQLSvc SPN + SCCM-relatedness; DB internals not observed"
-)
-# ASSUMED_SITE_DB_SOURCE ("Assumed-SiteDB") was retired 2026-07-31: collection_source
-# now names the originating collection phase, so the assumed/confirmed split no longer
-# rides on the source tag. Nothing is lost -- assumedness is carried by the `assumed`
-# column and explained by ASSUMED_SITE_DB_BASIS, both of which every scaffolded node
-# still gets. Removed rather than left dangling because an unused module constant is
-# not flagged by ruff and would read as a live contract to the next person.
+# Site ownership and port assumption explanations are prepared once in
+# site_database.py, then carried through every dependent SQL node and edge.
 # The MSSQL site-DB scaffolding (CM_<site>, sysadmin/db_owner, machine-account
 # logins/db-users, and their edges) is templated from SCCM's own default schema
 # knowledge whether the underlying site DB is confirmed or assumed -- CMBP never
@@ -2810,31 +2806,16 @@ def _mark_assumed(props: dict, basis: str) -> dict:
     return props
 
 
-def _site_db_provenance_cols(is_assumed_sql: str, source_sql: str) -> str:
-    """Return the `assumed, assumption_basis, collection_source` SQL column trio
-    for a row in the MSSQL site-DB scaffolding family (Task 4/D3/spec §7), keyed
-    off a boolean SQL predicate for "this row rests on the SPN+SCCM inference".
+def _site_db_provenance_cols(is_assumed_sql: str, source_sql: str, reason_sql: str) -> str:
+    """Carry the parent's confidence, explanation and original sources unchanged.
 
-    The scaffolding itself (CM_<site> database, sysadmin/db_owner roles,
-    machine-account logins/db-users, and their containment/membership edges) is
-    templated from SCCM's own default-schema knowledge -- CMBP never reads any of it
-    out of SQL, confirmed site DB or not.
-
-    *source_sql* is the SQL expression yielding that row's originating collection
-    phase(s), threaded down from `assumed_site_dbs.collection_source` (e.g.
-    ``s.collection_source``). It replaces the old static
-    ``'SCCM-SiteDBDefaultSchema'`` tag, which named the DERIVATION but not the
-    ORIGIN: every site-DB node looked identically sourced whether the knowledge came
-    from an admin-only RemoteRegistry read, an AdminService query, or a plain domain
-    user's SPN lookup. Provenance exists to answer "where did this come from", and a
-    graph that mixes privilege levels needs that answer per node. The `assumed` stamp
-    and its human explanation remain conditional on *is_assumed_sql*; callers pass
-    either a `basis` comparison (e.g. "s.basis = 'SPN+SCCM'") or a boolean
-    passthrough from an already-stamped parent row (e.g. "s.assumed").
+    Database roles, logins and users are derived from SCCM's required layout;
+    they are not queried from SQL. The port/ownership explanation must therefore
+    follow the same site mapping through every dependent node and relationship.
     """
     return (
         f"({is_assumed_sql}) AS assumed, "
-        f"CASE WHEN ({is_assumed_sql}) THEN '{ASSUMED_SITE_DB_BASIS}' ELSE NULL END AS assumption_basis, "
+        f"CASE WHEN ({is_assumed_sql}) THEN {reason_sql} ELSE NULL END AS assumption_basis, "
         f"coalesce({source_sql}, ['{CONFIRMED_SITE_DB_SOURCE}']) AS collection_source"
     )
 
@@ -4063,12 +4044,12 @@ def _assumed_site_dbs(con: duckdb.DuckDBPyConnection, schema: str,
     )
 
 
-def _mssql_sql_servers(con: duckdb.DuckDBPyConnection, schema: str) -> None:
+def _mssql_sql_servers(con: duckdb.DuckDBPyConnection, schema: str, disable_possible: bool = False) -> None:
     """Resolve every (site, SQL-host computer) pair that runs the site database.
 
     The privileged collector tagged each site-system computer with its role
     ("SMS SQL Server@<site>") in *_site_definitions_computers (same source the
-    Stage-4 site-server resolution reads at transforms.py:1199). One row per
+    Stage-4 site-server resolution also reads). One row per
     (site, SQL host) preserves the multiple-site-database-per-site case (grilled
     2026-06-29) — node_site collapses to one SQL host via any_value, so we read the
     role rows directly here instead. Site-level SQL attributes (db name, port,
@@ -4090,7 +4071,7 @@ def _mssql_sql_servers(con: duckdb.DuckDBPyConnection, schema: str) -> None:
         # The originating collection phase(s), carried from assumed_site_dbs (or the
         # privileged arms' own `source`) so every scaffolded node can say where its
         # site-database knowledge came from rather than only how it was templated.
-        "basis VARCHAR, collection_source VARCHAR[])"
+        "basis VARCHAR, collection_source VARCHAR[], resolved_port VARCHAR)"
     )
     # Staging temp: collect (site, SQL host) pairs from all available sources. basis
     # carries assumed_site_dbs' provenance label through to the final table (Task 4);
@@ -4133,6 +4114,23 @@ def _mssql_sql_servers(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           f"JOIN {schema}.node_computer nc ON nc.sid = a.host_sid "
           f"WHERE a.site_code IS NOT NULL")
 
+    # The site's own registry mapping is useful even when the provider is unavailable.
+    if _column_exists(con, schema, "remoteregistry_site_databases", "site_code"):
+        _ensure_columns(con, schema, "remoteregistry_site_databases", {
+            "site_code": "VARCHAR", "domain_computer_sid": "VARCHAR",
+            "sql_server_fqdn": "VARCHAR", "source": "VARCHAR",
+        })
+        con.execute(f"""
+            INSERT INTO _mssql_sql_hosts
+            SELECT upper(site_code), upper(domain_computer_sid), sql_server_fqdn,
+                   'RemoteRegistry', [source]
+            FROM {schema}.remoteregistry_site_databases
+            WHERE site_code IS NOT NULL AND domain_computer_sid IS NOT NULL
+        """)
+    else:
+        logger.debug("No site-server registry database mappings were collected")
+    _ensure_columns(con, schema, "node_site", {"sql_resolved_service_port": "VARCHAR"})
+
     # Collapse duplicate (site, host) rows, then attach the site-level SQL attributes.
     # basis: max() over the group so a privileged-arm row (NULL) never masks a
     # same-host assumed_site_dbs row's real basis string -- max() ignores NULLs and
@@ -4141,19 +4139,21 @@ def _mssql_sql_servers(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     con.execute(
         f"INSERT INTO {schema}._mssql_sql_servers "
         f"SELECT h.site_code, ns.root_site_code, h.host_sid, any_value(h.dns_host_name) AS dns_host_name, "
-        f"  coalesce(any_value(ns.sql_service_port), '1433') AS port, "
-        f"  coalesce(any_value(ns.sql_database_name), 'CM_' || h.site_code) AS db_name, "
+        f"  any_value(ns.sql_service_port) AS port, "
+        f"  any_value(ns.sql_database_name) AS db_name, "
         f"  any_value(ns.sql_service_account_name) AS service_account_name, "
         f"  any_value(ns.sql_service_account_domain_sid) AS service_account_sid, "
         f"  max(h.basis) AS basis, "
         # list-union rather than any_value: a host confirmed by two phases should
         # name both, not whichever row the aggregate happened to see first.
         f"  list_sort(list_distinct(flatten(array_agg(h.collection_source) "
-        f"    FILTER (WHERE h.collection_source IS NOT NULL)))) AS collection_source "
+        f"    FILTER (WHERE h.collection_source IS NOT NULL)))) AS collection_source, "
+        f"  any_value(ns.sql_resolved_service_port) AS resolved_port "
         f"FROM _mssql_sql_hosts h "
         f"LEFT JOIN {schema}.node_site ns ON upper(ns.site_code) = h.site_code "
         f"GROUP BY h.site_code, ns.root_site_code, h.host_sid"
     )
+    resolve_site_databases(con, schema, disable_possible)
     n = _scalar(con, f"SELECT count(*) FROM {schema}._mssql_sql_servers")
     logger.info("_mssql_sql_servers resolved %d (site, SQL-host) pair(s) in schema %r", n, schema)
 
@@ -4168,9 +4168,10 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     Key = upper(host_sid) || ':' || port, so multiple site DBs per site AND non-SCCM SQL
     servers are both captured. Non-SCCM rows have NULL SCCMSite / false SCCMInfra.
 
-    EPA value vocabularies differ (scan: Off/Allowed/Required/Unknown; registry: On/Off);
-    Stage 5 carries them as-is (Stage 6 interprets them). extended_protection prefers the
-    scan's richer value, then registry. The port is a VARCHAR throughout (matches node_site).
+    Missing ports stay unknown; they cannot identify the default engine. Equal
+    nonempty protection/account observations are combined, while conflicting
+    values remain unknown. The port stays VARCHAR to match node_site and raw
+    registry values. Each source's original rows remain available for review.
     """
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_server ("
@@ -4202,10 +4203,10 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     # inference (basis, from _mssql_sql_servers <- assumed_site_dbs) claim privileged
     # provenance. basis drives the stamp now -- NULL (a privileged-arm-only pair with
     # no assumed_site_dbs row) is treated the same as 'RemoteRegistry' (confirmed).
-    _server_provenance = _site_db_provenance_cols("basis = 'SPN+SCCM'", "collection_source")
+    _server_provenance = _site_db_provenance_cols("assumed", "collection_source", "assumption_basis")
     _safe(con, "node_mssql_server<-_mssql_sql_servers",
           f"INSERT INTO {schema}.node_mssql_server BY NAME "
-          f"SELECT host_sid, coalesce(port, '1433') AS port, dns_host_name AS name, dns_host_name, "
+          f"SELECT host_sid, port, dns_host_name AS name, dns_host_name, "
           f"  site_code AS sccm_site, true AS sccm_infra, "
           f"  CASE WHEN db_name IS NULL THEN CAST([] AS VARCHAR[]) ELSE [db_name] END AS databases, "
           f"  NULL AS force_encryption, NULL AS extended_protection, NULL AS strict_encryption, "
@@ -4218,17 +4219,18 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           f"  NULL AS port_open, "
           f"  {_server_provenance} "
           f"FROM {schema}._mssql_sql_servers WHERE host_sid IS NOT NULL")
-    # Arm 2: EPA scan. port_open records whether collect_mssql actually reached 1433 --
+    # Arm 2: EPA scan. port_open records whether collection reached this known port --
     # a row can now exist on SPN evidence alone with the port filtered (Task 1c/D2a),
     # so this is the one arm where the flag can be an explicit false.
     _ensure_columns(con, schema, "mssql_server_instances", {
         "domain_computer_sid": "VARCHAR", "port": "INTEGER", "name": "VARCHAR", "dns_host_name": "VARCHAR",
         "extended_protection": "VARCHAR", "force_encryption": "BOOLEAN", "strict_encryption": "BOOLEAN",
         "port_open": "BOOLEAN", "service_account_sid": "VARCHAR", "service_account_is_computer": "BOOLEAN",
+        "instance_name": "VARCHAR", "epa_measured": "BOOLEAN", "source": "VARCHAR",
     })
     _safe(con, "node_mssql_server<-mssql_server_instances",
           f"INSERT INTO {schema}.node_mssql_server BY NAME "
-          f"SELECT upper(domain_computer_sid) AS host_sid, CAST(coalesce(port, 1433) AS VARCHAR) AS port, "
+          f"SELECT upper(domain_computer_sid) AS host_sid, CAST(port AS VARCHAR) AS port, "
           # name stays the AD CN; dns_host_name prefers the real FQDN (reviewer M2)
           # but falls back to name (reviewer REGRESSION-1) -- collect_mssql only
           # started emitting dns_host_name in this same task, so re-processing a
@@ -4237,13 +4239,15 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           f"  name, coalesce(dns_host_name, name) AS dns_host_name, "
           f"  NULL AS sccm_site, false AS sccm_infra, "
           f"  CAST([] AS VARCHAR[]) AS databases, force_encryption, extended_protection, strict_encryption, "
-          f"  CAST([] AS VARCHAR[]) AS instance_names, NULL AS service_account_name, "
+          f"  CASE WHEN instance_name IS NULL THEN CAST([] AS VARCHAR[]) ELSE [instance_name] END AS instance_names, NULL AS service_account_name, "
           # This arm's identity is the LOW-PRIV one (Task 13: the MSSQLSvc SPN holder
           # collect_mssql resolves via find_mssql_spn_holder) -- service_account_domain_sid
           # (the PRIVILEGED arm 1 identity) stays NULL here.
           f"  NULL AS service_account_domain_sid, "
           f"  upper(service_account_sid) AS service_account_sid, service_account_is_computer, "
           f"  port_open, "
+          # New rows name their actual observation source and whether EPA was
+          # measured. Older saved rows use the previous reachability rule below.
           # Provenance must reflect what actually happened (reviewer M1):
           # 'MSSQL-ScanForEPA' means an EPA scan actually ran, which
           # _edge_coerce_relay_mssql filters on as "the server's EPA-determination
@@ -4252,7 +4256,8 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           # 'MSSQL-SPN' instead so nothing downstream credits a scan that never
           # happened. NULL port_open (a row from before this column existed) predates
           # the SPN-only path entirely, so it was always a real scan.
-          f"  CASE WHEN port_open = false THEN ['MSSQL-SPN'] ELSE ['MSSQL-ScanForEPA'] END "
+          f"  CASE WHEN epa_measured IS NOT NULL AND source IS NOT NULL THEN [source] "
+          f"    WHEN port_open = false THEN ['MSSQL-SPN'] ELSE ['MSSQL-ScanForEPA'] END "
           f"    AS collection_source, "
           # An EPA scan says nothing about whether the host is SCCM's site database --
           # that claim belongs to arm 1 alone, so this arm never stamps assumed.
@@ -4273,7 +4278,7 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     })
     _safe(con, "node_mssql_server<-remoteregistry_mssql_servers",
           f"INSERT INTO {schema}.node_mssql_server BY NAME "
-          f"SELECT upper(domain_computer_sid) AS host_sid, coalesce(port, '1433') AS port, "
+          f"SELECT upper(domain_computer_sid) AS host_sid, CAST(port AS VARCHAR) AS port, "
           f"  name, name AS dns_host_name, NULL AS sccm_site, false AS sccm_infra, "
           f"  CAST([] AS VARCHAR[]) AS databases, force_encryption, extended_protection, NULL AS strict_encryption, "
           f"  {_arr('instance_names')} AS instance_names, "
@@ -4290,36 +4295,52 @@ def _node_mssql_server(con: duckdb.DuckDBPyConnection, schema: str) -> None:
           # that it's SCCM's site database -- assumed is arm 1's claim alone.
           f"  NULL AS assumed, NULL AS assumption_basis "
           f"FROM {schema}.remoteregistry_mssql_servers WHERE domain_computer_sid IS NOT NULL")
-    # Collapse to one row per host_sid:port. SCCM scalars win via any_value-skip-null ordering;
-    # EPA prefers any non-null. server_id minted final here. port_open uses bool_or so a
-    # host reached via multiple arms is "open" if ANY arm actually saw it answer.
+    unresolved = _scalar(con, f"SELECT count(*) FROM {schema}.node_mssql_server WHERE try_cast(port AS INTEGER) IS NULL OR try_cast(port AS INTEGER) NOT BETWEEN 1 AND 65535")
+    if unresolved:
+        logger.warning("%d SQL instance rows have no known TCP port; keeping raw facts without a port-based graph node", unresolved)
+    # A zero count adds no skipped work to the final node-count message.
+    conflicts = _scalar(
+        con,
+        f"SELECT count(*) FROM (SELECT host_sid, port FROM {schema}.node_mssql_server "
+        f"GROUP BY host_sid, port HAVING count(DISTINCT force_encryption) > 1 "
+        f"OR count(DISTINCT strict_encryption) > 1 "
+        f"OR count(DISTINCT extended_protection) FILTER (WHERE extended_protection <> 'Unknown') > 1 "
+        f"OR count(DISTINCT service_account_sid) > 1 "
+        f"OR count(DISTINCT service_account_domain_sid) > 1 "
+        f"OR count(DISTINCT upper(service_account_name)) > 1 "
+        f"OR count(DISTINCT service_start_type) > 1)"
+    )
+    if conflicts:
+        logger.warning("%d SQL endpoints have conflicting observations; affected protection/account/startup properties remain unknown", conflicts)
+    # Consistent observations need no additional warning.
+    # Collapse to one row per host-SID/port. Conflicting settings and identities
+    # stay unknown. Any successful reachability check still establishes an open port.
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_server AS "
         f"SELECT upper(host_sid) || ':' || port AS server_id, "
         f"  host_sid, port, any_value(name) AS name, any_value(dns_host_name) AS dns_host_name, "
         f"  any_value(sccm_site) AS sccm_site, bool_or(sccm_infra) AS sccm_infra, "
         f"  list_distinct(flatten(list(databases))) AS databases, "
-        f"  bool_or(force_encryption) AS force_encryption, "
-        f"  any_value(extended_protection) AS extended_protection, "
-        f"  bool_or(strict_encryption) AS strict_encryption, "
+        f"  CASE WHEN count(DISTINCT force_encryption) = 1 THEN bool_or(force_encryption) END AS force_encryption, "
+        f"  CASE WHEN count(DISTINCT extended_protection) FILTER (WHERE extended_protection <> 'Unknown') = 1 THEN any_value(extended_protection) FILTER (WHERE extended_protection <> 'Unknown') END AS extended_protection, "
+        f"  CASE WHEN count(DISTINCT strict_encryption) = 1 THEN bool_or(strict_encryption) END AS strict_encryption, "
         f"  list_distinct(flatten(list(instance_names))) AS instance_names, "
-        f"  any_value(service_account_name) AS service_account_name, "
-        f"  any_value(service_account_domain_sid) AS service_account_domain_sid, "
-        # Task 13's low-priv columns: only arm 2 ever contributes them, so any_value/
-        # bool_or just surface that arm's value untouched (same idiom as the
-        # privileged pair above).
-        f"  any_value(service_account_sid) AS service_account_sid, "
+        f"  CASE WHEN count(DISTINCT upper(service_account_name)) = 1 THEN any_value(service_account_name) END AS service_account_name, "
+        f"  CASE WHEN count(DISTINCT upper(service_account_domain_sid)) = 1 THEN any_value(service_account_domain_sid) END AS service_account_domain_sid, "
+        # Registration owners remain separate from the privileged site's account
+        # fields. Conflicting owners of this endpoint cannot select one scalar SID.
+        f"  CASE WHEN count(DISTINCT upper(service_account_sid)) = 1 THEN any_value(service_account_sid) END AS service_account_sid, "
         f"  bool_or(service_account_is_computer) AS service_account_is_computer, "
         # Only the RemoteRegistry arm supplies these, so any_value/bool_or simply
         # carry its value through the collapse (con-be15).
-        f"  any_value(service_start_type) AS service_start_type, "
+        f"  CASE WHEN count(DISTINCT upper(service_start_type)) = 1 THEN any_value(service_start_type) END AS service_start_type, "
         f"  bool_or(port_open) AS port_open, "
         f"  list_distinct(flatten(list(collection_source))) AS collection_source, "
         # assumed/assumption_basis are arm 1's claim alone (arms 2/3 always leave
         # them NULL) -- bool_or/max surface arm 1's value untouched when it
         # contributed, and stay NULL (no stamp) when only arms 2/3 did.
         f"  bool_or(assumed) AS assumed, max(assumption_basis) AS assumption_basis "
-        f"FROM {schema}.node_mssql_server WHERE host_sid IS NOT NULL AND port IS NOT NULL "
+        f"FROM {schema}.node_mssql_server WHERE host_sid IS NOT NULL AND try_cast(port AS INTEGER) BETWEEN 1 AND 65535 "
         f"GROUP BY upper(host_sid), host_sid, port"
     )
     n = _scalar(con, f"SELECT count(*) FROM {schema}.node_mssql_server")
@@ -4339,7 +4360,7 @@ def _node_mssql_database(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     parameter here -- Task 2 already dropped the SPN+SCCM rows upstream when the flag is
     set, so this builder simply has fewer _mssql_sql_servers rows to build from.
     """
-    _db_provenance = _site_db_provenance_cols("basis = 'SPN+SCCM'", "collection_source")
+    _db_provenance = _site_db_provenance_cols("assumed", "collection_source", "assumption_basis")
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_database AS "
         f"SELECT DISTINCT "
@@ -4392,7 +4413,7 @@ def _node_mssql_login(con: duckdb.DuckDBPyConnection, schema: str) -> None:
     rule, it is a documented consequence of confirmed topology rather than a read ACL, so
     it belongs in the same confidence class, not a weaker one.
     """
-    _login_provenance = _site_db_provenance_cols("s.basis = 'SPN+SCCM'", "s.collection_source")
+    _login_provenance = _site_db_provenance_cols("s.assumed", "s.collection_source", "s.assumption_basis")
     # Both arms emit the same row shape and differ only in HOW the sysadmin computer `c`
     # was found (same-site role vs parent-primary role), so the projection is shared --
     # otherwise the two would drift and produce inconsistent login ids for the same fact.
@@ -4467,7 +4488,7 @@ def _node_mssql_database_user(con: duckdb.DuckDBPyConnection, schema: str) -> No
     Provenance: carried forward from the login (Task 4/D3) -- l and d share the same
     server, so they always agree on whether it rests on the SPN+SCCM inference.
     """
-    _dbuser_provenance = _site_db_provenance_cols("l.assumed", "l.collection_source")
+    _dbuser_provenance = _site_db_provenance_cols("l.assumed", "l.collection_source", "l.assumption_basis")
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_database_user AS "
         f"SELECT DISTINCT "
@@ -4494,7 +4515,7 @@ def _node_mssql_server_role(con: duckdb.DuckDBPyConnection, schema: str) -> None
     true via arm 1, which is the only arm that ever stamps assumed, so s.assumed is
     always boolean (never NULL) in this filtered set.
     """
-    _role_provenance = _site_db_provenance_cols("s.assumed", "s.collection_source")
+    _role_provenance = _site_db_provenance_cols("s.assumed", "s.collection_source", "s.assumption_basis")
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_server_role AS "
         f"SELECT 'sysadmin@' || s.server_id AS role_id, s.server_id, s.host_sid, "
@@ -4517,7 +4538,7 @@ def _node_mssql_database_role(con: duckdb.DuckDBPyConnection, schema: str) -> No
 
     Provenance: carried forward from the database (Task 4/D3).
     """
-    _dbrole_provenance = _site_db_provenance_cols("d.assumed", "d.collection_source")
+    _dbrole_provenance = _site_db_provenance_cols("d.assumed", "d.collection_source", "d.assumption_basis")
     con.execute(
         f"CREATE OR REPLACE TABLE {schema}.node_mssql_database_role AS "
         f"SELECT 'db_owner@' || d.database_id AS role_id, d.database_id, d.server_id, d.host_sid, "
@@ -6022,7 +6043,7 @@ def transforms(con: duckdb.DuckDBPyConnection, schema: str = "sccm") -> None:
     # signal _mssql_sql_servers' new arm reads, and it needs disable_possible to
     # gate its own SPN+SCCM inference.
     _assumed_site_dbs(con, schema, disable_possible)
-    _mssql_sql_servers(con, schema)
+    _mssql_sql_servers(con, schema, disable_possible)
     _node_mssql_server(con, schema)
     _node_mssql_database(con, schema)
     _node_mssql_login(con, schema)

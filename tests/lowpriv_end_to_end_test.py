@@ -221,6 +221,14 @@ EXPECTED_DEFAULT_KINDS = {
 # something this fix wave changes.
 ASSUMED_KINDS_REMOVED_BY_FLAG = {
     "MSSQL_CoerceAndRelayToMSSQL",
+    # This fixture never collects the site database port. Its default-mode
+    # database and permission paths therefore depend on the marked 1433 guess.
+    "MSSQL_Contains",
+    "MSSQL_ControlDB",
+    "MSSQL_ControlServer",
+    "MSSQL_HasLogin",
+    "MSSQL_IsMappedTo",
+    "MSSQL_MemberOf",
     "SCCM_HasClient",
     "SCCM_SameHostAs",
 }

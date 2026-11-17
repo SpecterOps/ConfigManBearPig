@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from openhound_collector_common.clients.auth import split_user_domain
+from openhound_collector_common.discovery.sql_server import parse_sql_spn
 from openhound_collector_common.clients.mssql import (
     Auth,
     EPAPrereqError,  # noqa: F401  (re-exported for debug_epa_matrix.py)
@@ -42,11 +43,14 @@ class EPAResult:
 
     ``extended_protection`` is "Off" / "Allowed" / "Required" / "Allowed/Required"
     (SSPI) / "Unknown", surfaced verbatim from the shared detector.
+    ``instance_name`` is only filled when a requested identity read succeeds;
+    ``MSSQLSERVER`` denotes the default instance, and None means unread.
     """
 
     extended_protection: str
     force_encryption: bool = False
     strict_encryption: bool = False
+    instance_name: str | None = None
 
 
 def _sspi_available() -> bool:
@@ -66,9 +70,16 @@ def _sspi_available() -> bool:
 def _select_mssql_spn(spns: Optional[list], host: str, port: int) -> str:
     """Pick the registered ``MSSQLSvc`` SPN, or derive ``MSSQLSvc/host:port``."""
     for spn in spns or []:
-        if spn.lower().startswith("mssqlsvc/"):
+        try:
+            address = parse_sql_spn(spn)
+        except ValueError:
+            logger.warning("Ignoring an invalid SQL registration during EPA binding selection")
+            continue
+        if address is not None and address.host.casefold() == host.casefold() and address.port == port:
             return spn
+        # A different instance or non-TCP registration cannot bind this TCP probe.
     return f"MSSQLSvc/{host}:{port}"
+
 
 
 def test_epa(
@@ -82,6 +93,7 @@ def test_epa(
     nt_hash: Optional[str] = None,
     kerberos_ticket: Optional[str] = None,
     spns: Optional[list] = None,
+    identify_instance: bool = False,
 ) -> Optional[EPAResult]:
     """Determine EPA enforcement for one SQL Server via the shared detector.
 
@@ -121,9 +133,14 @@ def test_epa(
         logger.warning("EPA testing %s skipped: no credentials and SSPI unavailable", target)
         return None
 
-    verdict = detect_epa(f"{target}:{port}", auth)
+    if identify_instance:
+        verdict = detect_epa(f"{target}:{port}", auth, identify_instance=True)
+    else:
+        # Ordinary endpoint measurements do not need an identity query.
+        verdict = detect_epa(f"{target}:{port}", auth)
     return EPAResult(
         extended_protection=verdict["extendedProtection"],
         force_encryption=bool(verdict["forceEncryption"]),
         strict_encryption=bool(verdict["strictEncryption"]),
+        instance_name=verdict.get("instanceName"),
     )

@@ -21,8 +21,8 @@ def test_select_mssql_spn_prefers_registered():
 
 
 def test_select_mssql_spn_match_is_case_insensitive():
-    spns = ["mssqlsvc/PS1-DB.mayyhem.com"]
-    assert _select_mssql_spn(spns, "ps1-db.mayyhem.com", 1433) == "mssqlsvc/PS1-DB.mayyhem.com"
+    spns = ["mssqlsvc/PS1-DB.mayyhem.com:1433"]
+    assert _select_mssql_spn(spns, "ps1-db.mayyhem.com", 1433) == "mssqlsvc/PS1-DB.mayyhem.com:1433"
 
 
 def test_select_mssql_spn_derives_when_absent():

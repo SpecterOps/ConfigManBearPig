@@ -1787,6 +1787,7 @@ def _preproc_table_map() -> dict[str, str]:
         "collection_settings",
         # RemoteRegistry per-host phase (registry.py yield "table", row)
         "remoteregistry_sites",
+        "remoteregistry_site_databases",
         "remoteregistry_computers",
         "remoteregistry_users",
         "remoteregistry_mssql_servers",

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from openhound_collector_common.collection.outcomes import OperationResult
+from openhound_collector_common.discovery.sql_server import SqlAddress
 
 
 @dataclass
@@ -30,3 +31,6 @@ class TargetEntry:
     # the account of what happened. These records contain fixed labels, not secrets.
     operation_results: dict[str, OperationResult] = field(default_factory=dict)
     saved_row_count: int = 0
+    # The registry phase runs before SQL probing. Retain each observed instance
+    # and port so the next phase does not rediscover only the default instance.
+    sql_instances: list[SqlAddress] = field(default_factory=list)

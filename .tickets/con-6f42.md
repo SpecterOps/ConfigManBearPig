@@ -35,3 +35,8 @@ Complete the plan's Windows and WSL, ordinary-installation, lab, partial-failure
 graph, findings, documentation, and handoff checks. Record results and remaining
 limitations. Do not close this ticket merely because the plan or code review is
 finished. Do not stage, commit, or push changes on the owner's behalf.
+
+The SQL instance change now includes the separately approved shared parsing and
+Browser helpers and both consumer integrations. Its evidence and pending
+site-port assumption decision are in
+[the SQL instance record](../docs/changes/2026-11-10-sql-instance-evidence.md).

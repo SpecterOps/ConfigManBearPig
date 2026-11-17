@@ -64,7 +64,7 @@ class ADCredentials:
 def _find_mssql_spn_entries(ad_client: Any, dns_hostname: str) -> list[tuple[dict[str, Any], list[str]]]:
     """Shared LDAP search + host-pinning for MSSQLSvc SPN lookups.
 
-    :meth:`ADClient.find_mssql_spns` and :meth:`ADClient.find_mssql_spn_holder`
+    :meth:`ADClient.find_mssql_spns` and :meth:`ADClient.find_mssql_spn_holders`
     (Task 13) both build on this, so the filter and the trailing-wildcard
     host-pinning logic live in exactly one place. Returns one ``(entry,
     matched_spns)`` pair per LDAP entry that has at least one SPN genuinely
@@ -248,7 +248,7 @@ class ADClient(AdClient):
         The host portion of the SPN names the machine running SQL regardless of which
         principal holds it, so searching for the SPN answers exactly what decision D2(a)
         needs — "does anything in AD advertise SQL Server on this host?" — without caring
-        who the holder is. (Resolving the *holder* is :meth:`find_mssql_spn_holder`'s job,
+        who the holder is. (Resolving the *holder* is :meth:`find_mssql_spn_holders`'s job,
         needed only for the service-account edges.)
 
         Returns [] on miss or failure; callers treat that as "no SPN evidence".
@@ -261,44 +261,24 @@ class ADClient(AdClient):
             logger.debug("No MSSQLSvc SPN in AD names host %s", dns_hostname)
         return spns
 
-    def find_mssql_spn_holder(self, dns_hostname: str) -> dict[str, Any] | None:
-        """Resolve the identity of the AD principal holding an MSSQLSvc SPN naming
-        *dns_hostname*, plus the matching SPN string(s).
+    def find_mssql_spn_holders(self, dns_hostname: str) -> list[dict[str, Any]]:
+        """Retain all accounts and their own host-matching SQL registrations.
 
-        Task 13's ``MSSQL_ServiceAccountFor``/``HasSession`` edges need to know WHO
-        holds the SPN, not just that one exists (that's :meth:`find_mssql_spns` /
-        D2a's job) — the SPN is registered on the account SQL Server actually runs
-        as. Shares the search + host-pinning logic via :meth:`_find_mssql_spn_entries`.
-
-        Returns ``None`` if no SPN names this host. If more than one AD principal's
-        SPN names it (unusual — AD does not prevent duplicate registrations), the
-        first is used and a warning names how many were ignored, since a SQL
-        service can only run as one account.
+        Different ports on one computer may run as different accounts. Even an
+        identical endpoint can have conflicting registrations; collection must
+        preserve that evidence rather than selecting the first account.
         """
-        matched = _find_mssql_spn_entries(self, dns_hostname)
-        if not matched:
-            logger.debug("No MSSQLSvc SPN holder found for %s", dns_hostname)
-            return None
-        if len(matched) > 1:
-            # Ambiguous registration: log it so an operator can review, but proceed
-            # with the first rather than failing the whole lookup.
-            logger.warning(
-                "%d distinct AD principals hold an MSSQLSvc SPN naming %s; using the "
-                "first -- a SQL service can only run as one account, so this is worth "
-                "reviewing manually", len(matched), dns_hostname,
-            )
-        entry, spns = matched[0]
-        obj_class = entry.get("object_class") or entry.get("objectClass") or []
-        if isinstance(obj_class, str):
-            obj_class = [obj_class]
-        holder = {
-            "spns": spns,
-            "object_sid": entry.get("object_sid") or entry.get("objectSid"),
-            "sam_account_name": entry.get("sam_account_name") or entry.get("sAMAccountName"),
-            "object_class": obj_class,
-        }
-        logger.info(
-            "MSSQLSvc SPN for %s is held by %s (%s)",
-            dns_hostname, holder["sam_account_name"], holder["object_sid"],
-        )
-        return holder
+        holders = []
+        for entry, spns in _find_mssql_spn_entries(self, dns_hostname):
+            classes = entry.get("object_class") or entry.get("objectClass") or []
+            if isinstance(classes, str):
+                classes = [classes]
+            # Already-list values need no conversion.
+            holders.append({
+                "spns": spns,
+                "object_sid": entry.get("object_sid") or entry.get("objectSid"),
+                "sam_account_name": entry.get("sam_account_name") or entry.get("sAMAccountName"),
+                "object_class": classes,
+            })
+        logger.debug("Retained %d SQL SPN holders for %s", len(holders), dns_hostname)
+        return holders

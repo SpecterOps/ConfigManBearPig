@@ -5,7 +5,7 @@ from openhound_sccm.transforms import transforms
 def _standalone_primary(con):
     con.execute(
         "CREATE TABLE sccm.adminservice_site_definitions AS "
-        "SELECT * FROM (VALUES ('PS1', NULL, 2)) AS t(site_code, parent_site_code, site_type)"
+        "SELECT *, '1433' AS sql_service_port FROM (VALUES ('PS1', NULL, 2)) AS t(site_code, parent_site_code, site_type)"
     )
 
 

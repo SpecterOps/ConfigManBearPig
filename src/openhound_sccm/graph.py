@@ -86,7 +86,7 @@ class SCCMEdgeProperties(EdgeProperties, EvidenceProperties):
             other edge kind, which convert prunes so their panels stay uncluttered.
         assumed: True when this edge is templated/inferred rather than built from
             observed data (D3) — the MSSQL site-DB scaffolding edges that rest on the
-            SPN+SCCM inference (Task 4), and the SCCM permission/coerce/local-admin
+            site ownership or port inference, and the SCCM permission/coerce/local-admin
             edges that assume RBAC/relay feasibility from role topology (Task 5) —
             or None for every confirmed edge, which convert prunes.
         assumptionBasis: Human-readable explanation of the inference, present only
@@ -794,8 +794,8 @@ class MSSQLServerProperties(NodeProperties, EvidenceProperties):
             Server instance found on this host (a single computer can run more than
             one SQL Server instance side by side).
         assumed: True when this server was only ever resolved as an SCCM site
-            database through the SPN+SCCM inference (D2b/D3), never confirmed by
-            RemoteRegistry/AdminService/WMI; omitted (null, pruned) otherwise.
+            database or given a port through inference; omitted (null, pruned)
+            when its site mapping and port are established by collected data.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
@@ -838,8 +838,8 @@ class MSSQLDatabaseProperties(NodeProperties, EvidenceProperties):
             database itself or one reached via an SCCM-managed sysadmin path).
         SCCMSite: The site code of the SCCM site this database belongs to, if any.
         SQLServer: The node ID of the `MSSQL_Server` this database is hosted on.
-        assumed: True when this database rests on the SPN+SCCM inference rather than
-            a confirmed site database (D2b/D3); omitted (null, pruned) otherwise.
+        assumed: True when site ownership or the SQL port is inferred; omitted
+            (null, pruned) when the site mapping and port are established.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
@@ -862,7 +862,7 @@ class MSSQLServerRoleProperties(NodeProperties, EvidenceProperties):
         members: The node IDs of every `MSSQL_Login` that is a member of this role.
         SCCMSite: The site code of the SCCM site this role's server belongs to, if any.
         SQLServer: The node ID of the `MSSQL_Server` this role is defined on.
-        assumed: True when this role's server rests on the SPN+SCCM inference (D2b/D3);
+        assumed: True when this role depends on inferred site ownership or SQL port;
             omitted (null, pruned) otherwise.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
@@ -889,8 +889,8 @@ class MSSQLDatabaseRoleProperties(NodeProperties, EvidenceProperties):
         SCCMSite: The site code of the SCCM site this role's database belongs to,
             if any.
         SQLServer: The node ID of the `MSSQL_Server` hosting this role's database.
-        assumed: True when this role's database rests on the SPN+SCCM inference
-            (D2b/D3); omitted (null, pruned) otherwise.
+        assumed: True when the parent site mapping or port is inferred;
+            omitted (null, pruned) otherwise.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
@@ -918,8 +918,8 @@ class MSSQLLoginProperties(NodeProperties, EvidenceProperties):
             the SCCM infrastructure.
         SCCMSite: The site code of the SCCM site this login's server belongs to, if any.
         SQLServer: The node ID of the `MSSQL_Server` this login can authenticate to.
-        assumed: True when this login's server rests on the SPN+SCCM inference
-            (D2b/D3); omitted (null, pruned) otherwise.
+        assumed: True when the parent site mapping or port is inferred;
+            omitted (null, pruned) otherwise.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """
@@ -949,8 +949,8 @@ class MSSQLDatabaseUserProperties(NodeProperties, EvidenceProperties):
             belongs to, if any.
         SQLServer: The node ID of the `MSSQL_Server` hosting this database user's
             database.
-        assumed: True when this database user's database rests on the SPN+SCCM
-            inference (D2b/D3); omitted (null, pruned) otherwise.
+        assumed: True when the parent site mapping or port is inferred;
+            omitted (null, pruned) otherwise.
         assumptionBasis: Human-readable explanation of the inference, present only
             when `assumed` is true.
     """

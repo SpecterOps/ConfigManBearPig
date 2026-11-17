@@ -19,6 +19,7 @@ PER_HOST_PHASES: tuple[Phase, ...] = (
     Phase(
         "RemoteRegistry",(
             "remoteregistry_sites",
+            "remoteregistry_site_databases",
             "remoteregistry_computers",
             "remoteregistry_users",
             "remoteregistry_mssql_servers"

@@ -28,6 +28,7 @@ class _Entry:
 
     def __init__(self, ad_object=None):
         self.ad_object = ad_object
+        self.sql_instances = []
 
 
 class FakeProbe:
@@ -466,6 +467,7 @@ def _named_instance_probe(instance, instance_key, *, force_encryption=1, extende
         },
         dword_results={
             (_supersocket(instance_key), "ForceEncryption"): force_encryption,
+            (_supersocket(instance_key) + r"\Tcp", "ListenOnAllIPs"): 1,
             (_supersocket(instance_key), "ExtendedProtection"): extended_protection,
         },
         value_results={(_supersocket(instance_key) + r"\Tcp\IPAll", "TcpPort"): "1433"},
@@ -522,7 +524,9 @@ def test_instances_listed_but_settings_unreadable_still_warns(caplog):
     with caplog.at_level(logging.DEBUG, logger="openhound_sccm.collectors.registry"):
         rows = list(registry.get_mssql_settings(probe, ctx))
 
-    assert rows == []
+    assert len(rows) == 1
+    assert rows[0][1]["extended_protection"] is None
+    assert rows[0][1]["port"] is None
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert "CONFIGMGRSEC" in warnings[0]

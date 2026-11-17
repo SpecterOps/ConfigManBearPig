@@ -288,11 +288,75 @@ failed collection worker. Native provider calls can delay that final wait.
 | Phase | What it does | Status |
 |---|---|---|
 | **RemoteRegistry** ([collectors/registry.py](src/openhound_sccm/collectors/registry.py)) | Binds the remote registry over SMB (impacket `rrp`) to read SCCM keys under `HKLM\SOFTWARE\Microsoft\SMS` — site codes, component servers/roles, current users, and SQL/MSSQL settings. Retries the initial bind to absorb the RemoteRegistry trigger-start race. | ✅ Implemented |
-| **MSSQL** ([collectors/mssql.py](src/openhound_sccm/collectors/mssql.py)) | Connects to the host's SQL Server (TCP/1433) and probes its **Extended Protection for Authentication (EPA)** enforcement using [clients/mssql_epa.py](src/openhound_sccm/clients/mssql_epa.py). | ✅ Implemented |
+| **MSSQL** ([collectors/mssql.py](src/openhound_sccm/collectors/mssql.py)) | Keeps SQL instances separate using registry inventory and host-matching AD registrations. Resolves named ports through shared SQL Browser when needed, then probes each known numeric port for **Extended Protection for Authentication (EPA)** using [clients/mssql_epa.py](src/openhound_sccm/clients/mssql_epa.py). | ✅ Implemented |
 | **AdminService** ([collectors/privileged.py](src/openhound_sccm/collectors/privileged.py)) | Queries the SCCM AdminService REST API (`https://<provider>/AdminService/wmi/...`) over Negotiate and collects the site hierarchy, site definitions, reserved accounts, devices, users, **security groups** (`SMS_R_UserGroup` — each group's name *and* SID, used to resolve `SecurityGroupName` memberships to Group nodes offline), collections, security roles, admins, and site-system roles into raw `adminservice_*` tables, which `preprocess` reads to build the site, client-device, collection, admin-user and security-role families. | ✅ Implemented |
 | **WMI** ([collectors/privileged.py](src/openhound_sccm/collectors/privileged.py)) | **Fallback for AdminService.** Shares the *same* collection helpers as the AdminService phase (one set, parameterized per transport in `privileged.py`); when AdminService is unreachable on a host, it reads the same SMS Provider classes directly in the `root\SMS\site_<code>` WMI namespace (over DCOM via impacket, or pywin32 for the current Windows user) and writes the matching `wmi_*` tables. Runs only on hosts AdminService did **not** already collect — gated by `should_run_phase` reading `TargetEntry.completed_phases`. | ✅ Implemented |
 | **HTTP** ([collectors/http.py](src/openhound_sccm/collectors/http.py)) | **Unauthenticated** probing of the SCCM web endpoints over http then https — `SMS_MP/.sms_aut` (`MPKEYINFORMATION`/`MPLIST`/`SMSTRC`/`MPLIST1`), `SMS_DP_SMSPKG$`, `AdminService/wmi/SMS_Identification`, and the site-signing certificate — to identify **Management Point**, **Distribution Point**, **SMS Provider**, and **Site Server** roles from the 401/403/200 status codes. Enumerates and registers sibling MPs and the site server as new probe targets; writes raw `http_*` role tables. On a confirmed Management Point, also fetches `/CCM_Client/ccmsetup.exe` (still unauthenticated) and regexes the embedded version string out of the binary to fingerprint the site's SCCM build (the [SCCMVersionGuesser](https://github.com/synacktiv/SCCMVersionGuesser) technique) — feeds `SCCM_Site.version`/`versionCVEs` when privileged collection found no version, which in turn gates the [`SCCM_CoerceAndRelayToAdminService`](#sccm_coerceandrelaytoadminservice) edge. **Bandwidth/OPSEC note:** v1 downloads the entire `ccmsetup.exe` (multiple MB) rather than a bounded/`Range` fetch, which is a bigger and noisier footprint than every other probe in this row (those read a few KB of XML/JSON at most); a bounded fetch is a future optimization. Skipped on hosts AdminService/WMI already collected. | ✅ Implemented |
 | **SMB** ([collectors/smb.py](src/openhound_sccm/collectors/smb.py)) | An **unauthenticated** SMB2-negotiate **signing-required** check (via [clients/smb.py](src/openhound_sccm/clients/smb.py)), then **authenticated** share enumeration (`NetShareEnum`) that classifies SCCM-specific shares — `SMS_SITE`/`SMS_<code>` (Site Server), `SMS_DP$` (Distribution Point), `REMINST` (PXE), `SCCMContentLib$`/`SMSPKG` (content library) — into site-system roles and a site code. Writes raw `smb_computers` / `smb_sites` tables. Skipped on hosts AdminService/WMI already collected. | ✅ Implemented |
+
+SQL Server discovery uses the same address/SPN parser and Browser resolver as
+the MSSQL extension. Each engine keeps its own configured ports, Windows service
+account and protection settings. Listen All controls whether registry ports come
+from IPAll or explicitly active/enabled IP entries; dynamic zero is not an
+assigned port. The collector reuses an instance's already known registry ports
+before asking Browser. Browser uses UDP/1434 and is unavailable through the
+current SOCKS connection; known numeric ports from registry or registrations
+still work there. If a discovered instance's port remains unknown, the MSSQL
+method also tries TCP 1433 once per host, through the selected SOCKS proxy when
+present. It does not repeat an already known 1433 endpoint. This is one endpoint
+check; the normal EPA measurement can use several SQL connections.
+
+A successful SQL login lets that existing connection report its instance name.
+Only a matching name connects the original registration and service account to
+the measured port. A different or unread name leaves the original instance
+unresolved, while a completed SQL protection measurement stays with the observed
+host and port. A TCP open alone does not establish SQL for this fallback.
+
+Site database selection uses these answers in order:
+
+1. The SQL port recorded by SCCM through AdminService/WMI, or the site's own
+   registry mapping at `HKLM\SOFTWARE\Microsoft\SMS\SQL Server\Site System SQL Account`.
+   The latter needs local administrator access to the site server, independently
+   of SCCM permissions. It records the SQL host, database and port together.
+2. The port of the database instance named by SCCM, using matching registry
+   observations, SQL Browser, or an authenticated fallback identity. A database such as `CONFIGMGRSEC\CM_SEC` identifies
+   the instance; another engine on the same computer cannot supply its answer.
+3. An **inferred** site database on the only observed static SQL listener on a
+   suspected site database server. Its dynamic-port setting must have been read
+   and explicitly empty, and the SQL probe must have received a SQL response.
+4. The existing **inferred port 1433** when those answers are unavailable. This
+   preserves useful paths for low-privilege collection; it does not claim the port
+   was observed. Both guesses carry `assumed` and `assumptionBasis`, and
+   `--disable-possible-edges` removes database/permission paths relying on them.
+
+Collected answers replace these guesses within the new run. A blocked connection
+does not erase a configured port; it leaves reachability/protection unmeasured.
+SQL Browser and numeric SPNs do not establish whether a port is static. SCCM site
+databases require static ports; see [Microsoft's port requirements](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#sql-server-port).
+
+An unresolved instance stays in raw output with an unknown port. It cannot become
+another instance's port-1433 observation. The separate site-database fallback
+above can still infer a site SQL node on 1433. Conflicting registrations are saved without
+choosing an arbitrary inferred account. Unread protection values stay unknown.
+Independent engines are still saved when another engine's measurement fails;
+the final completion report identifies the incomplete phase. For example:
+
+```powershell
+uv run openhound collect sccm .\sql-instance-check -d mayyhem.com --dc 10.10.10.100 -m LDAP,RemoteRegistry,MSSQL -c cas-db.mayyhem.com,ps1-db.mayyhem.com,ps1-sec.mayyhem.com --run-all
+```
+
+On this lab, the registry identifies CONFIGMGRSEC on ps1-sec separately from the
+default engines on cas-db and ps1-db. See the
+[implementation and verification record](docs/changes/2026-11-10-sql-instance-evidence.md).
+
+To read the three sites' own database mappings without AdminService/WMI, include
+the site servers as well as the database servers. This example uses the lab
+administrator; substituting `-u lowpriv` retains explained default-port paths
+where the administrator-only mapping cannot be read:
+
+```powershell
+uv run openhound collect sccm .\site-db-check -d mayyhem.com --dc 10.10.10.100 -u domainadmin -p password -m LDAP,RemoteRegistry,MSSQL -c cas-pss.mayyhem.com,ps1-pss.mayyhem.com,ps1-sec.mayyhem.com,cas-db.mayyhem.com,ps1-db.mayyhem.com --run-all
+```
 
 ## Running the stages separately
 
@@ -355,7 +419,7 @@ do not establish full hierarchy or every authentication method; see the
 | LDAP discovery | Any authenticated domain user |
 | DNS discovery | **None** — a plain SRV query, no AD authentication at all |
 | HTTP | **None** — every SCCM web-endpoint probe (including the site-signing-certificate probe) runs anonymous; no domain credentials are ever presented |
-| RemoteRegistry | **Depends on the key — most of the SCCM data needs only a domain user.** The `HKLM\SOFTWARE\Microsoft\SMS` keys the phase relies on for discovery — the site code (`Triggers`), the site-system roles (`COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Component Servers` and `Multisite Component Servers`), and the logged-on user (`CurrentUser`) — are readable by **any authenticated domain user** with SMB access to the host. **Local administrator** is required only for the host-hardening values: SMB signing (`SYSTEM\CurrentControlSet\Services\LanManServer\Parameters`), the NTLM restrictions (`SYSTEM\CurrentControlSet\Control\Lsa` and `Lsa\MSV1_0`), and SQL Server's `SuperSocketNetLib` encryption settings. A non-admin run collects the former and skips the latter rather than failing the phase, reporting each host's refused reads as a single warning — see [What a low-privilege run looks like](#what-a-low-privilege-run-looks-like). Note that the SMS keys are readable by a plain domain user *by default*; a host with tightened ACLs can refuse those too, in which case the site code is unknown and the rest of the phase is skipped for that host. See [collectors/registry.py](src/openhound_sccm/collectors/registry.py). |
+| RemoteRegistry | **Depends on the key — most of the SCCM data needs only a domain user.** The `HKLM\SOFTWARE\Microsoft\SMS` keys the phase relies on for discovery — the site code (`Triggers`), the site-system roles (`COMPONENTS\SMS_SITE_COMPONENT_MANAGER\Component Servers` and `Multisite Component Servers`), and the logged-on user (`CurrentUser`) — are readable by **any authenticated domain user** with SMB access to the host. **Local administrator** is required for the site database mapping (`SMS\SQL Server\Site System SQL Account`) and the host-hardening values: SMB signing (`SYSTEM\CurrentControlSet\Services\LanManServer\Parameters`), the NTLM restrictions (`SYSTEM\CurrentControlSet\Control\Lsa` and `Lsa\MSV1_0`), and SQL Server's `SuperSocketNetLib` encryption settings. A non-admin run collects the former and skips the latter rather than failing the phase, reporting each host's refused reads as a single warning — see [What a low-privilege run looks like](#what-a-low-privilege-run-looks-like). Note that the SMS keys are readable by a plain domain user *by default*; a host with tightened ACLs can refuse those too, in which case the site code is unknown and the rest of the phase is skipped for that host. See [collectors/registry.py](src/openhound_sccm/collectors/registry.py). |
 | MSSQL (EPA detection) | Any domain user can probe a reachable SQL Server; reading the setting via RemoteRegistry instead needs local admin on the DB host. The registry route covers **named instances** as well as the default one — it reads SQL Server's own instance inventory (`SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL`) and derives each instance's settings path from it, so an instance like `CONFIGMGRSEC` is found rather than missed |
 | SMB | The signing-required check is **unauthenticated** (anyone with TCP/445 line of sight); share enumeration needs an **authenticated** SMB session (any domain user — current Windows user via SSPI, or `-u`/`-p`, `--nt-hash`, `--ticket`) |
 
@@ -406,19 +470,17 @@ risk:
 |---|---|---|---|---|
 | `SCCM_ClientDevice` (possible, `is_confirmed_active_client = false`) + `SCCM_SameHostAs` + `SCCM_HasClient` to it | A `CmRcService` SPN in AD is treated as evidence of an enrolled client even with no confirmed SCCM enrollment record | LDAP (`ldap_cmrc_devices`) | **Yes** — not emitted at all | The SPN can linger in AD after a client was decommissioned, or belong to a device enrolled in a *different* hierarchy |
 | `site_hierarchy` root, when 2+ untyped sites exist and none was observed as a CAS / `RootSiteCode` / parentless Primary | Picking one of several untyped sites as the hierarchy root is a guess, made alphabetically | LDAP `ldap_sites`, RemoteRegistry, HTTP, SMB, DNS (every source that reports only a bare site code, no type) | **Yes** — the root is left unresolved instead of guessed (SCCM-native node ids lose their `@<root>` scope) | The wrong root anchors every SCCM-native node id minted in the run; a **single** untyped site is deduction, not a guess, and is unaffected by the flag |
-| MSSQL site-database identity via the `SPN+SCCM` basis — feeds `MSSQL_Server.SCCMSite`/`.SCCMInfra`/`.databases`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`, their `Contains`/`MemberOf`/`HasLogin`/`IsMappedTo`/`Control*` edges, and `MSSQL_GetTGS`/`MSSQL_GetAdminTGS` off that login | A host with an `MSSQLSvc` SPN that is *also* SCCM-related (carries an SMS role, or `sccm_infra`) is treated as **the** site database, not merely a co-located SQL Server | AD (`MSSQLSvc` SPN, via `mssql_server_instances.has_mssql_spn`) + `node_computer` site-system role tags | **Yes** — the whole basis is dropped; a **confirmed** site database (RemoteRegistry / AdminService / WMI) keeps its full scaffolding in **both** modes with **no** stamp, since the schema SCCM requires there follows from the confirmed fact, not a guess | Nothing confirms this SQL Server is *this* site's database rather than an unrelated one that merely happens to sit on an SCCM-tagged host |
+| MSSQL site-database identity via the `SPN+SCCM` basis — feeds `MSSQL_Server.SCCMSite`/`.SCCMInfra`/`.databases`, `MSSQL_Database`, `MSSQL_ServerRole`, `MSSQL_DatabaseRole`, `MSSQL_Login`, `MSSQL_DatabaseUser`, their `Contains`/`MemberOf`/`HasLogin`/`IsMappedTo`/`Control*` edges, and `MSSQL_GetTGS`/`MSSQL_GetAdminTGS` off that login | A host with an `MSSQLSvc` SPN that is *also* SCCM-related (carries an SMS role, or `sccm_infra`) is treated as **the** site database, not merely a co-located SQL Server | AD (`MSSQLSvc` SPN, via `mssql_server_instances.has_mssql_spn`) + `node_computer` site-system role tags | **Yes** — the whole basis is dropped; a **confirmed** site database with an identified port (RemoteRegistry / AdminService / WMI) keeps its full scaffolding in **both** modes with **no** stamp, since the schema SCCM requires there follows from the confirmed fact, not a guess | Nothing confirms this SQL Server is *this* site's database rather than an unrelated one that merely happens to sit on an SCCM-tagged host |
+| Site database mapping and its database/permission paths when the port was inferred | The only observed static SQL listener is selected, or port 1433 is used when the site endpoint remains unknown | Explicit static registry settings plus a SQL response, or the explained default fallback | **Yes**; independent observed SQL nodes remain | Another instance could host the database; port 1433 might be incorrect even when the database host is known |
 | `SCCM_AssignAllPermissions` (`Computer` SMS Provider → `SCCM_Site`) | Hosting the SMS Provider role is templated as implying hierarchy-wide RBAC control, not read from an actual grant | RemoteRegistry / HTTP / LDAP role tag + site hierarchy | No — CMBP itself emits this family under its own `-DisablePossibleEdges` | A role tag attributed to the wrong site would overstate an admin's real reach |
 | `SCCM_LocalAdminRequired` | Two rules, neither reading a local-group membership list. **Within a site:** co-location as site systems of the same site is templated as mutual local-administrator rights. **Parent primary → child secondary:** Microsoft's documented setup prerequisite (the parent primary's computer account is added to the secondary site server's Administrators group) is templated as still being in force | Role tags (RemoteRegistry/HTTP/LDAP) + site hierarchy; the cross-site rule additionally needs a **positively known** `siteType = 1` on the child | No | An admin who removed the default grant during a hardening pass, or a role tag attributed to the wrong site, makes this overstate real access. The cross-site rule is silent where secondary-ness could not be established, so at low privilege it emits nothing rather than guessing |
 | `SCCM_CoerceAndRelayToAdminService` | An unset (`null`) inbound-NTLM restriction on the SMS Provider is treated as vulnerable — this **is** the Windows default (0 = allow all inbound NTLM), so it is a measured fact about the default rather than a guess | RemoteRegistry NTLM setting on the Provider + role/site topology | No — the "unset = vulnerable" reasoning holds in both modes | Suppressed on a site confirmed to run SCCM 2509+ (rejects NTLM); an unknown/unparseable version fails **open** and may false-positive |
 | `SCCM_CoerceAndRelayToSMB` | Same NTLM reasoning as above; SMB signing itself is never assumed — it must still be **confirmed** not required | RemoteRegistry/SMB-negotiate signing check + NTLM setting + role/site topology | No | Same NTLM caveat as above |
 | `MSSQL_CoerceAndRelayToMSSQL` | NTLM uses the same unconditional "unset = vulnerable" rule as the other two relay families. Extended Protection is different: a null/uncollected EPA setting is *also* treated as vulnerable by default (an actual assumption, not a Windows-default fact) | RemoteRegistry/MSSQL EPA probe (EPA) + RemoteRegistry NTLM (coerced host) | **Partially** — only the EPA half: with the flag, EPA must be **explicitly** `Off` | `assumed`/`assumptionBasis` are stamped **per row**, only when EPA was never measured — a measured `Off` is evidence, not an assumption, so those rows are unstamped even by default |
 
-> **Known gap:** the Database→Site configuration of `SCCM_AssignAllPermissions` (a site database asserting
-> control of its own site, see [Edge Reference](#sccm_assignallpermissions)) is built from the same
-> `node_mssql_database` row that carries the `SPN+SCCM`/confirmed basis, but the edge builder does not
-> currently copy that row's `assumed`/`assumptionBasis` onto the edge — so this specific edge shape never
-> carries the stamp today, unlike its sibling SMS-Provider→Site configuration above. The underlying node it
-> hangs off still reflects the correct confirmed/assumed status.
+The database-to-site `SCCM_AssignAllPermissions` edge inherits the database's
+`assumed` and `assumptionBasis` values. This includes site-ownership and port
+inferences; its confirmed site mapping remains unstamped.
 
 ## Collection privilege tiers
 
@@ -898,6 +960,19 @@ All discovery (LDAP/DNS/DC) and every per-host protocol (RemoteRegistry, MSSQL,
 AdminService, WMI, HTTP, SMB) egress at the proxy. Destination names resolve at
 the proxy (socks5h); our own DNS lookups are forced onto TCP so they ride the
 tunnel too.
+
+SQL Browser's UDP port lookup is skipped with a warning through SOCKS. Numeric
+ports already learned from SCCM, the registry or AD remain usable. Unresolved
+instances also receive the separate TCP-1433 fallback described in
+[Collection Overview](#collection-overview). The normal
+explained site-database port assumptions still apply when definitive facts are
+unavailable.
+
+Explicit SOCKS replies for refused or unreachable destinations use the same
+socket-error handling as direct connections. A host with no SQL listener does
+not become an incomplete SQL phase merely because a proxy reported the refusal.
+Proxy sign-in, policy and malformed-reply failures remain separate errors. See
+the [live SOCKS verification results](docs/changes/2026-11-16-socks-sql-verification.md).
 
 **`--dc` or `--dns` is required** with `--proxy`: internal names can't be
 resolved from the outside box, so pin the DC (`--dc`) or point at an internal

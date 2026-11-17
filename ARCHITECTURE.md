@@ -200,6 +200,38 @@ node classes that do not use all three fields retain their existing definitions.
 This approved extraction is being checked against unchanged saved-data output;
 ordinary dependency updates await the owner's single shared-library release.
 
+**Shared SQL instance discovery (November 10, 2026).** Both collectors now
+use common's `discovery/sql_server.py` for address/SPN interpretation and
+`discovery/sql_browser.py` for specific-instance UDP port resolution. The shared
+code returns connection evidence and owns reply validation, the successful-answer
+cache and inherited read controls. It imports no extension target or graph class.
+SCCM keeps registry inventory, site ownership and host-SID/port graph identifiers;
+MSSQL keeps its own graph rules. No framework or schema change is needed.
+
+The registry phase carries each instance's known ports into the later SQL phase
+through `TargetEntry.sql_instances`. `collectors/mssql.py:_instance_evidence`
+retains all matching registrations and owners; `_resolve_endpoints` reuses a
+named engine's observed ports, resolves remaining names and merges matching
+numeric endpoints before `_probe_epa` measures them. `_instance_row` preserves
+original candidates and selects an inferred account only if its identity is
+complete and unambiguous. Another endpoint's measurement failure cannot erase
+saved facts; the existing phase observer records the final incomplete result.
+
+**Conventional-port connection fallback (November 17, 2026).** When a discovered
+instance cannot be resolved, `SourceContext.sql_port_fallback` uses common's
+`discovery/sql_fallback.py:SqlPortFallback` to reserve one anonymous 1433 endpoint
+per host. Known 1433 endpoints are remembered first. `collectors/mssql.py` keeps
+the unknown-name rows separate and requests identity only for that fallback.
+The shared EPA detector optionally reads `SERVERPROPERTY` during its existing
+successful normal login; it does not add another sign-in. `EPAResult.instance_name`
+is None when unread, or `MSSQLSERVER` for the default engine. A matching name can
+associate the original account evidence and clear that name's resolution failure.
+A different or unread name cannot borrow its account. Failed identity reads do
+not erase independent protection results; a TCP open without a completed SQL
+measurement does not create a fallback SQL node. Target/method gates and existing
+proxy clients still control the traffic. See the shared
+[design and verification record](../openhound-collector-common/docs/changes/2026-11-17-sql-port-fallback.md).
+
 ### Trade-offs
 
 - **A shared-library change is a two-collector change.** A fix in `clients/auth` or `logging/log_context`
@@ -1498,9 +1530,12 @@ design from §9 and the output-split routing from §11f.
 
 **`MSSQL_Server` merge — one row per `host_sid:port`.** `node_mssql_server` is built like
 `node_computer`: three `INSERT` arms into a staging table, then collapsed by
-`GROUP BY upper(host_sid), host_sid, port` with `any_value` for scalars (the raw `host_sid`
-is carried alongside `upper(host_sid)` in the GROUP BY so the non-uppercased value stays
-selectable):
+`GROUP BY upper(host_sid), host_sid, port`. Only known numeric ports can
+produce an observed port-based node. The separately marked site fallback may
+infer a port-1433 node when collection cannot identify the site's endpoint.
+Consistent settings and identities are combined;
+conflicting protection, account or startup values remain unknown and are logged.
+The raw `host_sid` stays alongside its uppercase form for selection:
 
 - `mssql_server_instances` — the EPA scan; supplies `extendedProtection`, `forceEncryption`,
   `strictEncryption`.
@@ -1516,6 +1551,29 @@ no SCCM match still produce a bare `MSSQL_Server` (plus `MSSQL_HostFor` / `MSSQL
 their `SCCMSite` / `SCCMInfra` columns stay null/false. This directly mirrors CMBP's
 `Add-MSSQLServerNodesAndEdges` (ps1:6050-6186) while capturing non-SCCM SQL servers that CMBP
 skips.
+
+**Site port selection.** `collectors/registry.py:get_site_database` saves the site's
+own host/database/port mapping in `remoteregistry_site_databases`, registered in
+the normal per-host streams and preprocessing inputs. The mapping requires local
+administrator access on the site server, independently of SMS Provider access.
+`collectors/sql_site.py:resolve_site_sql_port` can resolve the instance SCCM names
+when its explicit port is missing. It respects target registration, method
+selection and proxy restrictions; it never borrows another instance's port.
+
+`site_database.py:resolve_site_databases` applies the owner's precedence over saved
+data during preprocessing: SCCM's reported port, site-server registry port,
+matching-instance port, only observed static SQL listener, then 1433. Only the
+last two are port assumptions. A static classification requires an explicitly
+empty dynamic-port setting; a missing setting stays unknown. The single-listener
+inference additionally requires a SQL response, not just a successful TCP open.
+Existing `assumed`/`assumptionBasis` properties explain the choice through the
+database and permission relationships. `--disable-possible-edges` removes these
+assumed site mappings while independent observed SQL nodes survive. No schema,
+graph identifier or dependency changes are needed. These rules belong to SCCM;
+common retains protocol parsing, Browser resolution, fallback reservations and
+validation of the answering engine's identity. An authenticated fallback match
+counts as a matching-instance port; an anonymous 1433 measurement does not remove
+the site's assumption marker or establish a static configuration.
 
 **Login / DatabaseUser topology inference.** CMBP never queries SQL for user identity.
 Instead it infers the `sysadmin` logins from the machine accounts of the site's Primary Site
@@ -1732,10 +1790,12 @@ referenced as a `MemberOf` edge endpoint. Confirmed live-DB-augmented (see the T
 **`MSSQLSvc` SPN service account (Task 13).** `clients/ad.py::ADClient.find_mssql_spns` (D2a's mere
 existence check) discards *who* holds the SPN. A new module-level `_find_mssql_spn_entries` helper
 factors out the shared search + host-pinning logic; `find_mssql_spns` keeps its old signature/tests,
-and a new `find_mssql_spn_holder` additionally surfaces the holder's `objectSid`/`sAMAccountName`/
-`objectClass`. `collectors/mssql.py::collect_mssql` calls it when the target computer's own SPN list
-lacks `MSSQLSvc` (the domain-service-account case), and adds `service_account_sid`/
-`service_account_is_computer` to the `mssql_server_instances` row. `node_mssql_server` carries these as
+and `find_mssql_spn_holders` surfaces every matching holder's identity and
+registrations. `collectors/mssql.py:_instance_evidence` reads those holders even
+when the computer itself also advertises SQL, because another engine can run
+as another account. Resolution groups candidates by endpoint. Each raw row keeps
+all candidates; `service_account_sid` and `service_account_is_computer` are filled
+only when the endpoint has one complete, unambiguous registration owner. `node_mssql_server` carries these as
 new columns, **distinct from** the privileged `service_account_domain_sid` (SMS_SCI_SysResUse) pair —
 when both resolve the same real account on the same server, the pre-existing `_graph_edges_dedup` pass
 (run once, after every edge builder) collapses the resulting duplicate edge triple into one, so neither
@@ -1919,17 +1979,17 @@ independent signals:
   The collector now flags those rows `sql_role_assumed = true` rather than suppressing them — it cannot
   settle the question locally, so it labels and defers. `_assumed_site_dbs` drops such a host only when
   **all three** hold: the role is flagged assumed, no *unflagged* source also claims it, and nothing
-  answered on 1433 (`mssql_server_instances.port_open`). The populated-key branch names genuine remote
+  answered on a known SQL port (`mssql_server_instances.port_open`). The populated-key branch names genuine remote
   database servers and is never flagged, so `ps1-db`/`cas-db` cannot regress.
 
-  **Why 1433 and not the obvious alternatives.** The SQL Server registry keys are admin-gated
-  (`rpc_s_access_denied` on all eight `SuperSocketNetLib` paths for a plain domain user), so they cannot
-  gate the low-privilege path — the tier that matters most. An `MSSQLSvc` SPN does not discriminate
-  either: SPNs live on the *service account*, not the host, and mayyhem's genuine `SEC` site database
-  runs as `LocalSystem` with no SPN at all, so an SPN gate would delete a true finding. Only a live 1433
-  answer separates `ps1-sec` (real) from `ps1-psv` (not). Since `PER_HOST_PHASES` runs RemoteRegistry
-  *before* MSSQL, that answer does not exist at collection time — which is precisely why the decision
-  belongs here in preproc, where every source has landed.
+  **Why reachability is separate from installed settings.** Reading SQL's
+  registry configuration requires local administrator access, and registrations
+  alone do not establish that the engine is reachable. The SQL phase now checks
+  each known port, including named/nondefault engines, rather than restricting
+  this evidence to 1433. A conventional-port check is still possible when no
+  registry or SPN endpoint was discovered, but an unresolved named instance is
+  never substituted with that port. Since the registry phase precedes SQL,
+  preparation makes this host-level role decision after both sources are saved.
 
   Separately, the registry collector now reads the engine's service control entry
   (`HKLM\SYSTEM\CurrentControlSet\Services\{MSSQLSERVER|MSSQL$<instance>}`) for `Start` and `ObjectName`,
@@ -2290,8 +2350,9 @@ not produce that suggestion.
   Proxifier) on the outside box. Everything else in-process — explicit
   credentials, pass-the-hash, pass-the-ticket, and impacket-minted Kerberos +
   NTLM including the KDC exchange — tunnels fully.
-- **No UDP.** SOCKS5 `CONNECT` is TCP-only; DNS is the only UDP-shaped traffic
-  this collector produces, and it is forced onto TCP for exactly this reason.
+- **No UDP through the proxy.** SOCKS5 `CONNECT` is TCP-only. DNS is forced
+  onto TCP. SQL Browser uses UDP in direct mode, so it is skipped with a warning
+  under SOCKS; collected numeric ports remain usable without Browser.
 - **Install-once-per-process, not reentrant.** `install()` raises if a proxy is
   already active — consistent with the existing assumption that `collect` runs
   once per process, but it means the interception cannot be nested or shared
@@ -2300,8 +2361,15 @@ not produce that suggestion.
   hostname for anything that isn't loopback/bypassed rather than attempting
   resolution and falling back. Validated offline against `ldap3`, `requests`,
   and `impacket` (see [`spike_socks_proxy.md`](dev/spike_socks_proxy.md) — all three
-  funnel through the patched stdlib entry points with no bypass found); a
-  live-lab run against a real SOCKS5 pivot is the remaining confirmation.
+  funnel through the patched stdlib entry points with no bypass found).
+  SQL-focused live lab checks on Windows and WSL also verified registry reads,
+  SQL connections and TCP DNS through working SOCKS forwarders, with direct
+  Python connections and datagram sends blocked during collection. The approved
+  shared fix translates explicit refused/unreachable destination replies into
+  ordinary socket errors, matching SCCM's existing port-check handler. Proxy
+  sign-in, policy and malformed-reply errors remain distinct; the collector
+  needs no local workaround. A full acceptance run
+  across every collection method and a deployed SSH/C2 tunnel remains unverified.
 
 ---
 
@@ -2429,6 +2497,26 @@ took a separate, manual step outside `openhound collect sccm`.
 ---
 
 ## Changelog
+
+- **2026-11-17:** Added an anonymous TCP-1433 fallback for unresolved SQL ports,
+  with optional identity from the existing EPA login. Only confirmed matches
+  resolve named engines; site-database assumptions and schemas are unchanged.
+
+- **2026-11-16:** Recorded SQL-focused live SOCKS verification and the approved
+  shared correction for refused/unreachable destinations in section 13,
+  including skipped UDP Browser discovery. See
+  `docs/changes/2026-11-16-socks-sql-verification.md`; a full proxy
+  acceptance run remains separate work.
+- **2026-11-10:** Preserved the owner's default-mode port-1433 inference, added
+  the site-server registry mapping and matching-instance resolution, and required
+  explicit static configuration plus a SQL response for the single-static-port
+  inference. All port guesses are explained and possible-edge gated. See §11g.
+- **2026-11-10:** Adopted approved shared SQL address/SPN parsing and Browser
+  resolution. Registry settings, ports and engine service identities stay paired;
+  SQL probes keep independent endpoints and conflicting account evidence.
+  Unresolved instance observations cannot acquire another engine's identity. The
+  separately approved site-port fallback is documented in
+  `docs/changes/2026-11-10-sql-instance-evidence.md`.
 
 - **2026-11-10:** Corrected the optional-field assumptions exposed by strict
   preprocessing errors. Principal/group builders prepare their known optional

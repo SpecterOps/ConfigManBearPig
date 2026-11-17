@@ -27,12 +27,14 @@ from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import quote
 from openhound_collector_common.collection.errors import FatalCollectionError
 from openhound_collector_common.collection.outcomes import OperationResult
+from openhound_collector_common.discovery.sql_server import sql_port
 
 from ..clients.http import ErrorClass, HttpClient
 from ..clients.http_auth import AuthMode
 from ..clients.wmi import WmiClient
 from ..context import SourceContext
 from ..log_context import get_logger
+from .sql_site import resolve_site_sql_port
 from .sms_rows import (
     _prop,
     _row,
@@ -110,12 +112,23 @@ def _site_definition(run: _Run, target_site: str) -> Iterator[tuple[str, dict]]:
         logger.debug("Site definition for site %s: %s", target_site, sdef)
         site_server = sdef.get("SiteServerName")
         sql_fqdn = _prop(props, "SQLServerFQDN", "Value1")
+        sql_service_port = _prop(props, "SQLServicePort", "Value")
+        resolved_port = None
+        try:
+            has_valid_port = sql_service_port is not None and bool(sql_port(sql_service_port))
+        except ValueError:
+            logger.warning("Site %s reported an invalid SQL port; trying its recorded instance", target_site)
+            has_valid_port = False
+        if not has_valid_port:
+            resolved_port = resolve_site_sql_port(run.ctx, sql_fqdn, sdef.get("SQLDatabaseName"))
+        # A supplied SCCM port does not need another discovery request.
         yield run.table("site_definitions"), _row(
             run.source("SMS_SCI_SiteDefinition"), target_site, sdef, drop={"Props"},
             extra={
                 "site_guid": _prop(props, "siteGUID", "Value1"),
                 "sql_server_fqdn": sql_fqdn,
-                "sql_service_port": _prop(props, "SQLServicePort", "Value"),
+                "sql_service_port": sql_service_port,
+                "sql_resolved_service_port": resolved_port,
             },
         )
         # A computer row for the site server and the site database server, each

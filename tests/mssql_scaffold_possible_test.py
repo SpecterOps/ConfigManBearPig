@@ -92,6 +92,8 @@ def test_confirmed_site_db_scaffolding_is_not_marked_assumed():
         ("S-1-DB", ["SMS SQL Server@PS1"], True, "SQL01.lab.local", "SQL01$"),
         _SYSADMIN_ROW,
     ])
+    # The host role alone cannot confirm its port. Supply the observed setting.
+    con.execute("INSERT INTO sccm.node_site (site_code, root_site_code, sql_service_port) VALUES ('PS1','PS1','1433')")
     _build_scaffolding(con)
     name, assumed, basis, src = con.execute(
         f"SELECT name, assumed, assumption_basis, collection_source FROM {SCHEMA}.node_mssql_database"

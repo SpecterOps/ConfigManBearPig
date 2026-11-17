@@ -176,13 +176,13 @@ def test_sql_security_probes_are_skipped_after_a_rejection(monkeypatch):
 
     guard = CredentialGuard()
     guard.record_rejection("The domain controller")
-    ad = SimpleNamespace(get_spns=lambda target: ["MSSQLSvc/ps1-db.example.test:1433"])
+    ad = SimpleNamespace(find_mssql_spn_holders=lambda _: [], get_spns=lambda target: ["MSSQLSvc/ps1-db.example.test:1433"])
     ctx = SimpleNamespace(
-        ad=ad, domain="example.test", username="EXAMPLE\\reader", password="wrong",
+        ad=ad, sql_browser=SimpleNamespace(), domain="example.test", username="EXAMPLE\\reader", password="wrong",
         nt_hash=None, kerberos_ticket=None, credential_guard=guard,
         method_enabled=lambda method: True, target_hosts_by_hostname={},
     )
-    monkeypatch.setattr(mssql, "_check_port", lambda host, port: True)
+    monkeypatch.setattr(mssql, "_check_port", lambda host, port: pytest.fail("must not connect after rejection"))
     monkeypatch.setattr(mssql, "test_epa", lambda **kwargs: pytest.fail("EPA probe signed in"))
     list(mssql.collect_mssql("ps1-db.example.test", ctx))
 

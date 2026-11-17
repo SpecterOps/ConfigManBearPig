@@ -120,98 +120,74 @@ def test_caller_hostname_casing_does_not_matter(host):
     assert found == ["MSSQLSvc/ps1-db.mayyhem.com:1433"]
 
 
-# --- find_mssql_spn_holder (Task 13) ---------------------------------------------
-# find_mssql_spns (above) proves an MSSQLSvc SPN exists (D2a); it discards WHO holds
-# it. Task 13's MSSQL_ServiceAccountFor/HasSession edges need the holder's identity
-# (object_sid/sam_account_name/object_class), so find_mssql_spn_holder shares the
-# same search + host-pinning logic (via the private _find_mssql_spn_entries helper)
-# and additionally surfaces that identity. Real ADClient._entry_to_dict output uses
-# snake_case keys (object_sid, sam_account_name, object_class) for these fields
-# (objectSid/objectClass are decoded specially; sAMAccountName -> sam_account_name
-# via _ATTR_KEY_MAP), so fakes here use snake_case to match production, unlike the
-# camelCase servicePrincipalName convention find_mssql_spns already established.
+# Account lookups preserve each registration's owner instead of choosing one.
 
-def _find_holder(entries, host):
+
+def _find_holders(entries, host):
     ad = _FakeAD(entries)
-    return ADClient.find_mssql_spn_holder(ad, host), ad
+    return ADClient.find_mssql_spn_holders(ad, host), ad
 
 
 def test_holder_identity_is_resolved():
-    holder, ad = _find_holder(
-        [{
-            "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
-            "object_sid": "S-1-5-21-1-2-3-1105",
-            "sam_account_name": "sqlsvc",
-            "object_class": ["top", "person", "organizationalPerson", "user"],
-        }],
-        "ps1-db.mayyhem.com",
-    )
-    assert holder == {
-        "spns": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
+    holders, ad = _find_holders([{
+        "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
         "object_sid": "S-1-5-21-1-2-3-1105",
         "sam_account_name": "sqlsvc",
-        "object_class": ["top", "person", "organizationalPerson", "user"],
-    }
+        "object_class": ["user"],
+    }], "ps1-db.mayyhem.com")
+    assert holders == [{
+        "spns": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
+        "object_sid": "S-1-5-21-1-2-3-1105",
+        "sam_account_name": "sqlsvc", "object_class": ["user"],
+    }]
     assert ad.filters == ["(servicePrincipalName=MSSQLSvc/ps1-db.mayyhem.com*)"]
 
 
-def test_holder_is_none_when_no_spn_matches():
-    holder, _ = _find_holder([], "ps1-db.mayyhem.com")
-    assert holder is None
+def test_no_holders_when_no_spn_matches():
+    holders, _ = _find_holders([], "ps1-db.mayyhem.com")
+    assert holders == []
 
 
 def test_holder_flags_a_computer_object():
-    holder, _ = _find_holder(
-        [{
-            "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
-            "object_sid": "S-1-5-21-1-2-3-1104",
-            "sam_account_name": "PS1-DB$",
-            "object_class": ["top", "person", "organizationalPerson", "user", "computer"],
-        }],
-        "ps1-db.mayyhem.com",
-    )
-    assert "computer" in holder["object_class"]
+    holders, _ = _find_holders([{
+        "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"],
+        "object_sid": "S-1-5-21-1-2-3-1104", "sam_account_name": "PS1-DB$",
+        "object_class": ["user", "computer"],
+    }], "ps1-db.mayyhem.com")
+    assert "computer" in holders[0]["object_class"]
 
 
-def test_holder_ignores_spns_not_naming_this_host():
-    # Same trailing-wildcard-overmatch guard as find_mssql_spns.
-    holder, _ = _find_holder(
-        [{
-            "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com.evil.tld:1433"],
-            "object_sid": "S-1-5-21-1-2-3-1105",
-            "sam_account_name": "sqlsvc",
-            "object_class": ["user"],
-        }],
-        "ps1-db.mayyhem.com",
-    )
-    assert holder is None
+def test_holders_ignore_spns_not_naming_this_host():
+    holders, _ = _find_holders([{
+        "service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com.evil.tld:1433"],
+        "object_sid": "S-1-5-21-1-2-3-1105",
+    }], "ps1-db.mayyhem.com")
+    assert holders == []
 
 
-def test_multiple_holders_uses_first_and_warns(caplog):
-    holder, _ = _find_holder(
-        [
-            {"service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"]},
-            {"service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com\\CMSQL"]},
-        ],
-        "ps1-db.mayyhem.com",
-    )
-    assert holder is not None
-    assert holder["spns"] == ["MSSQLSvc/ps1-db.mayyhem.com:1433"]
-    assert any("distinct AD principals hold an MSSQLSvc SPN" in r.message for r in caplog.records)
+def test_multiple_holders_keep_their_own_registrations():
+    holders, _ = _find_holders([
+        {"service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:1433"], "object_sid": "S-1"},
+        {"service_principal_name": ["MSSQLSvc/ps1-db.mayyhem.com:51433"], "object_sid": "S-2"},
+    ], "ps1-db.mayyhem.com")
+    assert [(holder["object_sid"], holder["spns"]) for holder in holders] == [
+        ("S-1", ["MSSQLSvc/ps1-db.mayyhem.com:1433"]),
+        ("S-2", ["MSSQLSvc/ps1-db.mayyhem.com:51433"]),
+    ]
 
 
 def test_holder_empty_hostname_does_not_wildcard_the_forest():
     ad = _FakeAD([{"service_principal_name": ["MSSQLSvc/anything:1433"]}])
-    assert ADClient.find_mssql_spn_holder(ad, "") is None
+    assert ADClient.find_mssql_spn_holders(ad, "") == []
     assert ad.filters == []
 
 
 def test_holder_search_failure_is_not_fatal():
-    class _BoomAD:
-        def paged_search(self, search_filter, attributes=None, **kw):
+    class BoomAD:
+        def paged_search(self, search_filter, attributes=None, **kwargs):
             raise RuntimeError("LDAP down")
 
-    assert ADClient.find_mssql_spn_holder(_BoomAD(), "ps1-db.mayyhem.com") is None
+    assert ADClient.find_mssql_spn_holders(BoomAD(), "ps1-db.mayyhem.com") == []
 
 
 # --- production key-shape regression (found 2026-07-28) --------------------------

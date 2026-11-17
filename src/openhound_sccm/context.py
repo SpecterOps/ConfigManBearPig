@@ -7,6 +7,7 @@ provides the lazy-loaded caches that every ``@app.resource`` in
 """
 import re
 from dataclasses import dataclass, field
+from openhound_collector_common.discovery.sql_fallback import SqlPortFallback
 from typing import Any, Optional
 from collections.abc import Mapping
 
@@ -14,6 +15,7 @@ from ldap3 import BASE
 
 from openhound_collector_common.clients.credential_guard import CredentialGuard
 from openhound_collector_common.discovery.dns import make_resolver
+from openhound_collector_common.discovery.sql_browser import SqlBrowserResolver
 from openhound_collector_common.collection.registry import TargetRegistry, matches_allowed_targets
 from openhound_collector_common.collection.errors import FatalCollectionError
 from openhound_collector_common.collection.methods import parse_methods
@@ -123,6 +125,8 @@ class SourceContext:
     # same record to the directory client; main.py makes it stop the queue.
     credential_guard: CredentialGuard = field(default_factory=CredentialGuard)
     ad_resolution_cache: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+    sql_browser: SqlBrowserResolver = field(default_factory=SqlBrowserResolver)
+    sql_port_fallback: SqlPortFallback = field(default_factory=SqlPortFallback)
     discovered_domains: set = field(default_factory=set)
 
     # Every uniquely-resolved AD principal from this run, keyed by SID —

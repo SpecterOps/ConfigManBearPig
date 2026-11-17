@@ -6,12 +6,15 @@ import pytest
 
 from openhound_sccm.clients.mssql_epa import EPAPrereqError
 from openhound_sccm.collectors import mssql
+from openhound_collector_common.discovery.sql_fallback import SqlPortFallback
 
 
 def test_inconclusive_epa_keeps_sql_row_then_reports_incomplete(monkeypatch):
     context = SimpleNamespace(
         method_enabled=lambda _: True,
-        ad=SimpleNamespace(get_spns=lambda _: ["MSSQLSvc/ps1-db.mayyhem.com:1433"]),
+        sql_browser=SimpleNamespace(),
+        sql_port_fallback=SqlPortFallback(),
+        ad=SimpleNamespace(find_mssql_spn_holders=lambda _: [], get_spns=lambda _: ["MSSQLSvc/ps1-db.mayyhem.com:1433"]),
         domain="mayyhem.com", username="alice", password="example",
         nt_hash=None, kerberos_ticket=None, target_hosts_by_hostname={},
     )

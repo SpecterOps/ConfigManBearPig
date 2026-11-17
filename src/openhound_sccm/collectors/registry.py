@@ -3,6 +3,8 @@ import time
 from typing import Iterable, Any, Optional
 
 from openhound_collector_common.clients.credential_guard import CredentialGuard
+from openhound_collector_common.discovery.sql_server import SqlAddress, sql_port
+from .sql_site import resolve_site_sql_port
 
 from ..clients.smb import negotiated_signing_required
 from ..clients.smb_sso import connect_smb
@@ -439,6 +441,7 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                     "source": "RemoteRegistry-Triggers",
                     "site_code": site_code,
                 }
+                yield from get_site_database(probe, ctx, site_code)
             elif probe.was_denied(SCCM_REG_KEYS["triggers"]):
                 # A refused read is not an absent key. Reporting it as "does not
                 # exist" told the operator this host is not a site server when the
@@ -575,6 +578,54 @@ def collect_registry(target: str, ctx: "SourceContext") -> Iterable[tuple[str, d
                     # or empty name), so a None return isn't a failure here.
 
     logger.info("Remote Registry collection completed for %s", target)
+
+
+SITE_SQL_ACCOUNT_KEY = r"SOFTWARE\Microsoft\SMS\SQL Server\Site System SQL Account"
+
+
+def get_site_database(
+    probe: _RegistryProbe, ctx: SourceContext, site_code: str
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    """Read the site's own host/database/port mapping, independently of its provider."""
+    values = probe.read_values(SITE_SQL_ACCOUNT_KEY)
+    if values is None:
+        logger.verbose("Site database mapping is unavailable on %s; retaining other discovery", probe.hostname)
+        return
+    fields = {name.casefold(): value for name, value in values}
+    host, database = fields.get("server"), fields.get("database name")
+    if not host or not database:
+        logger.warning("Site database registry mapping on %s lacks its server or database", probe.hostname)
+        return
+    port = None
+    try:
+        port = sql_port(fields.get("port", ""))
+    except ValueError:
+        logger.warning("Site SQL port setting on %s is missing or invalid", probe.hostname)
+    entry = ctx.register_target(host, source="RemoteRegistry-SiteDatabase")
+    resolved_port = None
+    if port is None and entry is not None:
+        resolved_port = resolve_site_sql_port(ctx, host, database)
+    # An explicit port needs no lookup; target registration logs an excluded host.
+    logger.info("Site %s database mapping on %s: %s / %s, port %s", site_code, probe.hostname, host, database, port or resolved_port or "unread")
+    yield "remoteregistry_site_databases", {
+        "source": "RemoteRegistry-SiteDatabase",
+        "site_code": site_code,
+        "domain_computer_sid": (entry.ad_object or {}).get("object_sid") if entry else None,
+        "sql_server_fqdn": host,
+        "sql_database_name": database,
+        "sql_service_port": port,
+        "sql_resolved_service_port": resolved_port,
+    }
+    if entry is not None:
+        yield "remoteregistry_computers", {
+            **(entry.ad_object or {}),
+            "source": "RemoteRegistry-SiteDatabase",
+            "name": (entry.ad_object or {}).get("name") or host,
+            "dns_host_name": host,
+            "sccm_infra": True,
+            "sccm_site_system_roles": _roles(["SMS SQL Server"], site_code),
+        }
+    # A rejected registration was already reported; raw site settings remain saved.
 
 
 def get_current_user(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -714,34 +765,19 @@ def _mssql_service_name(instance_name: str) -> str:
 
 
 def _read_mssql_service_state(
-    probe: _RegistryProbe, instance_names: Optional[list[str]]
+    probe: _RegistryProbe, instance_name: str
 ) -> tuple[Optional[str], Optional[str]]:
-    """Return ``(startup_type, service_account)`` for the SQL Server engine.
-
-    Read from the service control entry rather than inferred from a port probe: we
-    already hold a registry connection, and a firewall can hide a perfectly healthy
-    instance from 1433 while a stopped instance can still leave listening-looking
-    config behind. ``ObjectName`` on the same key is the account the engine runs as.
-
-    Only the first instance that answers is reported -- the row this feeds is one
-    per host, not one per instance. Every read is best-effort: the Services hive is
-    admin-gated, so a low-privilege run simply leaves these NULL rather than failing.
-    """
-    for instance in instance_names or ["MSSQLSERVER"]:
-        key = MSSQL_SERVICE_KEY.format(service=_mssql_service_name(instance))
-        start = probe.read_dword(key, "Start")
-        account = probe.read_value(key, "ObjectName")
-        if start is None and account is None:
-            logger.verbose("No readable service control entry at %s", key)
-            continue
-        start_type = MSSQL_START_TYPES.get(start) if start is not None else None
-        logger.info(
-            "SQL Server service %s on %s: startup=%s, account=%s",
-            key.rsplit("\\", 1)[-1], probe.hostname, start_type or "unknown",
-            account or "unknown",
-        )
-        return start_type, account
-    return None, None
+    """Read only this instance's engine startup type and configured account."""
+    key = MSSQL_SERVICE_KEY.format(service=_mssql_service_name(instance_name))
+    start = probe.read_dword(key, "Start")
+    account = probe.read_value(key, "ObjectName")
+    if start is None and account is None:
+        logger.verbose("No readable service control entry at %s", key)
+        return None, None
+    # An absent startup value stays unknown even when the account is readable.
+    start_type = MSSQL_START_TYPES.get(start) if start is not None else None
+    logger.info("SQL engine %s on %s: startup=%s, account=%s", instance_name, probe.hostname, start_type or "unknown", account or "unknown")
+    return start_type, account
 
 
 # SQL Server's own inventory of installed instances: one value per instance, whose
@@ -762,136 +798,122 @@ MSSQL_NETWORK_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\{instance_key}\MSS
 MSSQL_LEGACY_NETWORK_KEY = r"SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib"
 
 
-def _mssql_instances(probe: _RegistryProbe) -> tuple[list[str], list[str]]:
-    """Return ``(instance_names, network_key_paths)`` for the SQL instances on a host.
-
-    Reads SQL Server's instance inventory and derives each settings path from it,
-    rather than guessing. The inventory's value data *is* the instance subkey, so the
-    resulting path is exact -- no version to guess, and no assumption that the
-    instance is the default one.
-
-    That assumption is what this replaces. The previous implementation probed eight
-    hard-coded paths that all ended ``.MSSQLSERVER``, so a NAMED instance could never
-    match one of them: the lab's ps1-sec runs the SEC site database as
-    ``CONFIGMGRSEC`` and every probe missed it even with full local administrator
-    rights, leaving its encryption, Extended Protection, port and service state
-    unread while looking indistinguishable from a host with no SQL at all (con-ab59).
-
-    Falls back to the single pre-2000 location when the inventory is empty, absent or
-    refused -- which is also the "no SQL Server here" case, so the caller decides what
-    an empty result means rather than this function warning about it.
-    """
+def _mssql_instances(probe: _RegistryProbe) -> list[tuple[str, str]]:
+    """Pair each installed instance name with its own network-settings path."""
     inventory = probe.read_values(MSSQL_INSTANCE_NAMES_KEY)
     if not inventory:
-        # Absent means no SQL Server on this host (the normal case for most site
-        # systems); denied is already counted for the per-host denial summary. Either
-        # way the only thing left worth trying is the legacy default-instance path.
-        logger.verbose(
-            "No SQL Server instance inventory at %s on %s; trying the legacy path only",
-            MSSQL_INSTANCE_NAMES_KEY, probe.hostname,
-        )
-        return [], [MSSQL_LEGACY_NETWORK_KEY]
+        logger.verbose("No SQL instance inventory on %s; trying the legacy path only", probe.hostname)
+        return [("MSSQLSERVER", MSSQL_LEGACY_NETWORK_KEY)]
+    instances = []
+    for name, key in inventory:
+        if not key:
+            logger.warning("SQL instance %r on %s has no subkey recorded; skipping it", name, probe.hostname)
+            continue
+        # SQL supplies the versioned key; guessing its version would miss instances.
+        instances.append((name, MSSQL_NETWORK_KEY.format(instance_key=key)))
+    return instances
 
-    # A value with no data cannot name a subkey; skip it rather than build
-    # "...\Microsoft SQL Server\\MSSQLServer\SuperSocketNetLib".
-    usable = [(name, key) for name, key in inventory if key]
-    for name, _ in inventory:
-        if not any(name == used for used, _ in usable):
-            logger.warning("SQL instance %r on %s has no subkey recorded in %s; skipping it",
-                           name, probe.hostname, MSSQL_INSTANCE_NAMES_KEY)
 
-    names = [name for name, _ in usable]
-    logger.info("Found MSSQL instance names: %s", ", ".join(names) if names else "(none usable)")
-    return names, [MSSQL_NETWORK_KEY.format(instance_key=key) for _, key in usable]
+def _mssql_tcp_port_settings(probe: _RegistryProbe, network_key: str) -> dict[int, bool | None]:
+    """Read effective configured ports, honoring Listen All and enabled IP entries.
+
+    A dynamic value of zero requests a port at startup; it is not a port to probe.
+    Configuration describes possible listeners. The later SQL phase separately
+    checks reachability and protection on each known numeric endpoint.
+    """
+    tcp_key = network_key + r"\Tcp"
+    tcp_enabled = probe.read_dword(tcp_key, "Enabled")
+    if tcp_enabled == 0:
+        logger.debug("SQL TCP is disabled at %s; no TCP listener is configured", tcp_key)
+        return {}
+    # Unread enablement still permits raw configured ports, but cannot prove static.
+    listen_all = probe.read_dword(tcp_key, "ListenOnAllIPs")
+    if listen_all == 1:
+        ip_keys = [tcp_key + r"\IPAll"]
+    elif listen_all == 0:
+        ip_keys = []
+        for name in probe.enum_keys(tcp_key) or []:
+            if name.casefold() == "ipall":
+                continue  # IPAll is ignored when Listen All is disabled.
+            key = tcp_key + "\\" + name
+            if probe.read_dword(key, "Enabled") == 1 and probe.read_dword(key, "Active") == 1:
+                ip_keys.append(key)
+            else:
+                logger.debug("Skipping inactive, disabled or unassessed SQL IP settings at %s", key)
+    else:
+        logger.verbose("SQL ListenOnAllIPs is unread on %s at %s; TCP ports remain unknown", probe.hostname, tcp_key)
+        return {}
+    ports: dict[int, bool | None] = {}
+    for key in ip_keys:
+        dynamic_value = probe.read_value(key, "TcpDynamicPorts")
+        for value_name in ("TcpPort", "TcpDynamicPorts"):
+            value = dynamic_value if value_name == "TcpDynamicPorts" else probe.read_value(key, value_name)
+            if not value:
+                continue  # An empty port setting names no listener.
+            for text in value.split(","):
+                if value_name == "TcpDynamicPorts" and text.strip() == "0":
+                    logger.debug("Dynamic SQL port at %s has not been assigned", key)
+                    continue
+                try:
+                    port = sql_port(text)
+                    # Only an explicitly empty dynamic setting establishes static
+                    # configuration. Unread is not the same thing as disabled.
+                    is_static = dynamic_value == "" if dynamic_value is not None and tcp_enabled == 1 else None
+                    if port not in ports:
+                        ports[port] = is_static
+                    elif ports[port] is not True or is_static is not True:
+                        ports[port] = False if ports[port] is False or is_static is False else None
+                    # Routine merging preserves doubt without another diagnostic.
+                except ValueError:
+                    logger.warning("Invalid %s at %s on %s; retaining other known ports", value_name, key, probe.hostname)
+    return ports
+
+
+def _mssql_tcp_ports(probe: _RegistryProbe, network_key: str) -> list[int]:
+    """Return configured port numbers for callers that do not need their type."""
+    return sorted(_mssql_tcp_port_settings(probe, network_key))
 
 
 def get_mssql_settings(probe: _RegistryProbe, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
-    """Yield one row of SQL Server settings for this host, or nothing if it runs none.
-
-    One row per host, not per instance: the first instance whose settings answer wins
-    (mirroring ``_read_mssql_service_state``), and its instance list carries the rest.
-    """
-    instance_names, reg_paths = _mssql_instances(probe)
-
-    force_encryption = None
-    extended_protection = None
-    reg_path_found = None
-
-    # First instance whose settings key answers wins; the row is one per host.
-    for reg_path in reg_paths:
-        if probe.read_values(reg_path) is None:
-            continue
-        reg_path_found = reg_path
-        logger.info("Found MSSQL registry key at %s", reg_path)
-
-        force_encryption_value = probe.read_dword(reg_path, "ForceEncryption")
-        force_encryption = "Yes" if force_encryption_value == 1 else "No"
-
-        # Separate name for the raw DWORD, matching force_encryption above:
-        # reusing one variable for the int and its label makes it int-or-str.
-        extended_protection_value = probe.read_dword(reg_path, "ExtendedProtection")
-        if extended_protection_value == 1:
-            extended_protection = "Allowed"
-        elif extended_protection_value == 2:
-            extended_protection = "Required"
-        else:
-            extended_protection = "Off"
-        break
-
-    if not reg_path_found:
-        if any(probe.was_denied(path) for path in reg_paths):
-            # Refused, not missing. The probe's per-host denial summary already names
-            # "SQL Server encryption / Extended Protection settings" as lost, so
-            # warning again here -- with a dump of paths the operator can do nothing
-            # about without local admin -- only restates it.
-            logger.verbose("SQL Server network settings denied on %s; reported in the denial summary.", probe.hostname)
-        elif instance_names:
-            # The host told us it runs SQL Server and then its settings key was not
-            # where the inventory said it would be. That contradiction is a real gap
-            # worth surfacing -- unlike the case below it, which is just a host
-            # without SQL.
-            logger.warning(
-                "%s runs SQL Server instance(s) %s but none of their network-settings keys could be read (%s); "
-                "encryption and Extended Protection are unknown for this host.",
-                probe.hostname, ", ".join(instance_names), "; ".join(reg_paths),
-            )
-        else:
-            # No inventory and no legacy key: this host does not run SQL Server. That
-            # is the normal case -- seven of nine lab hosts on a FULLY PRIVILEGED run
-            # -- so it is not something to warn about (con-ab59).
-            logger.verbose("No SQL Server registry keys on %s; the host does not appear to run SQL Server.", probe.hostname)
-        return
-
-    logger.info("Collected EPA settings from %s: ForceEncryption=%s, ExtendedProtection=%s", probe.hostname, force_encryption, extended_protection)
-
-    port_reg = reg_path_found + r"\Tcp\IPAll"
-    port = probe.read_value(port_reg, "TcpPort")
-    if port:
-        logger.info("Found MSSQL TCP port: %s", port)
-
-    # instance_names came from _mssql_instances above -- the same read that located
-    # reg_path_found, rather than a second query for the same key.
-
-    # Whether the engine is actually meant to run here, and as whom. A SQL Server
-    # can be installed -- leaving every key above readable -- on a host that never
-    # serves anything, which is how a passive site server acquired a spurious
-    # MSSQL_Server node (con-be15). The node is still emitted; these properties are
-    # what let a reader tell a live database from a dormant install.
-    service_start_type, service_account_name = _read_mssql_service_state(
-        probe, instance_names
-    )
-
-    target_entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
-    ad_object = target_entry.ad_object if target_entry else None
-
-    yield "remoteregistry_mssql_servers", {
-        "source": "RemoteRegistry-MSSQL",
-        "force_encryption": force_encryption if force_encryption is not None else None,
-        "extended_protection": extended_protection if extended_protection is not None else None,
-        "name": ad_object.get("name") if ad_object else probe.hostname,
-        "domain_computer_sid": ad_object.get("object_sid") if ad_object else None,
-        "port": port if port else None,
-        "instance_names": instance_names if instance_names else None,
-        "service_start_type": service_start_type,
-        "service_account_name": service_account_name,
-    }
+    """Save each instance independently, including installed but unread settings."""
+    entry = ctx.target_hosts_by_hostname.get(probe.hostname.lower())
+    ad_object = entry.ad_object if entry else None
+    for instance, network_key in _mssql_instances(probe):
+        settings = probe.read_values(network_key)
+        if settings is None:
+            if network_key == MSSQL_LEGACY_NETWORK_KEY:
+                if probe.was_denied(network_key):
+                    logger.verbose("Legacy SQL settings denied on %s; no instance inventory establishes SQL here", probe.hostname)
+                else:
+                    logger.verbose("No SQL Server registry keys on %s; the host does not appear to run SQL Server", probe.hostname)
+                continue
+            if probe.was_denied(network_key):
+                logger.verbose("SQL settings denied on %s; reported in the denial summary", probe.hostname)
+            else:
+                logger.warning("SQL instance %s on %s has unread network settings; keeping its identity with unknown protection", instance, probe.hostname)
+        # Inventory evidence is retained even when a separate settings read fails.
+        force = probe.read_dword(network_key, "ForceEncryption") if settings is not None else None
+        protection = probe.read_dword(network_key, "ExtendedProtection") if settings is not None else None
+        ports = _mssql_tcp_port_settings(probe, network_key) if settings is not None else {}
+        startup, account = _read_mssql_service_state(probe, instance)
+        known_ports: list[int | None] = list(ports) or [None]
+        for port in known_ports:
+            address = SqlAddress(probe.hostname, port, instance)
+            if entry is not None:
+                entry.sql_instances.append(address)
+            # A registry-only helper call without a registered target has no next phase.
+            yield "remoteregistry_mssql_servers", {
+                "source": "RemoteRegistry-MSSQL",
+                "force_encryption": {0: "No", 1: "Yes"}.get(force) if force is not None else None,
+                "extended_protection": {0: "Off", 1: "Allowed", 2: "Required"}.get(protection) if protection is not None else None,
+                "name": ad_object.get("name") if ad_object else probe.hostname,
+                "dns_host_name": probe.hostname,
+                "domain_computer_sid": ad_object.get("object_sid") if ad_object else None,
+                "port": str(port) if port is not None else None,
+                "is_static_port": ports.get(port) if port is not None else None,
+                "instance_name": instance,
+                "instance_names": [instance],
+                "network_settings_key": network_key,
+                "service_start_type": startup,
+                "service_account_name": account,
+            }

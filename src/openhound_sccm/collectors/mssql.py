@@ -1,195 +1,363 @@
-"""
-Checks MSSQL database servers for:
-- Extended Protection for Authentication (EPA) settings via NTLM probing
-- Site database MSSQL server nodes and relationships
-- sysadmin login detection
-- Service account detection
-"""
-import logging
+"""Keep SQL ports, registrations and protection evidence separate per instance."""
+
+from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, Iterable
 
-from ..clients.mssql_epa import EPAPrereqError, test_epa
-from ..context import SourceContext
+from openhound_collector_common.discovery.sql_server import SqlAddress, parse_sql_spn
+from openhound_collector_common.proxy import active_proxy
 
-logger = logging.getLogger(__name__)
+from ..clients.mssql_epa import EPAPrereqError, EPAResult, test_epa
+from ..context import SourceContext
+from ..log_context import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class _SqlEvidence:
+    """Collected endpoint evidence before choosing any single service identity."""
+
+    address: SqlAddress
+    spns: list[str] = field(default_factory=list)
+    # LDAP rows are variable-shaped at this boundary. Keep their original fields
+    # in raw output; only the explicitly selected scalar identity reaches graphs.
+    holders: list[dict[str, Any]] = field(default_factory=list)
+    from_registry: bool = False
+    is_fallback: bool = False
 
 
 def _check_port(hostname: str, port: int, timeout: float = 3.0) -> bool:
-    """Check if TCP port is open on the target host."""
+    """Check one known TCP port without treating a timeout as protection evidence."""
     import socket
+
     try:
         with socket.create_connection((hostname, port), timeout=timeout):
             return True
-    except (socket.timeout, ConnectionRefusedError, OSError) as ex:
-        logger.debug("%s:%d unreachable: %s", hostname, port, ex)
+    except (socket.timeout, ConnectionRefusedError, OSError) as error:
+        logger.debug("%s:%d unreachable: %s", hostname, port, error)
         return False
 
 
-def collect_mssql(target: str, ctx: SourceContext) -> Iterable[tuple[str, dict[str, Any]]]:
-    """Yield one row per MSSQL host with evidence it runs SQL Server: an open
-    TCP/1433 (which also lets EPA be probed), an AD-registered MSSQLSvc SPN, or both.
-
-    EPA detection (NTLM login probes via explicit credentials or current-user SSPI)
-    only runs when the port answered -- there's nothing to probe otherwise. An SPN
-    is itself AD-readable proof the host runs SQL Server (design decision D2a), so a
-    closed port no longer discards the host; only the ABSENCE of both signals (port
-    closed AND no MSSQLSvc SPN) means there's no evidence of SQL Server at all, and
-    the host is skipped. `has_mssql_spn` / `port_open` record which signal(s) fired
-    so downstream builders (e.g. the MSSQL_CoerceAndRelayToMSSQL edge) can tell
-    "EPA was measured and came back unclear" apart from "EPA was never measured".
-    """
-    if not ctx.method_enabled("MSSQL"):
-        return
-
-    logger.info("Starting MSSQL collection on %s", target)
-
-    # Query AD for SPNs to help EPA detection select the correct service binding.
-    spns = ctx.ad.get_spns(target)
-
-    # get_spns reads the TARGET COMPUTER's own servicePrincipalName, which is empty
-    # whenever SQL runs as a domain service account -- Microsoft's recommended setup and
-    # the usual one for an SCCM site database, where the SPN sits on a user object. The
-    # host part of MSSQLSvc/<host>:<port> names the machine running SQL no matter who
-    # holds the SPN, so fall back to searching for the SPN itself. Without this, D2(a)
-    # ("an MSSQLSvc SPN is enough for the host to reach the graph") silently holds only
-    # for LocalSystem / NetworkService / virtual-account SQL.
-    #
-    # Task 13 (Tier A+): find_mssql_spn_holder also resolves WHO holds the SPN, which
-    # D2(a)'s mere existence check (find_mssql_spns) deliberately doesn't need but
-    # MSSQL_ServiceAccountFor/HasSession do -- the SPN is registered on the account SQL
-    # actually runs as.
-    service_account_sid = None
-    service_account_is_computer = None
-    service_account_name = None
-    if not any(s.upper().startswith("MSSQLSVC/") for s in spns):
-        holder = ctx.ad.find_mssql_spn_holder(target)
-        if holder:
-            # Merge rather than replace: the computer's own SPNs may still carry other
-            # services test_epa can bind against.
-            spns = list(spns) + holder["spns"]
-            service_account_sid = holder.get("object_sid")
-            # con-c509/con-2249: keep the NAME, not just the SID. The LDAP lookup
-            # already resolved it (and logs it), but dropping it here left the account
-            # with no node_user row at low privilege -- every arm of _node_user reads an
-            # SCCM-privileged source -- so it degraded to a bare node_backfill stub whose
-            # only property is its own SID. The MSSQL_GetTGS / MSSQL_GetAdminTGS /
-            # MSSQL_ServiceAccountFor / HasSession edges pointing at it were emitted
-            # correctly all along; they just pointed at an anonymous node.
-            service_account_name = holder.get("sam_account_name")
-            service_account_is_computer = "computer" in [
-                c.lower() for c in (holder.get("object_class") or [])
-            ]
-            logger.info("MSSQLSvc SPN for %s is held by another principal (service account)", target)
-        else:
-            logger.debug("No MSSQLSvc SPN anywhere in AD for %s", target)
-
-    # Split port or instance name from SPN if present (format is MSSQLSvc/hostname:port or MSSQLSvc/hostname\instance).
-    # mssql_spn is also kept as-is (not just parsed for its port) -- it is itself
-    # AD-readable proof the host runs SQL Server (D2a), used below. The match is
-    # case-insensitive: SPNs are case-insensitive identifiers in AD, and
-    # `setspn -A mssqlsvc/host:port ...` (lowercase) is a real, valid registration
-    # -- graph presence for an SPN-only host (D2a) must not depend on how the SPN
-    # happened to be cased when it was set.
-    port = 1433  # Default MSSQL port
-    mssql_spn = next((s for s in spns if s.upper().startswith("MSSQLSVC/")), None) if spns else None
-    if mssql_spn:
-        if ":" in mssql_spn:
-            _, port_str = mssql_spn.rsplit(":", 1)
-            try:
-                port = int(port_str)
-            except ValueError:
-                logger.warning("Invalid port in SPN %s: %s", mssql_spn, port_str)
-        elif "\\" in mssql_spn:
-            # Instance name is present, but we can't determine the port without connecting to the SQL Browser service, so default to 1433.
-            logger.info("SPN %s contains instance name but no port, defaulting to 1433", mssql_spn)
-    elif spns:
-        logger.info("No MSSQLSvc SPN found for %s, defaulting to port 1433", target)
-    else:
-        logger.info("No SPNs found for %s, defaulting to port 1433", target)
-
-    port_open = _check_port(target, port)
-    if not port_open:
-        # An SPN is proof the host runs SQL Server, so it still belongs in the graph
-        # (D2a) -- we just cannot probe EPA. Only skip entirely when there is no SPN
-        # either, i.e. no evidence of SQL at all.
-        if not mssql_spn:
-            logger.info("MSSQL port %d closed on %s and no MSSQLSvc SPN; nothing to record", port, target)
-            return
-        logger.info(
-            "MSSQL port %d closed on %s but an MSSQLSvc SPN exists; recording the host "
-            "without EPA data", port, target,
-        )
-    else:
-        logger.info("MSSQL port %d is open", port)
-
-    epa_result = None
-    epa_error: EPAPrereqError | None = None
-    credential_guard = getattr(ctx, "credential_guard", None)
-    if port_open and credential_guard is not None and credential_guard.is_rejected:
-        # Each EPA probe is a sign-in. Once the run's password was rejected,
-        # probing would only add failed sign-ins against the same account.
-        logger.warning(
-            "EPA testing %s skipped: the sign-in details were already rejected", target
-        )
-    elif port_open:
-        # Probe EPA enforcement using the credential ladder (explicit creds -> SSPI ->
-        # ticket-only WARNING+skip -> skip). Skipped when the port is closed -- there
-        # is nothing listening to probe.
+def _instance_evidence(target: str, ctx: SourceContext) -> list[_SqlEvidence]:
+    """Keep all host-matching registrations and registry-discovered endpoints."""
+    holders = ctx.ad.find_mssql_spn_holders(target)
+    spns = list(ctx.ad.get_spns(target))
+    for holder in holders:
+        spns.extend(holder["spns"])
+    entry = ctx.target_hosts_by_hostname.get(target.lower())
+    evidence = [
+        _SqlEvidence(address, from_registry=True)
+        for address in (entry.sql_instances if entry else [])
+    ]
+    host_names = {target.casefold(), target.split(".", 1)[0].casefold()}
+    for spn in dict.fromkeys(spns):
         try:
-            epa_result = test_epa(
-                target=target,
-                port=port,
-                remote_name=target,
-                domain=ctx.domain,
-                username=ctx.username,
-                password=ctx.password,
-                nt_hash=ctx.nt_hash,
-                kerberos_ticket=ctx.kerberos_ticket,
-                spns=spns,
+            address = parse_sql_spn(spn)
+        except ValueError:
+            logger.warning("Ignoring an invalid SQL registration on %s", target)
+            continue
+        if address is None or address.host.casefold() not in host_names:
+            continue  # Other services and other hosts cannot identify this endpoint.
+        matched_holders = [
+            holder
+            for holder in holders
+            if any(value.casefold() == spn.casefold() for value in holder["spns"])
+        ]
+        evidence.append(
+            _SqlEvidence(
+                SqlAddress(target, address.port, address.instance),
+                [spn],
+                matched_holders,
             )
-        except EPAPrereqError as error:
-            # Save independent host/SPN evidence before reporting the failed read.
-            logger.warning("EPA measurement incomplete for %s:%d: %s", target, port, error)
-            epa_error = error
+        )
+    if not evidence:
+        logger.debug(
+            "No SQL registrations or registry instances on %s; checking the conventional port only",
+            target,
+        )
+        evidence.append(_SqlEvidence(SqlAddress(target, 1433)))
+    # Names stay unresolved until Browser or SQL itself identifies their port.
+    return evidence
 
-    force_encryption = None
-    extended_protection = None
-    strict_encryption = None
-    if epa_result:
-        force_encryption = epa_result.force_encryption
-        extended_protection = epa_result.extended_protection
-        strict_encryption = epa_result.strict_encryption
 
-    target_entry = ctx.target_hosts_by_hostname.get(target.lower())
+def _merge_evidence(kept: _SqlEvidence, incoming: _SqlEvidence) -> None:
+    """Combine observations already known to describe the same endpoint."""
+    kept.spns = list(dict.fromkeys([*kept.spns, *incoming.spns]))
+    kept.holders.extend(incoming.holders)
+    kept.from_registry = kept.from_registry or incoming.from_registry
+    if not kept.address.instance and incoming.address.instance:
+        kept.address = incoming.address
+    # Retaining an existing name needs no additional operational diagnostic.
 
-    # name is the AD CN (e.g. "PS1-DB", not a DNS name); dns_host_name is the real
-    # FQDN, carried separately so a consumer that needs an actual hostname (e.g. a
-    # dnshostname field, or a LIKE '%.%' join) doesn't get handed the CN by mistake
-    # (reviewer M2). Both fall back to the connect target when ad_object is unavailable.
-    ad_object = target_entry.ad_object if target_entry and target_entry.ad_object else None
-    yield "mssql_server_instances", {
-        "source": "MSSQL-ScanForEPA",
-        "force_encryption": force_encryption,
-        "extended_protection": extended_protection,
-        "strict_encryption": strict_encryption,
-        "name": ad_object.get("name") if ad_object else target,
-        "dns_host_name": ad_object.get("dns_host_name") if ad_object else target,
-        "domain_computer_sid": ad_object.get("object_sid") if ad_object else None,
-        "port": port,
-        "has_mssql_spn": mssql_spn is not None,
+
+def _resolve_endpoints(
+    target: str, ctx: SourceContext
+) -> tuple[list[_SqlEvidence], int]:
+    """Resolve names once, then merge only evidence for the same numeric port."""
+    by_address: dict[tuple[int | None, str], _SqlEvidence] = {}
+    known_ports: dict[str, set[int]] = {}
+    for item in _instance_evidence(target, ctx):
+        address = item.address
+        name = (address.instance or "").casefold()
+        key = (address.port, name)
+        if key in by_address:
+            _merge_evidence(by_address[key], item)
+        else:
+            by_address[key] = item
+        # Exact duplicate observations add no new endpoint or network request.
+        if name and address.port is not None:
+            known_ports.setdefault(name, set()).add(address.port)
+        # Numeric registrations without an instance name cannot name another engine.
+    endpoints: dict[tuple[int | None, str], _SqlEvidence] = {}
+    failures = 0
+    for item in by_address.values():
+        address = item.address
+        ports: Sequence[int | None] = [address.port]
+        if address.port is None and address.instance:
+            observed = known_ports.get(address.instance.casefold())
+            if observed:
+                logger.debug(
+                    "Using this instance's already observed ports on %s", target
+                )
+                ports = sorted(observed)
+            else:
+                try:
+                    ports = [
+                        ctx.sql_browser.resolve(
+                            target,
+                            address.instance,
+                            timeout=3,
+                            proxied=active_proxy() is not None,
+                        )
+                    ]
+                except (OSError, ValueError) as error:
+                    logger.warning(
+                        "SQL port is unresolved for %s\\%s: %s",
+                        target,
+                        address.instance,
+                        error,
+                    )
+                    failures += 1
+        # Numeric ports and bare unresolved registrations need no Browser request.
+        for port in ports:
+            resolved = _SqlEvidence(
+                SqlAddress(target, port, address.instance),
+                list(item.spns),
+                list(item.holders),
+                item.from_registry,
+            )
+            key = (
+                port,
+                "" if port is not None else (address.instance or "").casefold(),
+            )
+            if key in endpoints:
+                _merge_evidence(endpoints[key], resolved)
+            else:
+                endpoints[key] = resolved
+            # Different unknown names remain separate; known ports own their observations.
+    entry = ctx.target_hosts_by_hostname.get(target.lower())
+    host_identity = (
+        entry.ad_object.get("object_sid") if entry and entry.ad_object else None
+    )
+    for item in endpoints.values():
+        if item.address.port is not None:
+            ctx.sql_port_fallback.remember(
+                target, item.address.port, host_identity=host_identity
+            )
+        # Unresolved names remain raw candidates, separate from the fallback.
+    if any(item.address.port is None for item in endpoints.values()):
+        candidate = ctx.sql_port_fallback.claim(target, host_identity=host_identity)
+        if candidate is not None:
+            endpoints[(candidate.port, "")] = _SqlEvidence(candidate, is_fallback=True)
+        # An existing or previously attempted 1433 endpoint needs no extra probe.
+    # Fully resolved instances need no conventional-port fallback.
+    return list(endpoints.values()), failures
+
+
+def _probe_epa(
+    target: str,
+    port: int,
+    spns: list[str],
+    ctx: SourceContext,
+    *,
+    identify_instance: bool = False,
+) -> tuple[EPAResult | None, bool]:
+    """Return this port's measurement and whether an attempted read failed."""
+    guard = getattr(ctx, "credential_guard", None)
+    if guard is not None and guard.is_rejected:
+        logger.warning(
+            "EPA testing skipped on %s: sign-in details were already rejected", target
+        )
+        return None, False
+    try:
+        result = test_epa(
+            target=target,
+            port=port,
+            remote_name=target,
+            domain=ctx.domain,
+            username=ctx.username,
+            password=ctx.password,
+            nt_hash=ctx.nt_hash,
+            kerberos_ticket=ctx.kerberos_ticket,
+            spns=spns,
+            identify_instance=identify_instance,
+        )
+        return result, False
+    except EPAPrereqError as error:
+        logger.warning("EPA measurement incomplete for %s:%s: %s", target, port, error)
+        return None, True
+
+
+def _instance_row(
+    target: str,
+    item: _SqlEvidence,
+    port_open: bool | None,
+    result: EPAResult | None,
+    ctx: SourceContext,
+) -> dict[str, Any]:
+    """Save original candidates while selecting a scalar identity only if unambiguous."""
+    entry = ctx.target_hosts_by_hostname.get(target.lower())
+    ad_object = entry.ad_object if entry and entry.ad_object else {}
+    by_sid = {
+        holder["object_sid"]: holder
+        for holder in item.holders
+        if holder.get("object_sid")
+    }
+    has_complete_identities = all(
+        candidate.get("object_sid") for candidate in item.holders
+    )
+    holder = (
+        next(iter(by_sid.values()))
+        if len(by_sid) == 1 and has_complete_identities
+        else None
+    )
+    if len(by_sid) > 1:
+        logger.warning(
+            "Conflicting SQL SPN accounts for %s:%s; retaining candidates without selecting one",
+            target,
+            item.address.port,
+        )
+    elif item.holders and not has_complete_identities:
+        logger.warning(
+            "SQL SPN account identity is unread for %s:%s; withholding inferred account relationships",
+            target,
+            item.address.port,
+        )
+    # No advertised account is a normal unknown, without a second warning.
+    classes = (holder.get("object_class") or []) if holder else []
+    # These labels describe observations already logged above, so this routine
+    # classification needs no additional message for each branch.
+    if result is not None:
+        source = "MSSQL-ScanForEPA"
+    elif item.spns:
+        source = "MSSQL-SPN"
+    elif item.from_registry:
+        source = "RemoteRegistry-MSSQL"
+    else:
+        source = "MSSQL-Port"
+    return {
+        "source": source,
+        "force_encryption": result.force_encryption if result else None,
+        "extended_protection": result.extended_protection if result else None,
+        "strict_encryption": result.strict_encryption if result else None,
+        "epa_measured": result is not None,
+        "name": ad_object.get("name") or target,
+        "dns_host_name": ad_object.get("dns_host_name") or target,
+        "domain_computer_sid": ad_object.get("object_sid"),
+        "port": item.address.port,
+        "instance_name": item.address.instance,
+        "has_mssql_spn": bool(item.spns),
+        "service_principal_names": item.spns,
         "port_open": port_open,
-        # Task 13 (Tier A+): the MSSQLSvc SPN holder's identity, when the fallback
-        # search above resolved one. NULL when the target computer's own SPN already
-        # covered it (LocalSystem/NetworkService/virtual-account SQL) -- there is no
-        # separate service account to report in that case.
-        "service_account_sid": service_account_sid,
-        "service_account_is_computer": service_account_is_computer,
-        # The holder's sAMAccountName, so preproc can build a real User node for it
-        # rather than a SID-only stub (con-c509 / con-2249).
-        "service_account_name": service_account_name,
+        "service_account_candidates": item.holders,
+        "service_account_sid": holder.get("object_sid") if holder else None,
+        "service_account_name": holder.get("sam_account_name") if holder else None,
+        "service_account_is_computer": any(
+            value.casefold() == "computer" for value in classes
+        )
+        if holder
+        else None,
     }
 
-    if epa_error is not None:
-        logger.error("SQL host facts saved for %s:%d; EPA measurement remains incomplete", target, port)
-        raise epa_error
-    logger.info("MSSQL collection completed for %s:%d", target, port)
+
+def collect_mssql(
+    target: str, ctx: SourceContext
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    """Save independent instances before reporting any failed measurements."""
+    if not ctx.method_enabled("MSSQL"):
+        logger.debug("MSSQL collection was not selected for %s", target)
+        return
+    guard = getattr(ctx, "credential_guard", None)
+    if guard is not None and guard.is_rejected:
+        logger.warning("SQL collection skipped on %s: sign-in details were already rejected", target)
+        return
+    logger.info("Starting instance-specific MSSQL collection on %s", target)
+    endpoints, failures = _resolve_endpoints(target, ctx)
+    unresolved = {
+        item.address.instance.casefold()
+        for item in endpoints
+        if item.address.port is None and item.address.instance
+    }
+    for item in endpoints:
+        if guard is not None and guard.is_rejected:
+            logger.warning("Remaining SQL endpoints skipped on %s: sign-in details were rejected", target)
+            return
+        # A run that has not rejected its credentials may inspect this endpoint.
+        port = item.address.port
+        port_open = _check_port(target, port) if port is not None else None
+        if not port_open and not item.spns and not item.from_registry:
+            logger.debug("No SQL endpoint evidence on %s:%s", target, port)
+            continue
+        # Registry inventory and SPNs remain usable without TCP reachability.
+        result = None
+        if port_open and port is not None:
+            result, failed = _probe_epa(
+                target, port, item.spns, ctx, identify_instance=item.is_fallback
+            )
+            failures += int(failed)
+            if item.is_fallback and result is None:
+                logger.warning(
+                    "Fallback port %s on %s opened, but no SQL measurement "
+                    "completed; retaining the unresolved names only", port, target,
+                )
+                continue
+            if item.is_fallback and result is not None and result.instance_name:
+                name = result.instance_name
+                item.address = SqlAddress(target, port, name)
+                if name.casefold() in unresolved:
+                    logger.info(
+                        "SQL confirmed %s\\%s on fallback port %s", target, name, port
+                    )
+                    for original in endpoints:
+                        same_name = (
+                            original.address.instance is not None
+                            and original.address.instance.casefold() == name.casefold()
+                        )
+                        if original.address.port is None and same_name:
+                            _merge_evidence(item, original)
+                        # Other named engines cannot own this endpoint's facts.
+                    unresolved.remove(name.casefold())
+                    failures -= 1
+                else:
+                    logger.warning(
+                        "Fallback port %s on %s identified %s; requested names remain unresolved",
+                        port, target, name,
+                    )
+            # Without an authenticated identity, only the host and port are known.
+        else:
+            logger.verbose(
+                "SQL port %s on %s was not reached; EPA is unknown", port, target
+            )
+        yield (
+            "mssql_server_instances",
+            _instance_row(target, item, port_open, result, ctx),
+        )
+    if failures:
+        logger.error(
+            "SQL facts saved for %s; %d endpoint measurements remain incomplete",
+            target,
+            failures,
+        )
+        raise EPAPrereqError(f"{failures} SQL endpoint measurements remain incomplete")
+    logger.info("MSSQL collection completed on %s", target)

@@ -111,6 +111,33 @@ and lock file and verify installs without local overrides. Local-copy checks do
 not prove a published installation works. The owner performs commit, push, and
 release actions; no automatic staging, commits, or pushes are authorized.
 
+## Shared SQL discovery: approved on 2026-11-10
+
+The owner approved extracting strict SQL address/SPN parsing and specific-instance
+Browser resolution into common, updating both collectors, and correcting account
+evidence loss, unread encryption values and Browser protocol handling. Each
+extension retains its graph identifiers and product-specific decisions. No new
+dependency or schema is approved or needed. See
+[the SQL instance implementation record](../../changes/2026-11-10-sql-instance-evidence.md).
+
+The owner approved retaining port 1433 as an explained low-privilege fallback.
+Explicit SCCM settings and its site-server registry mapping take precedence;
+matching-instance ports come next, followed by an inferred only observed static
+SQL listener. Static status must be established by collected settings, and that
+listener must answer the SQL probe. Both guesses are labelled and omitted when
+possible edges are disabled. This supersedes the provisional explicit-port-only
+proposal; it does not authorize schema or graph-ID changes. The SQL work is now
+implemented and ready for owner review: the final Windows/WSL guide checks,
+local-wheel installs and live named-instance/site-mapping checks passed.
+Publishing and consumer dependency minimums remain release work.
+
+The owner additionally approved trying TCP 1433 once per host when an instance's
+port cannot be resolved. The candidate stays anonymous until SQL itself confirms
+its name; otherwise original registrations remain unresolved and independent
+measurements stay with the answering endpoint. Shared support and both consumers
+passed Windows and WSL checks, including real matching/different-name SQL reads
+through SOCKS. This adds no graph kind or identifier rule.
+
 ## Included SCCM capabilities
 
 | Work | What to build | Success evidence |
